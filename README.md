@@ -1,2 +1,65 @@
-# qusme
-A queue of drafts from people and agents, inserted into fields on live web pages.
+# qus.me
+
+qus.me is a queue of values waiting to be placed into fields on web pages. People and agents submit drafts, each naming a destination (a site and an account) and a field; a browser extension lets you pick a draft and insert it into the matching field on the live page, and you still click Post yourself. Drafts are stored end-to-end encrypted on a private Nostr relay, and the qus.me service handles MCP for agents, agent keys and device pairing without ever holding the key that reads the queue.
+
+The specification is [docs/spec.md](docs/spec.md).
+
+## Layout
+
+A pnpm workspace, laid out as in section 8.5 of the spec:
+
+| Package | What it is |
+| --- | --- |
+| `packages/core` | The service as a Hono `createApp(deps)` factory, using Web-standard APIs only. `GET /healthz` and a `/mcp` stub (501) so far |
+| `packages/nostr` | Event builders and parsers shared by the service, extension and PWA. Empty for now |
+| `packages/store-sql` | Drizzle schema for the service's own state and its SQL migrations, with drivers for D1 (`@qusme/store-sql/d1`) and a SQLite file (`@qusme/store-sql/sqlite`) |
+| `packages/entry-worker` | The Cloudflare Workers entrypoint and `wrangler.jsonc` |
+| `packages/entry-node` | The Node entrypoint (`@hono/node-server`, better-sqlite3) and a Dockerfile |
+| `packages/extension` | The browser extension (WXT, Chrome and Firefox MV3) |
+| `packages/pwa` | The mobile PWA (Preact, Vite, Tailwind v4) |
+
+The site registry will be its own repository.
+
+## Running it locally
+
+```sh
+mise install                    # node, pnpm and wrangler at the pinned versions
+pnpm install
+pnpm typecheck && pnpm lint && pnpm test && pnpm build
+```
+
+The service, either way:
+
+```sh
+pnpm -C packages/entry-worker db:migrate:local   # once, and after each new migration
+pnpm -C packages/entry-worker dev                # wrangler dev, local D1
+pnpm -C packages/entry-node dev                  # Node on :8787, SQLite in ./qusme.db
+```
+
+`wrangler dev` reads secrets from `packages/entry-worker/.dev.vars` (`QUSME_AGENT_KEY_SECRET=...`). The Node entrypoint reads `QUSME_AGENT_KEY_SECRET`, `QUSME_DB_PATH` and `PORT` from the environment; its `dev` script fills in a throwaway secret when none is set.
+
+The clients:
+
+```sh
+pnpm -C packages/extension dev           # Chrome; dev:firefox for Firefox
+pnpm -C packages/pwa dev
+```
+
+A schema change is an edit to `packages/store-sql/src/schema.ts` followed by `pnpm -C packages/store-sql generate`, which writes the next migration into `packages/store-sql/migrations`. Commit it with the schema change. Wrangler applies those files to D1 and drizzle's migrator applies them to the Node entrypoint's SQLite file at startup.
+
+## Deploying
+
+The Worker is the `qusme` script on Cloudflare, served at `https://app.qus.me` with MCP at `/mcp`. Ownership is split:
+
+- The Pulumi stack in [lokkju/infra](https://github.com/lokkju/infra) owns the script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET`, and the Actions secrets this repo deploys with (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`).
+- This repo owns the code. `.github/workflows/deploy.yml` runs on every push to `main`: it applies pending D1 migrations, then runs `wrangler deploy`, which replaces the script's code and keeps its secrets.
+
+For that reason `wrangler.jsonc` declares no routes or custom domains and sets `workers_dev` to `false`. A change to the domain, the database or a secret is a change in lokkju/infra.
+
+`/healthz` reports the deployed commit. Releases of the service will be CalVer (`vYYYY.MM.DD[.N]`) once release automation exists.
+
+The Node entrypoint builds into an image with `docker build -f packages/entry-node/Dockerfile --build-arg QUSME_VERSION=$(git rev-parse --short HEAD) .`. Nothing publishes that image.
+
+## License
+
+[PolyForm Shield 1.0.0](LICENSE).
