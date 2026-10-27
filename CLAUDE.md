@@ -18,7 +18,7 @@ pnpm -C packages/store-sql generate          # new migration after a schema chan
 pnpm -C packages/entry-worker build          # wrangler deploy --dry-run
 ```
 
-CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on the `homelab` self-hosted runners. Never switch a job to GitHub-hosted runners.
+CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on the `homelab` self-hosted runners; its build includes `wrangler deploy --dry-run`, which keeps the Workers entrypoint from rotting. `.github/workflows/image.yml` builds the entry-node image on `homelab-build`. Never switch a job to GitHub-hosted runners.
 
 ## Layout
 
@@ -26,15 +26,19 @@ CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on
 - `packages/nostr`: event builders and parsers shared by the service, extension and PWA.
 - `packages/store-sql`: Drizzle schema (`src/schema.ts`) and the generated migrations in `migrations/`. Never edit a migration that has been merged; generate a new one.
 - `packages/entry-worker`: Workers entrypoint and `wrangler.jsonc`.
-- `packages/entry-node`: Node entrypoint and Dockerfile. Images are never published, and never to ghcr.io.
+- `packages/entry-node`: Node entrypoint and Dockerfile. `image.yml` pushes the image to zot (`registry.lab.lokkju.com/lokkju/qusme`) only; never to ghcr.io.
 - `packages/extension`: WXT. Its permissions are exactly `activeTab`, `scripting`, `contextMenus`, `storage` (spec 11.2, `src/permissions.ts`, tested). No host permissions, no `tabs`.
 - `packages/pwa`: Preact, Vite, Tailwind v4 with the CSS-first `@theme` in `src/index.css`.
 
 Workspace packages export TypeScript source directly (`"exports": "./src/index.ts"`); bundlers and Node 24's type stripping consume it, so relative imports carry the `.ts` extension and only erasable TypeScript syntax is allowed (no enums, no parameter properties).
 
-## What Pulumi owns and what this repo owns
+## Deploy model
 
-lokkju/infra's Pulumi stack owns the `qusme` Worker script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET` and the deploy credentials. This repo owns the code and the migrations.
+The service runs on the homelab first: lokkju/infra deploys the entry-node image behind the Cloudflare tunnel at app.qus.me ([lokkju/infra#660](https://github.com/lokkju/infra/issues/660)). Workers come later, on the same hostname, so the move is a DNS change. `deploy.yml` (Workers) is `workflow_dispatch` only; never give it a `push` trigger again without that move being decided.
+
+## What lokkju/infra owns and what this repo owns
+
+lokkju/infra owns the registry credentials (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD` from `build_repos`), the `homelab-build` runner and the homelab deployment of the image. Its Pulumi stack owns the `qusme` Worker script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET` and the deploy credentials. This repo owns the code and the migrations.
 
 - Never declare `routes`, `route`, custom domains or a `workers_dev` route for app.qus.me in `wrangler.jsonc`. Keep `workers_dev: false`.
 - Never set or rotate secrets with `wrangler secret`; that is a lokkju/infra change.

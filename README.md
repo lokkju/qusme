@@ -49,16 +49,26 @@ A schema change is an edit to `packages/store-sql/src/schema.ts` followed by `pn
 
 ## Deploying
 
-The Worker is the `qusme` script on Cloudflare, served at `https://app.qus.me` with MCP at `/mcp`. Ownership is split:
+The service is served at `https://app.qus.me`, with MCP at `/mcp`. It runs on the homelab first and on Cloudflare Workers later; the hostname is the same either way, so moving between them is a DNS change in lokkju/infra.
 
-- The Pulumi stack in [lokkju/infra](https://github.com/lokkju/infra) owns the script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET`, and the Actions secrets this repo deploys with (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`).
-- This repo owns the code. `.github/workflows/deploy.yml` runs on every push to `main`: it applies pending D1 migrations, then runs `wrangler deploy`, which replaces the script's code and keeps its secrets.
+### Homelab (now)
+
+`packages/entry-node` runs on the homelab's k3s cluster behind the Cloudflare tunnel at app.qus.me, deployed by [lokkju/infra](https://github.com/lokkju/infra) ([lokkju/infra#660](https://github.com/lokkju/infra/issues/660)). This repo builds the image:
+
+- `.github/workflows/image.yml` builds `packages/entry-node/Dockerfile` on the `homelab-build` runner and, on every push to `main` (or by hand), pushes it to zot as `registry.lab.lokkju.com/lokkju/qusme`, tagged with the full and the short commit SHA. The job summary has the digest. Pull requests that touch the image's packages build it without pushing.
+- lokkju/infra owns the registry credentials this repo pushes with (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD`, from its `build_repos`), the runner, the deployment, its `QUSME_AGENT_KEY_SECRET`, the SQLite volume and the tunnel route. Images go to zot only, never to ghcr.io.
+
+To build it locally: `docker build -f packages/entry-node/Dockerfile --build-arg QUSME_VERSION=$(git rev-parse --short HEAD) .`, then `docker run -e QUSME_AGENT_KEY_SECRET=... -p 8787:8787 <image>` serves `/healthz` on :8787.
+
+### Workers (later)
+
+The Worker is the `qusme` script on Cloudflare. The Pulumi stack in lokkju/infra owns the script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET`, and the Actions secrets this repo deploys with (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`). This repo owns the code.
+
+`.github/workflows/deploy.yml` runs only by hand (`workflow_dispatch`): it applies pending D1 migrations, then runs `wrangler deploy`, which replaces the script's code and keeps its secrets. Nothing deploys the Worker automatically. CI still runs `wrangler deploy --dry-run` on every PR so the Workers entrypoint keeps building.
 
 For that reason `wrangler.jsonc` declares no routes or custom domains and sets `workers_dev` to `false`. A change to the domain, the database or a secret is a change in lokkju/infra.
 
 `/healthz` reports the deployed commit. Releases of the service will be CalVer (`vYYYY.MM.DD[.N]`) once release automation exists.
-
-The Node entrypoint builds into an image with `docker build -f packages/entry-node/Dockerfile --build-arg QUSME_VERSION=$(git rev-parse --short HEAD) .`. Nothing publishes that image.
 
 ## License
 
