@@ -24,6 +24,11 @@
       "database_id": "0e98b101-327b-4bf3-9fc5-f4136b42c235",
       "migrations_dir": "../store-sql/migrations"
     }
-  ]
+  ],
+  // Sweeps expired service state (the scheduled handler in src/index.ts). Reads filter on
+  // expires_at regardless, so the interval bounds only how long dead rows take up space.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  }
   // Secrets, set by Pulumi and kept across deploys: QUSME_AGENT_KEY_SECRET.
 }
