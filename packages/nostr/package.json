@@ -7,7 +7,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p . && tsc -p test"
+    "typecheck": "tsc -p . && tsc -p test && tsc -p scripts",
+    "relay-probe": "node scripts/relay-probe.ts"
   },
   "dependencies": {
     "@noble/hashes": "2.0.1",
