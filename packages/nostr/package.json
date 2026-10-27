@@ -7,6 +7,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p . && tsc -p test"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.0.1",
+    "@scure/base": "2.0.0",
+    "nostr-tools": "2.25.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261019.2-beta"
   }
 }
