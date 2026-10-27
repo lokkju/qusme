@@ -1,0 +1,23 @@
+{
+  "name": "@qusme/store-sql",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./d1": "./src/d1.ts",
+    "./sqlite": "./src/sqlite.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "drizzle-orm": "0.45.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
+    "drizzle-kit": "0.31.11"
+  }
+}
