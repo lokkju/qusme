@@ -125,7 +125,6 @@ describe('agent grant (spec 7.4)', () => {
       { ...input, allow_new_destinations: 'yes' },
       { ...input, expires_at: 'never' },
       { inbox: input.inbox, destinations: input.destinations },
-      { ...input, scopes: ['all'] },
     ];
     for (const content of cases) {
       expectError(await parseAgentGrant(grantWith(content), agent), 'invalid_content');

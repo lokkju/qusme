@@ -108,18 +108,13 @@ describe('site definitions (spec 7.6, 10.1)', () => {
       fields: [{ ...field, ...change }],
     });
     const cases: unknown[] = [
-      { ...x, extra: true },
-      withField({ inject: ['paste', 'teleport'] }),
       withField({ inject: [] }),
       withField({ inject: ['clipboard', 'paste'] }),
       withField({ inject: ['paste', 'paste'] }),
-      withField({ constraints: { counter: 'words' } }),
       withField({ constraints: { maxLength: 0 } }),
-      withField({ constraints: { minLength: 1 } }),
       withField({ locators: [] }),
       withField({ locators: [{ role: 'textbox', name: { de: ['Text'] } }] }),
       withField({ locators: [{ role: 'textbox', name: { en: [] } }] }),
-      withField({ colour: 'blue' }),
       { ...x, fields: [] },
       { ...x, fields: [field, field] },
       { ...x, id: 'X Corp' },

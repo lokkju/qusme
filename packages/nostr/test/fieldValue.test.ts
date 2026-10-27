@@ -94,12 +94,10 @@ describe('field value rumor', () => {
   it('rejects unknown tags, malformed source and inserted tags, and bad validation JSON', () => {
     const base = exampleRumor().tags;
     const cases: string[][][] = [
-      [...base, ['client', 'x']],
       base.map((t) => (t[0] === 'source' ? ['source', 'nothex', agentPubkey] : t)),
       base.map((t) => (t[0] === 'source' ? ['source', WRAP_ID] : t)),
       [...base, ['source', WRAP_ID, agentPubkey]],
       [...base, ['inserted', 'yesterday', '', 'paste', 'popup', '', '']],
-      [...base, ['inserted', '1', '', 'teleport', 'popup', '', '']],
       [...base, ['inserted', '1', '', 'paste', '', '', '']],
       [...base, ['inserted', '1', '', 'paste', 'popup']],
       base.map((t) => (t[0] === 'validation' ? ['validation', '{nope'] : t)),
@@ -130,7 +128,7 @@ describe('field value rumor', () => {
   it('refuses to build a value that would not parse', () => {
     expect(() => fieldValueRumor({ ...exampleValue, site: '' })).toThrow(/invalid field value/);
     expect(() => fieldValueRumor({ ...exampleValue, reserved: [['client', 'x']] })).toThrow(
-      /unknown tag/
+      /not reserved/
     );
   });
 

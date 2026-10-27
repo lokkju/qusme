@@ -107,11 +107,9 @@ describe('destinations (NIP-78)', () => {
       { destinations: {} },
       { destinations: [{ ...one, status: 'maybe' }] },
       { destinations: [{ ...one, id: '' }] },
-      { destinations: [{ ...one, extra: 1 }] },
       { destinations: [one, one] },
       { destinations: [{ ...one, override: [] }] },
       { destinations: [{ ...one, override: JSON.parse('{"__proto__":{"admin":true}}') }] },
-      { destinations: [], more: true },
     ];
     for (const content of cases) {
       expectError(
@@ -176,7 +174,6 @@ describe('settings (NIP-78)', () => {
       { quota_counts: { [agentPubkey]: { ...count, period_start: -1 } } },
       { quota_counts: { [agentPubkey]: { period_start: 0, accepted: [] } } },
       { quota_counts: JSON.parse('{"__proto__":{}}') },
-      { theme: 'dark' },
       [],
     ];
     for (const content of cases) {
@@ -241,7 +238,7 @@ describe('rotation marker (spec 6.1)', () => {
       { npub: 'npub1xyz' },
       { npub: 42 },
       {},
-      { npub: npubEncode(otherPubkey), at: 1 },
+      { npub: npubEncode(otherPubkey).slice(0, -1) },
     ]) {
       expectError(await parseRotationMarker(appData(D_ROTATED, content), queue), 'invalid_content');
     }

@@ -37,24 +37,6 @@ export function readRecord(
   return value;
 }
 
-/** Refuses keys outside `required` and `optional`, and any missing required key. */
-export function checkKeys(
-  record: Record<string, unknown>,
-  path: string,
-  required: readonly string[],
-  optional: readonly string[] = []
-): void {
-  for (const key of required) {
-    if (!Object.hasOwn(record, key))
-      throw new Invalid('invalid_content', 'missing', join(path, key));
-  }
-  for (const key of Object.keys(record)) {
-    if (!required.includes(key) && !optional.includes(key)) {
-      throw new Invalid('invalid_content', 'unknown key', join(path, key));
-    }
-  }
-}
-
 export { join as joinPath };
 
 export function readString(
@@ -239,4 +221,68 @@ export async function decryptWith(signer: Signer, peer: string, payload: string)
   } catch {
     throw new Invalid('decrypt_failed', 'content does not decrypt', 'content');
   }
+}
+
+/**
+ * Checks `required` keys are present and returns every key outside `known`, values unchanged, or
+ * `undefined` when there are none. Data a device reads and republishes keeps these so an older
+ * build doesn't strip what a newer one wrote (spec 7, "Unknown fields").
+ */
+export function readExtra(
+  record: Record<string, unknown>,
+  path: string,
+  required: readonly string[],
+  known: readonly string[]
+): JsonObject | undefined {
+  for (const key of required) {
+    if (!Object.hasOwn(record, key))
+      throw new Invalid('invalid_content', 'missing', join(path, key));
+  }
+  let extra: JsonObject | undefined;
+  for (const key of Object.keys(record)) {
+    if (known.includes(key)) continue;
+    if (FORBIDDEN_KEYS.has(key))
+      throw new Invalid('invalid_content', 'forbidden key', join(path, key));
+    checkJson(record[key], join(path, key), 1);
+    extra ??= {};
+    extra[key] = record[key] as JsonValue;
+  }
+  return extra;
+}
+
+/**
+ * The wire JSON for an object: known keys in the given order (undefined ones left out), then the
+ * extra keys in their own order. Throws if an extra key is a known key or a forbidden one.
+ */
+export function withExtra(
+  known: readonly [string, JsonValue | undefined][],
+  extra: JsonObject | undefined,
+  knownNames: readonly string[]
+): JsonObject {
+  const out: JsonObject = {};
+  for (const [key, value] of known) if (value !== undefined) out[key] = value;
+  for (const [key, value] of Object.entries(extra ?? {})) {
+    if (knownNames.includes(key) || FORBIDDEN_KEYS.has(key)) {
+      throw new Error(`extra key ${JSON.stringify(key)} is reserved`);
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/** Tags whose name is not in `known`, copied, in order; `undefined` when there are none. */
+export function extraTagsOf(tags: string[][], known: readonly string[]): string[][] | undefined {
+  const extra = tags.filter((tag) => !known.includes(tag[0] as string)).map((tag) => [...tag]);
+  return extra.length > 0 ? extra : undefined;
+}
+
+/** Refuses extra tags that are empty or reuse a known tag name. Throws a plain Error. */
+export function checkExtraTags(tags: string[][] | undefined, known: readonly string[]): string[][] {
+  for (const tag of tags ?? []) {
+    if (tag.length === 0 || !tag.every((item) => typeof item === 'string')) {
+      throw new Error('extra tags must be non-empty arrays of strings');
+    }
+    if (known.includes(tag[0] as string)) throw new Error(`extra tag ${tag[0]} is a known tag`);
+  }
+  return (tags ?? []).map((tag) => [...tag]);
 }

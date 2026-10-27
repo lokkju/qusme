@@ -1,7 +1,7 @@
 import type { EventTemplate } from 'nostr-tools/core';
 import { FIELD_VALUE_KINDS, KIND_FIELD_VALUE } from './kinds.ts';
 import { capture, checkInput, Invalid, type ParseResult } from './result.ts';
-import { INJECTION_STRATEGIES, type InjectionStrategy } from './siteDef.ts';
+import type { InjectionStrategy } from './siteDef.ts';
 import {
   checkKind,
   isHex64,
@@ -28,7 +28,8 @@ export interface Insertion {
   /** Unix seconds. */
   at: number;
   url: string;
-  strategy: InjectionStrategy | '';
+  /** One of {@link INJECTION_STRATEGIES}, empty, or a strategy a newer build added. */
+  strategy: InjectionStrategy | (string & {});
   /** How the insertion was made, such as the extension's popup or context menu, or `pwa_copy`. */
   method: string;
   accessibleName: string;
@@ -61,6 +62,11 @@ export interface FieldValue {
   content: string;
   /** Reserved tags (`target`, `sequence`, `position`) as found, in order. */
   reserved: string[][];
+  /**
+   * Tags this version does not know, as found and in order, written back unchanged after the known
+   * and reserved tags, so a device on an older build keeps what a newer one wrote (spec 7).
+   */
+  extraTags?: string[][];
 }
 
 /** The rumor an agent submits (spec 7.5): only what the agent knows. */
@@ -92,6 +98,8 @@ const SUBMISSION_TAGS = new Set([
   'validation',
   ...RESERVED_FIELD_VALUE_TAGS,
 ]);
+// Draft state an agent must never set; a submission carrying any of these is refused.
+const SUBMISSION_REFUSED = new Set(['status', 'source', 'inserted', 'destination']);
 const UNIX_TIME = /^(0|[1-9]\d{0,15})$/;
 
 function required(tags: string[][], name: string): string {
@@ -113,14 +121,11 @@ function readInsertion(tag: string[], i: number): Insertion {
     string,
   ];
   if (!UNIX_TIME.test(at)) throw new Invalid('invalid_tags', 'bad timestamp', path);
-  if (strategy !== '' && !(INJECTION_STRATEGIES as readonly string[]).includes(strategy)) {
-    throw new Invalid('invalid_tags', 'unknown strategy', path);
-  }
   if (method === '') throw new Invalid('invalid_tags', 'method must not be empty', path);
   return {
     at: Number(at),
     url,
-    strategy: strategy as InjectionStrategy | '',
+    strategy,
     method,
     accessibleName,
     detectedAccount,
@@ -167,11 +172,7 @@ export function readRumor(value: unknown, path = 'rumor'): RumorFields {
 }
 
 function readCommon(tags: string[][], allowed: Set<string>) {
-  for (const tag of tags) {
-    if (!allowed.has(tag[0] as string)) {
-      throw new Invalid('invalid_tags', 'unknown tag', `tags.${tag[0]}`);
-    }
-  }
+  const unknown = tags.filter((tag) => !allowed.has(tag[0] as string)).map((tag) => [...tag]);
   const validationText = singleTag(tags, 'validation');
   return {
     site: required(tags, 'site'),
@@ -182,6 +183,7 @@ function readCommon(tags: string[][], allowed: Set<string>) {
     reserved: tags
       .filter((tag) => (RESERVED_FIELD_VALUE_TAGS as readonly string[]).includes(tag[0] as string))
       .map((tag) => [...tag]),
+    unknown,
   };
 }
 
@@ -221,13 +223,26 @@ export function readFieldValue(value: unknown): FieldValue {
     result.source = { wrapId: source[1], submitter: source[2] };
   }
   if (common.validation !== undefined) result.validation = common.validation;
+  if (common.unknown.length > 0) result.extraTags = common.unknown;
   return result;
 }
 
-/** Validates the rumor of an agent submission (spec 7.5). Throws {@link Invalid}. */
-export function readSubmissionValue(value: unknown): SubmissionValue {
+/**
+ * Validates the rumor of an agent submission (spec 7.5). Draft state tags (`status`, `source`,
+ * `inserted`, `destination`) are refused; other unknown tags are dropped and returned in
+ * `ignoredTags` for ingestion to log. Throws {@link Invalid}.
+ */
+export function readSubmissionValue(value: unknown): {
+  value: SubmissionValue;
+  ignoredTags: string[][];
+} {
   const rumor = readRumor(value);
   checkKind(rumor.kind, FIELD_VALUE_KINDS);
+  for (const tag of rumor.tags) {
+    if (SUBMISSION_REFUSED.has(tag[0] as string)) {
+      throw new Invalid('invalid_tags', 'an agent may not set draft state', `tags.${tag[0]}`);
+    }
+  }
   const common = readCommon(rumor.tags, SUBMISSION_TAGS);
   const result: SubmissionValue = {
     createdAt: rumor.createdAt,
@@ -238,7 +253,7 @@ export function readSubmissionValue(value: unknown): SubmissionValue {
     reserved: common.reserved,
   };
   if (common.validation !== undefined) result.validation = common.validation;
-  return result;
+  return { value: result, ignoredTags: common.unknown };
 }
 
 /** Parses an untrusted field value rumor (already JSON-decoded). */
@@ -276,7 +291,18 @@ export function fieldValueRumor(value: FieldValue): EventTemplate {
     ]);
   }
   if (value.validation !== undefined) tags.push(['validation', JSON.stringify(value.validation)]);
-  tags.push(...value.reserved.map((tag) => [...tag]));
+  for (const tag of value.reserved) {
+    if (!(RESERVED_FIELD_VALUE_TAGS as readonly string[]).includes(tag[0] as string)) {
+      throw new Error(`invalid field value: ${tag[0]} is not reserved`);
+    }
+    tags.push([...tag]);
+  }
+  for (const tag of value.extraTags ?? []) {
+    if (DRAFT_TAGS.has(tag[0] as string)) {
+      throw new Error(`invalid field value: extra tag ${tag[0]} is a known tag`);
+    }
+    tags.push([...tag]);
+  }
   const template = {
     kind: KIND_FIELD_VALUE,
     created_at: value.createdAt,
@@ -298,6 +324,10 @@ export function submissionRumor(value: SubmissionValue): EventTemplate {
     tags,
     content: value.content,
   };
-  checkInput('submission', () => readSubmissionValue(template));
+  checkInput('submission', () => {
+    if (readSubmissionValue(template).ignoredTags.length > 0) {
+      throw new Invalid('invalid_tags', 'reserved holds a tag that is not reserved');
+    }
+  });
   return template;
 }

@@ -161,6 +161,8 @@ A user who prefers to keep the queue key in a NIP-46 bunker or NIP-07 extension 
 
 All queue-key events go only to the private relay listed in the user's kind 10013.
 
+**Unknown fields.** Devices on different builds share one queue, since extension-store and PWA updates arrive at different times. Data that devices read and republish (field value rumor tags, destinations, settings, the recovery backup, the rotation marker, agent grants as the queue reads them, submitters labels) is parsed strictly for the fields a build knows, and unknown tags and keys are kept and written back unchanged, after the known ones, when the device republishes. Agent submissions stay strict: draft state tags (`status`, `source`, `inserted`, `destination`) are refused and other unknown tags are dropped and logged. Site definitions and agent grants as the agent reads them ignore unknown keys, and a site field naming an injection strategy or counter the build does not know is unusable, not fatal to the definition.
+
 ### 7.1 Draft (NIP-37 wrap of a field value)
 
 ```json

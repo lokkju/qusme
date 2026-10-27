@@ -33,6 +33,8 @@ export interface Submission {
   /** The rumor's id. */
   rumorId: string;
   value: SubmissionValue;
+  /** Tags the agent sent that this version does not know; dropped, reported for logging. */
+  ignoredTags: string[][];
 }
 
 /**
@@ -84,12 +86,14 @@ export function openSubmission(event: unknown, queue: Signer): Promise<ParseResu
     } catch (error) {
       throw new Invalid('unwrap_failed', (error as Error).message);
     }
+    const { value, ignoredTags } = readSubmissionValue(opened.rumor);
     return {
       wrapId: opened.wrapId,
       submitter: opened.sealPubkey,
       expiration: Number(expiration),
       rumorId: opened.rumor.id,
-      value: readSubmissionValue(opened.rumor),
+      value,
+      ignoredTags,
     };
   });
 }

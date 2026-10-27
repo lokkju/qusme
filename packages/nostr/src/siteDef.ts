@@ -1,13 +1,12 @@
 import { SITE_DEF_KINDS } from './kinds.ts';
 import { capture, Invalid, type ParseResult } from './result.ts';
 import {
-  checkKeys,
   checkKind,
   joinPath,
   parseJsonText,
   readArray,
+  readExtra,
   readInteger,
-  readOneOf,
   readRecord,
   readSignedEvent,
   readString,
@@ -61,7 +60,18 @@ export interface SiteDefinition {
   account?: SiteAccount;
   /** Intent URL templates by name (`compose`), with `{text}` and `{origin}` placeholders. */
   intents?: Record<string, string>;
+  /** The fields this version can use. */
   fields: SiteField[];
+  /**
+   * Fields left out because they name an injection strategy or counter this version does not
+   * know; present only when there are some.
+   */
+  unusableFields?: UnusableField[];
+}
+
+export interface UnusableField {
+  name: string;
+  reason: string;
 }
 
 export interface SiteDefinitionEvent {
@@ -79,7 +89,7 @@ const NAME_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 function readLocator(value: unknown, path: string): Locator {
   const record = readRecord(value, path);
-  checkKeys(record, path, ['role', 'name']);
+  requireKeys(record, path, ['role', 'name']);
   const names = readRecord(record.name, joinPath(path, 'name'));
   if (!Object.hasOwn(names, 'en')) {
     throw new Invalid('invalid_content', 'missing the en fallback', joinPath(path, 'name'));
@@ -103,12 +113,21 @@ function readLocators(value: unknown, path: string): Locator[] {
   return items.map((item, i) => readLocator(item, joinPath(path, i)));
 }
 
-function readField(value: unknown, path: string): SiteField {
+// Site definitions ignore keys they don't know (spec 7, "Unknown fields"): a newer registry must
+// not break an older client, and clients never republish definitions.
+function requireKeys(record: Record<string, unknown>, path: string, required: string[]): void {
+  readExtra(record, path, required, required);
+}
+
+function readField(value: unknown, path: string): SiteField | UnusableField {
   const record = readRecord(value, path);
-  checkKeys(record, path, ['name', 'label', 'locators', 'inject'], ['constraints']);
+  requireKeys(record, path, ['name', 'label', 'locators', 'inject']);
+  const name = readString(record.name, joinPath(path, 'name'), { nonEmpty: true, max: 128 });
+  const label = readString(record.label, joinPath(path, 'label'), { nonEmpty: true });
+  const locators = readLocators(record.locators, joinPath(path, 'locators'));
   const injectPath = joinPath(path, 'inject');
   const inject = readArray(record.inject, injectPath).map((item, i) =>
-    readOneOf(item, INJECTION_STRATEGIES, joinPath(injectPath, i))
+    readString(item, joinPath(injectPath, i), { nonEmpty: true })
   );
   if (inject.length === 0) throw new Invalid('invalid_content', 'must not be empty', injectPath);
   if (new Set(inject).size !== inject.length) {
@@ -118,31 +137,39 @@ function readField(value: unknown, path: string): SiteField {
   if (clipboard !== -1 && clipboard !== inject.length - 1) {
     throw new Invalid('invalid_content', 'clipboard must be last', injectPath);
   }
+  const unknownStrategy = inject.find(
+    (s) => !(INJECTION_STRATEGIES as readonly string[]).includes(s)
+  );
+  let unusable: string | undefined =
+    unknownStrategy === undefined ? undefined : `unknown injection strategy ${unknownStrategy}`;
   const constraints: FieldConstraints = {};
   if (record.constraints !== undefined) {
     const cPath = joinPath(path, 'constraints');
     const c = readRecord(record.constraints, cPath);
-    checkKeys(c, cPath, [], ['maxLength', 'counter']);
+    requireKeys(c, cPath, []);
     if (c.maxLength !== undefined) {
       constraints.maxLength = readInteger(c.maxLength, joinPath(cPath, 'maxLength'), { min: 1 });
     }
     if (c.counter !== undefined) {
-      constraints.counter = readOneOf(c.counter, COUNTER_NAMES, joinPath(cPath, 'counter'));
+      const counter = readString(c.counter, joinPath(cPath, 'counter'), { nonEmpty: true });
+      if ((COUNTER_NAMES as readonly string[]).includes(counter)) {
+        constraints.counter = counter as CounterName;
+      } else {
+        unusable ??= `unknown counter ${counter}`;
+      }
     }
   }
-  return {
-    name: readString(record.name, joinPath(path, 'name'), { nonEmpty: true, max: 128 }),
-    label: readString(record.label, joinPath(path, 'label'), { nonEmpty: true }),
-    locators: readLocators(record.locators, joinPath(path, 'locators')),
-    inject,
-    constraints,
-  };
+  if (unusable !== undefined) return { name, reason: unusable };
+  return { name, label, locators, inject: inject as InjectionStrategy[], constraints };
 }
 
-/** Validates a site definition JSON value (spec 10.1). Unknown keys fail. */
+/**
+ * Validates a site definition JSON value (spec 10.1). Unknown keys are ignored; a field naming an
+ * unknown injection strategy or counter is moved to `unusableFields`.
+ */
 export function readSiteDefinition(value: unknown, path = ''): SiteDefinition {
   const record = readRecord(value, path);
-  checkKeys(record, path, ['id', 'version', 'name', 'match', 'fields'], ['account', 'intents']);
+  requireKeys(record, path, ['id', 'version', 'name', 'match', 'fields']);
   const id = readString(record.id, joinPath(path, 'id'), { max: 128 });
   if (!SITE_ID.test(id))
     throw new Invalid('invalid_content', 'not a site id', joinPath(path, 'id'));
@@ -160,13 +187,15 @@ export function readSiteDefinition(value: unknown, path = ''): SiteDefinition {
     return pattern;
   });
   const fieldsPath = joinPath(path, 'fields');
-  const fields = readArray(record.fields, fieldsPath).map((item, i) =>
+  const read = readArray(record.fields, fieldsPath).map((item, i) =>
     readField(item, joinPath(fieldsPath, i))
   );
-  if (fields.length === 0) throw new Invalid('invalid_content', 'must not be empty', fieldsPath);
-  if (new Set(fields.map((f) => f.name)).size !== fields.length) {
+  if (read.length === 0) throw new Invalid('invalid_content', 'must not be empty', fieldsPath);
+  if (new Set(read.map((f) => f.name)).size !== read.length) {
     throw new Invalid('invalid_content', 'repeats a field name', fieldsPath);
   }
+  const fields = read.filter((f): f is SiteField => !('reason' in f));
+  const unusableFields = read.filter((f): f is UnusableField => 'reason' in f);
   const definition: SiteDefinition = {
     id,
     version,
@@ -177,7 +206,7 @@ export function readSiteDefinition(value: unknown, path = ''): SiteDefinition {
   if (record.account !== undefined) {
     const aPath = joinPath(path, 'account');
     const account = readRecord(record.account, aPath);
-    checkKeys(account, aPath, ['locator', 'extract']);
+    requireKeys(account, aPath, ['locator', 'extract']);
     const extract = readString(account.extract, joinPath(aPath, 'extract'), { nonEmpty: true });
     try {
       new RegExp(extract);
@@ -199,6 +228,7 @@ export function readSiteDefinition(value: unknown, path = ''): SiteDefinition {
     }
     definition.intents = intents;
   }
+  if (unusableFields.length > 0) definition.unusableFields = unusableFields;
   return definition;
 }
 

@@ -5,14 +5,17 @@ import { NCRYPTSEC_MAX_LOG_N, type NcryptsecParams, ncryptsecParams } from './ni
 import { capture, captureAsync, checkInput, Invalid, type ParseResult } from './result.ts';
 import type { Signer } from './signer.ts';
 import {
-  checkKeys,
+  checkExtraTags,
   checkKind,
   decryptWith,
+  extraTagsOf,
   isHex64,
   type JsonObject,
+  type JsonValue,
   joinPath,
   parseJsonText,
   readArray,
+  readExtra,
   readHex64,
   readInteger,
   readJsonObject,
@@ -21,6 +24,7 @@ import {
   readSignedEvent,
   readString,
   singleTag,
+  withExtra,
 } from './validate.ts';
 
 /** NIP-78 `d` tags (spec 6.1, 7.2). */
@@ -44,10 +48,13 @@ export interface Destination {
   status: DestinationStatus;
   /** A partial site definition merged over the official one (10.2); validated when merged. */
   override: JsonObject | null;
+  /** Keys this version does not know, kept for republishing (spec 7, "Unknown fields"). */
+  extra?: JsonObject;
 }
 
 export interface Destinations {
   destinations: Destination[];
+  extra?: JsonObject;
 }
 
 /** One agent's ingestion record for the current quota period (spec 7.2, 11.4). */
@@ -55,6 +62,7 @@ export interface QuotaCount {
   period_start: number;
   accepted: string[];
   discarded: string[];
+  extra?: JsonObject;
 }
 
 /** The settings event's content (spec 7.2). */
@@ -66,6 +74,7 @@ export interface Settings {
   archive_retention_days?: number | null;
   /** Keyed by agent pubkey. */
   quota_counts: Record<string, QuotaCount>;
+  extra?: JsonObject;
 }
 
 /** An app data event's metadata alongside its decrypted content. */
@@ -74,6 +83,8 @@ export interface AppData<T> {
   pubkey: string;
   createdAt: number;
   content: T;
+  /** Event tags other than `d`, kept for republishing. */
+  extraTags?: string[][];
 }
 
 export interface RecoveryBackup {
@@ -82,6 +93,7 @@ export interface RecoveryBackup {
   createdAt: number;
   ncryptsec: string;
   params: NcryptsecParams;
+  extraTags?: string[][];
 }
 
 export interface RotationMarker {
@@ -91,15 +103,27 @@ export interface RotationMarker {
   createdAt: number;
   /** The new queue pubkey, hex. */
   newPubkey: string;
+  /** Content keys other than `npub`. */
+  extra?: JsonObject;
+  extraTags?: string[][];
+}
+
+/** Options every NIP-78 builder takes; `extraTags` are written after `d`, as parsed. */
+export interface AppDataOptions {
+  createdAt?: number;
+  extraTags?: string[][];
 }
 
 const ID_MAX = 128;
+const DESTINATION_KEYS = ['id', 'site', 'account', 'label', 'status', 'override'];
+const QUOTA_COUNT_KEYS = ['period_start', 'accepted', 'discarded'];
+const SETTINGS_KEYS = ['archive_retention_days', 'quota_counts'];
 
 function readDestination(value: unknown, path: string): Destination {
   const record = readRecord(value, path);
-  checkKeys(record, path, ['id', 'site', 'account', 'label', 'status', 'override']);
+  const extra = readExtra(record, path, DESTINATION_KEYS, DESTINATION_KEYS);
   const p = (key: string): string => joinPath(path, key);
-  return {
+  const destination: Destination = {
     id: readString(record.id, p('id'), { nonEmpty: true, max: ID_MAX }),
     site: readString(record.site, p('site'), { nonEmpty: true }),
     account: readString(record.account, p('account'), { nonEmpty: true }),
@@ -107,29 +131,50 @@ function readDestination(value: unknown, path: string): Destination {
     status: readOneOf(record.status, DESTINATION_STATUSES, p('status')),
     override: record.override === null ? null : readJsonObject(record.override, p('override')),
   };
+  if (extra !== undefined) destination.extra = extra;
+  return destination;
 }
 
-/** Validates destinations content. Throws {@link Invalid}. */
+/** Validates destinations content, keeping unknown keys. Throws {@link Invalid}. */
 export function readDestinations(value: unknown): Destinations {
   const record = readRecord(value, 'content');
-  checkKeys(record, 'content', ['destinations']);
+  const extra = readExtra(record, 'content', ['destinations'], ['destinations']);
   const destinations = readArray(record.destinations, 'content.destinations').map((item, i) =>
     readDestination(item, `content.destinations[${i}]`)
   );
   if (new Set(destinations.map((d) => d.id)).size !== destinations.length) {
     throw new Invalid('invalid_content', 'repeats a destination id', 'content.destinations');
   }
-  return { destinations };
+  return extra === undefined ? { destinations } : { destinations, extra };
+}
+
+/** The wire JSON of destinations: known keys in spec order, then each object's extra keys. */
+export function writeDestinations(content: Destinations): JsonObject {
+  const destinations = content.destinations.map((d) =>
+    withExtra(
+      [
+        ['id', d.id],
+        ['site', d.site],
+        ['account', d.account],
+        ['label', d.label],
+        ['status', d.status],
+        ['override', d.override],
+      ],
+      d.extra,
+      DESTINATION_KEYS
+    )
+  );
+  return withExtra([['destinations', destinations]], content.extra, ['destinations']);
 }
 
 function readIdList(value: unknown, path: string): string[] {
   return readArray(value, path).map((id, i) => readHex64(id, joinPath(path, i)));
 }
 
-/** Validates settings content. Throws {@link Invalid}. */
+/** Validates settings content, keeping unknown keys. Throws {@link Invalid}. */
 export function readSettings(value: unknown): Settings {
   const record = readRecord(value, 'content');
-  checkKeys(record, 'content', [], ['archive_retention_days', 'quota_counts']);
+  const extra = readExtra(record, 'content', [], SETTINGS_KEYS);
   const settings: Settings = { quota_counts: {} };
   const retention = record.archive_retention_days;
   if (retention !== undefined) {
@@ -144,15 +189,42 @@ export function readSettings(value: unknown): Settings {
       const path = `content.quota_counts.${agent}`;
       if (!isHex64(agent)) throw new Invalid('invalid_content', 'key is not a pubkey', path);
       const count = readRecord(entry, path);
-      checkKeys(count, path, ['period_start', 'accepted', 'discarded']);
-      settings.quota_counts[agent] = {
+      const countExtra = readExtra(count, path, QUOTA_COUNT_KEYS, QUOTA_COUNT_KEYS);
+      const parsed: QuotaCount = {
         period_start: readInteger(count.period_start, `${path}.period_start`, { min: 0 }),
         accepted: readIdList(count.accepted, `${path}.accepted`),
         discarded: readIdList(count.discarded, `${path}.discarded`),
       };
+      if (countExtra !== undefined) parsed.extra = countExtra;
+      settings.quota_counts[agent] = parsed;
     }
   }
+  if (extra !== undefined) settings.extra = extra;
   return settings;
+}
+
+/** The wire JSON of settings: known keys in spec order, then extra keys. */
+export function writeSettings(content: Settings): JsonObject {
+  const counts: JsonObject = {};
+  for (const [agent, count] of Object.entries(content.quota_counts)) {
+    counts[agent] = withExtra(
+      [
+        ['period_start', count.period_start],
+        ['accepted', count.accepted],
+        ['discarded', count.discarded],
+      ],
+      count.extra,
+      QUOTA_COUNT_KEYS
+    );
+  }
+  return withExtra(
+    [
+      ['archive_retention_days', content.archive_retention_days],
+      ['quota_counts', counts],
+    ],
+    content.extra,
+    SETTINGS_KEYS
+  );
 }
 
 /**
@@ -164,18 +236,22 @@ export function archiveRetentionDays(settings: Settings, onHostedRelay: boolean)
   return onHostedRelay ? HOSTED_ARCHIVE_RETENTION_DAYS : null;
 }
 
+function appDataTags(d: string, extraTags: string[][] | undefined): string[][] {
+  return [['d', d], ...checkExtraTags(extraTags, ['d'])];
+}
+
 async function buildEncrypted(
   signer: Signer,
   d: string,
-  content: unknown,
-  createdAt: number | undefined
+  wire: JsonValue,
+  options: AppDataOptions
 ): Promise<NostrEvent> {
   const pubkey = await signer.getPublicKey();
   return signer.signEvent({
     kind: KIND_APP_DATA,
-    created_at: createdAt ?? Math.floor(Date.now() / 1000),
-    tags: [['d', d]],
-    content: await signer.nip44Encrypt(pubkey, JSON.stringify(content)),
+    created_at: options.createdAt ?? Math.floor(Date.now() / 1000),
+    tags: appDataTags(d, options.extraTags),
+    content: await signer.nip44Encrypt(pubkey, JSON.stringify(wire)),
   });
 }
 
@@ -198,7 +274,15 @@ async function readEncrypted<T>(
   if (signed.pubkey !== owner)
     throw new Invalid('wrong_author', 'not signed by this key', 'pubkey');
   const content = read(parseJsonText(await decryptWith(signer, owner, signed.content)));
-  return { id: signed.id, pubkey: signed.pubkey, createdAt: signed.created_at, content };
+  const result: AppData<T> = {
+    id: signed.id,
+    pubkey: signed.pubkey,
+    createdAt: signed.created_at,
+    content,
+  };
+  const extraTags = extraTagsOf(signed.tags, ['d']);
+  if (extraTags !== undefined) result.extraTags = extraTags;
+  return result;
 }
 
 function parseEncrypted<T>(
@@ -210,16 +294,34 @@ function parseEncrypted<T>(
   return captureAsync(() => readEncrypted(event, signer, d, read));
 }
 
-/** Builds the destinations event (kind 30078, `d` = `qus.me/destinations`), encrypted to self. */
+// Serializes with `write`, then checks the result parses back with `read`.
+function checkedWire<T>(
+  what: string,
+  value: T,
+  write: (v: T) => JsonObject,
+  read: (v: unknown) => unknown
+): JsonObject {
+  let wire: JsonObject;
+  try {
+    wire = write(value);
+  } catch (error) {
+    throw new Error(`invalid ${what}: ${(error as Error).message}`);
+  }
+  checkInput(what, () => read(parseJsonText(JSON.stringify(wire))));
+  return wire;
+}
+
+/**
+ * Builds the destinations event (kind 30078, `d` = `qus.me/destinations`), encrypted to self.
+ * Extra keys from a parse are written back after the known ones.
+ */
 export async function buildDestinations(
   signer: Signer,
   content: Destinations,
-  options: { createdAt?: number } = {}
+  options: AppDataOptions = {}
 ): Promise<NostrEvent> {
-  const checked = checkInput('destinations', () =>
-    readDestinations(JSON.parse(JSON.stringify(content)))
-  );
-  return buildEncrypted(signer, D_DESTINATIONS, checked, options.createdAt);
+  const wire = checkedWire('destinations', content, writeDestinations, readDestinations);
+  return buildEncrypted(signer, D_DESTINATIONS, wire, options);
 }
 
 export function parseDestinations(
@@ -233,10 +335,10 @@ export function parseDestinations(
 export async function buildSettings(
   signer: Signer,
   content: Settings,
-  options: { createdAt?: number } = {}
+  options: AppDataOptions = {}
 ): Promise<NostrEvent> {
-  const checked = checkInput('settings', () => readSettings(JSON.parse(JSON.stringify(content))));
-  return buildEncrypted(signer, D_SETTINGS, checked, options.createdAt);
+  const wire = checkedWire('settings', content, writeSettings, readSettings);
+  return buildEncrypted(signer, D_SETTINGS, wire, options);
 }
 
 export function parseSettings(
@@ -270,13 +372,13 @@ function readNcryptsec(text: string): NcryptsecParams {
 export async function buildRecoveryBackup(
   signer: Signer,
   ncryptsec: string,
-  options: { createdAt?: number } = {}
+  options: AppDataOptions = {}
 ): Promise<NostrEvent> {
   checkInput('ncryptsec', () => readNcryptsec(ncryptsec));
   return signer.signEvent({
     kind: KIND_APP_DATA,
     created_at: options.createdAt ?? Math.floor(Date.now() / 1000),
-    tags: [['d', D_RECOVERY]],
+    tags: appDataTags(D_RECOVERY, options.extraTags),
     content: ncryptsec,
   });
 }
@@ -294,36 +396,45 @@ export function parseRecoveryBackup(
     if (options.queuePubkey !== undefined && signed.pubkey !== options.queuePubkey) {
       throw new Invalid('wrong_author', 'not signed by the queue key', 'pubkey');
     }
-    return {
+    const backup: RecoveryBackup = {
       id: signed.id,
       pubkey: signed.pubkey,
       createdAt: signed.created_at,
       ncryptsec: signed.content,
       params: readNcryptsec(signed.content),
     };
+    const extraTags = extraTagsOf(signed.tags, ['d']);
+    if (extraTags !== undefined) backup.extraTags = extraTags;
+    return backup;
   });
 }
 
 /**
  * Builds the rotation marker under the old key (kind 30078, `d` = `qus.me/rotated`, spec 6.1):
- * content `{"npub": "<new npub>"}` encrypted to the old key.
+ * content `{"npub": "<new npub>"}`, then any `extra` keys, encrypted to the old key.
  */
 export async function buildRotationMarker(
   oldSigner: Signer,
   newPubkey: string,
-  options: { createdAt?: number } = {}
+  options: AppDataOptions & { extra?: JsonObject } = {}
 ): Promise<NostrEvent> {
   if (!isHex64(newPubkey)) throw new Error('new pubkey must be 64 lowercase hex characters');
-  return buildEncrypted(oldSigner, D_ROTATED, { npub: npubEncode(newPubkey) }, options.createdAt);
+  const wire = checkedWire(
+    'rotation marker',
+    options.extra,
+    (extra) => withExtra([['npub', npubEncode(newPubkey)]], extra, ['npub']),
+    readRotation
+  );
+  return buildEncrypted(oldSigner, D_ROTATED, wire, options);
 }
 
-function readRotation(value: unknown): string {
+function readRotation(value: unknown): { newPubkey: string; extra: JsonObject | undefined } {
   const record = readRecord(value, 'content');
-  checkKeys(record, 'content', ['npub']);
+  const extra = readExtra(record, 'content', ['npub'], ['npub']);
   const npub = readString(record.npub, 'content.npub');
   try {
     const decoded = nip19Decode(npub);
-    if (decoded.type === 'npub') return decoded.data;
+    if (decoded.type === 'npub') return { newPubkey: decoded.data, extra };
   } catch {
     // reported below
   }
@@ -339,12 +450,15 @@ export function parseRotationMarker(
   oldSigner: Signer
 ): Promise<ParseResult<RotationMarker>> {
   return captureAsync(async () => {
-    const { id, pubkey, createdAt, content } = await readEncrypted(
+    const { id, pubkey, createdAt, content, extraTags } = await readEncrypted(
       event,
       oldSigner,
       D_ROTATED,
       readRotation
     );
-    return { id, pubkey, createdAt, newPubkey: content };
+    const marker: RotationMarker = { id, pubkey, createdAt, newPubkey: content.newPubkey };
+    if (content.extra !== undefined) marker.extra = content.extra;
+    if (extraTags !== undefined) marker.extraTags = extraTags;
+    return marker;
   });
 }

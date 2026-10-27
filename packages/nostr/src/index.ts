@@ -21,6 +21,7 @@ export {
 } from './agentGrant.ts';
 export {
   type AppData,
+  type AppDataOptions,
   archiveRetentionDays,
   buildDestinations,
   buildRecoveryBackup,
@@ -141,6 +142,7 @@ export {
   type SiteDefinition,
   type SiteDefinitionEvent,
   type SiteField,
+  type UnusableField,
 } from './siteDef.ts';
 export {
   buildSubmission,
@@ -155,6 +157,7 @@ export {
   parseSubmittersPublic,
   type SubmitterLabel,
   type SubmittersList,
+  type SubmittersOptions,
   type SubmittersPublic,
 } from './submitters.ts';
 export type { JsonObject, JsonValue } from './validate.ts';
