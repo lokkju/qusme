@@ -1,8 +1,6 @@
 # qus.me: Specification
 
-*Draft v0.2, 2026-10-25. Supersedes v0.1 (HTTP broker with plaintext storage).*
-
-*Revised 2026-10-27: pairing sessions on Workers move from KV to D1 (8.5); the subdomain question in section 17 is decided.*
+*Draft v0.3, 2026-10-27. Supersedes v0.2.*
 
 ## 1. Summary
 
@@ -15,6 +13,21 @@ Storage, sync, and encryption are Nostr. Drafts are NIP-37 draft wraps on a priv
 ### 1.1 Changes from v0.1
 
 The HTTP broker and its SQL draft store are gone; drafts live on a Nostr relay. End-to-end encryption moves from post-v1 to the baseline. The REST API is dropped for v1 (Nostr is the raw API; MCP serves agents). Clerk/OIDC is no longer needed for user identity, which is the queue key, presented to the service via NIP-98. MCP agents become write-only. Server-side validation survives for agent submissions, since the service sees agent plaintext at write time.
+
+### 1.2 Changes from v0.2
+
+- Device pairing is NIP-AB, with the service as an optional rendezvous for a typed code; the passphrase is still required on the new device (8.3, 2.2, 16).
+- Relay access rules (9.1) gain exact exceptions: the recovery backup is readable before the device holds the queue key; an agent reads its own grant and the submitters list it appears on; kind 1059 is readable only by its recipient; NIP-AB pairing messages pass through without storage.
+- The hosted relay serves only queues bound to the hosted service, with stated retention (9.2).
+- Agent grants carry `allow_new_destinations` (default false) and `submission_expiration_days` (default 30, refused above 90); quota periods are UTC calendar periods (7.4, 7.5).
+- Kind numbers are chosen from the registry before v1 instead of migrating from placeholders (2.2).
+- The agent key is minted when a device fetches the pending authorization and destroyed on deny or expiry; MCP clients register with Client ID Metadata Documents (8.2).
+- Service state lists submission receipts and pending authorizations (8.5).
+- Rotation rebinding needs signatures from the old and the new key, and the queue publishes a rotation marker (6.1).
+- Ingestion defines the deterministic `d` derivation and where devices keep quota counts (11.4).
+- Override merge rules for arrays, a `graphemes` counting strategy, sites without a fixed `match` (Mastodon), and how devices find the registry's relays (10).
+- The PWA archives a draft after a "Posted?" confirmation instead of on tap (12).
+- Stale references to `mcp.qus.me` and `relay.qus.me` removed; decided questions kept in section 17 under "Decided".
 
 ## 2. NIPs
 
@@ -31,24 +44,27 @@ The HTTP broker and its SQL draft store are gone; drafts live on a Nostr relay. 
 | NIP-42 | Relay authentication; read restriction to the queue key; write restriction to authorized submitters |
 | NIP-44 | Encryption for draft wraps, app data, agent grants, and key transfer                                |
 | NIP-49 | Passphrase encryption of the queue key at rest on devices and in the recovery backup                |
-| NIP-59 | Gift wraps for agent draft submissions and for device-linking key transfer                          |
+| NIP-59 | Gift wraps for agent draft submissions                                                              |
+| NIP-65 | Relay list of the registry publisher key, from which devices refresh site definitions (10.3)        |
 | NIP-78 | App-specific data (kind 30078): the user's destinations and settings, encrypted to the queue key    |
 | NIP-98 | HTTP auth: devices authenticate to the qus.me service by signing requests with the queue key        |
+| NIP-AB | Device pairing (draft, [nostr-protocol/nips#2328](https://github.com/nostr-protocol/nips/pull/2328)): transferring the `ncryptsec` to a new device (8.3) |
 
 Optional, not required for v1: NIP-07 and NIP-46 (users who want the queue key in an existing signer or bunker; slower, see 6.3), NIP-55 (Android signer apps).
 
 ### 2.2 Proposed new NIPs
 
-These are the specification's contributions to Nostr. Kind numbers below are placeholders; real numbers get chosen against the kind registry when the drafts are submitted. Search open PRs in nostr-protocol/nips for overlapping proposals (draft inboxes, device linking) before writing each one.
+These are the specification's contributions to Nostr. Kind numbers below are placeholders in this draft. Before v1 ships, real numbers are picked from ranges unused in the kind registry in the nips README and in open nips PRs that register kinds, used by v1, and submitted with the NIPs. Parsers in the `nostr` package accept a list of former numbers for each kind, so a number that review forces to change migrates without losing data. Search open PRs in nostr-protocol/nips for overlapping proposals (draft inboxes) before writing each one.
 
 | Working name                   | Defines                                                                                                                                                                                                                                                                                                                                                                                          | Kinds (placeholder)                                               |
 |--------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------|
 | **Web Field Values**           | An unsigned event kind carrying a value destined for a named field at a web destination (site, account, field, optional target URL), plus state tags used when it sits inside a draft wrap (status, insertion records, source). Never published bare; always inside a NIP-37 wrap or a NIP-59 gift wrap.                                                                                         | `KIND_FIELD_VALUE` (regular)                                      |
 | **Draft Inbox**                | Delivery of draft submissions as NIP-59 gift wraps to a queue key; an authorized-submitters list (replaceable, public `p` tags so relays can enforce it, encrypted labels); per-submitter agent grants (destinations shared with an agent, encrypted to its key); ingestion rules (deterministic `d` tags, lookback window, dedupe). Applies to any NIP-37-eligible kind, not only field values. | `KIND_SUBMITTERS` (replaceable), `KIND_AGENT_GRANT` (addressable) |
 | **Site and Field Definitions** | Addressable events, signed by a registry publisher key, describing a website's editable fields: URL match patterns, account detection, accessible-name locators, injection strategies, constraints.                                                                                                                                                                                              | `KIND_SITE_DEF` (addressable)                                     |
-| **Device Linking** (candidate) | Transferring a private key to a newly paired device: ephemeral key on the new device, rendezvous code, key delivered as a gift wrap to the ephemeral pubkey. May already exist as a proposal; adopt one if it does.                                                                                                                                                                              | none beyond NIP-59                                                |
 
 Drafts for Nostr itself need no new kind: a draft note is a NIP-37 wrap of an unsigned kind 1 event, interoperable with any client that reads NIP-37 drafts from the same key.
+
+Device linking, a candidate in v0.2, is not proposed: pairing adopts NIP-AB (8.3). Where 8.3 needs more than NIP-AB defines, qus.me comments on the NIP-AB PR rather than writing a separate NIP.
 
 ## 3. Goals and non-goals
 
@@ -69,7 +85,7 @@ v1 non-goals: automatic posting of any kind; observing page network traffic; sch
 
 **Device.** An extension install, a PWA install, or any other client holding the queue key.
 
-**Agent key.** A Nostr keypair minted and held by the qus.me service for one MCP client. Agent keys can submit drafts to queues that authorize them and can read only the agent grant addressed to them.
+**Agent key.** A Nostr keypair minted and held by the qus.me service for one MCP client. Agent keys can submit drafts to queues that authorize them and can read only the agent grant addressed to them and the submitters lists that name them.
 
 **Site definition.** A signed document describing one site: URL match patterns, account detection, and fields. Each field has a name, accessible-name locators, an ordered list of injection strategies, and constraints. Site definitions are data, never code.
 
@@ -101,9 +117,10 @@ v1 non-goals: automatic posting of any kind; observing page network traffic; sch
        v                                      |
   +-----------------------------------------------+
   |        Private relay (NIP-42 authed)          |
-  |  read: queue key only                         |
+  |  read: queue key, with the exceptions in 9.1  |
   |  write: queue key events; kind 1059 from      |
-  |         authorized submitters                 |
+  |         authorized submitters; NIP-AB pairing |
+  |         messages, passed on, never stored     |
   +-----------------------------------------------+
        ^   REQ / EVENT (websocket)
        |
@@ -124,13 +141,17 @@ The relay is the source of truth for drafts, destinations, and state. The servic
 
 **At rest on devices.** Stored NIP-49-encrypted (`ncryptsec`) in `storage.local` (extension) or IndexedDB (PWA). Unlocked per session with the user's passphrase; the unlocked key lives in `storage.session` (extension) or memory (PWA). Devices may offer a "stay unlocked on this device" option that stores the key unencrypted locally; off by default.
 
-**Recovery backup.** The same `ncryptsec` is published to the private relay as an addressable NIP-78 event (`d` = `qus.me/recovery`). Recovery on a new device needs only the relay URL, the queue npub, and the passphrase. A forgotten passphrase with no paired device remaining loses the queue; this is stated in the UI at setup.
+**Recovery backup.** The same `ncryptsec` is published to the private relay as an addressable NIP-78 event (`d` = `qus.me/recovery`). Recovery on a new device needs only the relay URL, the queue npub, and the passphrase. The recovering device authenticates to the relay with a throwaway key, since it does not yet hold the queue key, and the relay serves this one event to any authenticated connection (9.1). Anyone who knows the relay URL and the queue npub can therefore fetch the `ncryptsec` and try passphrases offline; the setup UI checks passphrase strength for that reason. A forgotten passphrase with no paired device remaining loses the queue; this is stated in the UI at setup.
 
-**Rotation.** If a device is lost or compromised, a remaining device rotates: generate a new queue key; re-wrap every draft and the destinations under it; publish a new submitters list, agent grants, 10013, and recovery backup; notify the service via NIP-98 signed by the old key so it rebinds agent authorizations to the new pubkey; re-pair remaining devices. Rotation is the only revocation for a device, since every device holds the same key.
+**Rotation.** If a device is lost or compromised, a remaining device rotates: generate a new queue key; re-wrap every draft and the destinations and settings under it, keeping each `d`; publish a new submitters list, agent grants (same content), 10013, and recovery backup; rebind agent authorizations at the service; publish a rotation marker under the old key; delete the old key's other events (blanked wraps and NIP-09) once the service confirms the rebind; re-pair remaining devices. On the hosted relay the rebind comes before the first publish under the new key, since the rebind also makes the new key eligible there (9.2). Each step is idempotent, so a rotation interrupted at any point finishes on the next run. Rotation is the only revocation for a device, since every device holds the same key.
+
+The rebind is `POST /rotate`, NIP-98 signed by the old key, with a body holding an event signed by the new key that names the old pubkey. The service rebinds every binding from the old queue pubkey to the new one only when both signatures verify, so the new key named in a rebind is always one the requester controls. This does not cover an attacker who holds the old key and rotates first to a key of their own: the service then binds the user's agents to the attacker's queue, and the agents' later submissions go there. The user's remedy is to revoke those authorizations in the MCP clients and authorize the clients again under the user's new key.
+
+The rotation marker is a NIP-78 event under the old key, `d` = `qus.me/rotated`, content NIP-44-encrypted to the old key, holding the new npub. A device that unlocks and finds it tells the user the queue has rotated and offers pairing (8.3) with a device that holds the new key. A device never switches keys on the marker alone, since anyone holding the old key can publish one.
 
 ### 6.2 Agent keys
 
-Minted by the service when an MCP client completes OAuth authorization (section 8.2). Stored by the service, encrypted at rest with a service secret. One agent key per MCP client authorization, so revocation is per client.
+Minted by the service when a device fetches a pending OAuth authorization (section 8.2, step 3), and destroyed if the user denies it or it expires before approval. Stored by the service, encrypted at rest with a service secret. One agent key per MCP client authorization, so revocation is per client.
 
 ### 6.3 External signers
 
@@ -193,7 +214,18 @@ Addressable kind 30078, `d` = `qus.me/destinations`, content NIP-44-encrypted to
 }
 ```
 
-`status` is `confirmed` or `pending` (created by an agent submission naming an unknown destination). `override` is a partial site definition merged over the official one. Settings use `d` = `qus.me/settings`.
+`status` is `confirmed` or `pending` (created by an agent submission naming an unknown destination). `override` is a partial site definition merged over the official one (10.2). Settings use `d` = `qus.me/settings`, encrypted the same way:
+
+```json
+{
+  "archive_retention_days": 90,
+  "quota_counts": {
+    "<agent pubkey>": { "period_start": 1761350400, "accepted": ["<gift wrap id>"], "discarded": ["<gift wrap id>"] }
+  }
+}
+```
+
+`archive_retention_days` is how long devices keep archived drafts before deleting them; `null` keeps them indefinitely. It defaults to 90 for a queue on the hosted relay and to `null` elsewhere (9.2). `quota_counts` is the devices' shared record of ingestion against each agent's quota (11.4).
 
 ### 7.3 Submitters list (proposed, Draft Inbox NIP)
 
@@ -222,18 +254,24 @@ Addressable `KIND_AGENT_GRANT`, `d` = agent pubkey, signed by the queue key, con
   "destinations": [
     { "site": "x", "account": "lokkju", "fields": ["text"] }
   ],
+  "allow_new_destinations": false,
+  "submission_expiration_days": 30,
   "quota": { "max_submissions": 50, "period": "day" },
   "expires_at": null
 }
 ```
 
-`quota` and `expires_at` follow the per-connection budget model of NIP-47 (Nostr Wallet Connect): each agent gets a scoped, expiring, revocable allowance rather than open access. The service enforces the quota before publishing and devices enforce it again at ingestion.
+`quota` and `expires_at` follow the per-connection budget model of NIP-47 (Nostr Wallet Connect): each agent gets a scoped, expiring, revocable allowance rather than open access. The service enforces the quota before publishing and devices enforce it again at ingestion (11.4). `period` is `day`, `week`, or `month`, each a calendar period in UTC: days start at 00:00 UTC, weeks on Monday at 00:00 UTC, months on the first at 00:00 UTC.
 
-This is how an agent learns where it may draft for the user: the subset of destinations the user chose to share with that agent, and the relay to deliver submissions to. The service can decrypt it (it holds the agent key); it is the agent's view, scoped by the user.
+`allow_new_destinations` lets the agent submit drafts for destinations not in `destinations`; devices create those as `pending` (7.2, 8.4). It defaults to false when absent. The approval screen offers it as a visible toggle with a one-line explanation (11.8), so a user who wants an agent to propose new places turns it on per agent.
+
+`submission_expiration_days` sets the NIP-40 expiration on this agent's submissions (7.5). It defaults to 30 when absent. Devices do not publish a grant with a value above 90, and the service refuses to submit under one. A user whose inbox is a third-party relay can shorten it per agent.
+
+This is how an agent learns where it may draft for the user: the subset of destinations the user chose to share with that agent, and the relay to deliver submissions to. The service reads it from the relay authenticated as the agent key (9.1) and decrypts it with that key; it is the agent's view, scoped by the user.
 
 ### 7.5 Submission (NIP-59 gift wrap)
 
-The agent's rumor is a field value event with `site`, `account`, `field`, and content. It is sealed (kind 13) with the agent key and gift-wrapped (kind 1059) with an ephemeral key, `p`-tagged to the queue pubkey, with a NIP-40 `expiration` (default 30 days).
+The agent's rumor is a field value event with `site`, `account`, `field`, and content. It is sealed (kind 13) with the agent key and gift-wrapped (kind 1059) with an ephemeral key, `p`-tagged to the queue pubkey, with a NIP-40 `expiration` set from the grant's `submission_expiration_days` (default 30 days, at most 90). Once a device ingests a submission, the resulting draft wrap has no expiration.
 
 ### 7.6 Site definition (proposed, Site and Field Definitions NIP)
 
@@ -249,22 +287,38 @@ It does not hold queue keys, read drafts, sign as the user, or authorize submitt
 
 ### 8.2 Agent authorization flow
 
-1.  An MCP client starts OAuth (authorization code with PKCE) against the service.
+1.  An MCP client starts OAuth (authorization code with PKCE, `S256` only) against the service.
 2.  The service's authorize page shows a short code and QR and waits.
-3.  The user opens the extension or PWA and enters or scans the code. The device fetches the pending request from the service (NIP-98 authenticated) and shows "Claude Desktop wants to submit drafts," with a destination picker.
-4.  On approval, the device: receives the newly minted agent pubkey from the service; publishes an updated submitters list including it; publishes an agent grant for it; and posts a NIP-98-signed approval to the service.
-5.  The service completes OAuth and binds the MCP client's tokens to that agent key and queue pubkey.
+3.  The user opens the extension or PWA and enters or scans the code. The device fetches the pending request from the service (NIP-98 authenticated). The service mints the agent key at this fetch and returns its pubkey with the client name and requested scopes. The device shows "Claude Desktop wants to submit drafts," with a destination picker and the `allow_new_destinations` toggle.
+4.  On approval, the device publishes an updated submitters list including the agent pubkey, publishes an agent grant for it, and posts a NIP-98-signed approval to the service. On denial, the device posts a NIP-98-signed denial and the service destroys the agent key.
+5.  The service, authenticated to the relay as the agent key, checks that the queue's current submitters list names the agent pubkey (9.1), then completes OAuth and binds the MCP client's tokens to that agent key and queue pubkey. The relay is the authority on authorization (7.3), so an approval without a matching submitters list fails.
+
+A pending authorization expires if no device approves it in time; the service then destroys any agent key minted for it. No live agent key exists without an approval.
+
+**Client registration.** MCP clients identify themselves with OAuth Client ID Metadata Documents: the `client_id` is an HTTPS URL serving the client's metadata, and the service advertises `client_id_metadata_document_supported` in its authorization server metadata. The MCP authorization specification (revision 2025-11-25) makes this the recommended approach for clients and servers with no prior relationship, and lists Dynamic Client Registration only as an optional fallback. It also fits this service: there is no open registration endpoint that anyone can fill with client rows, and the client name on the approval screen comes from a document at a URL the client's publisher controls, whose host the approval screen shows next to the name. Clients that support only Dynamic Client Registration cannot connect until the service adds it.
 
 Revocation: the user removes the agent from the submitters list on any device (effective at the relay immediately, regardless of the service), then optionally tells the service to destroy the key.
 
 ### 8.3 Device pairing flow
 
-1.  The new device generates an ephemeral keypair and requests a pairing session from the service, receiving a short code.
-2.  The user enters the code on an existing device, which fetches the new device's ephemeral pubkey from the service (NIP-98 authenticated) and shows a confirmation with a short fingerprint of both keys, displayed on both screens.
-3.  The existing device gift-wraps the `ncryptsec`, relay URL, and queue npub to the ephemeral pubkey and publishes it; the service relays the gift wrap id to the new device.
-4.  The new device fetches and unwraps it, then unlocks with the passphrase.
+Pairing is NIP-AB ([nostr-protocol/nips#2328](https://github.com/nostr-protocol/nips/pull/2328)). The existing device is NIP-AB's source and the new device its target. Messages are NIP-AB's kind 24134 events between ephemeral keys, carried by the queue's private relay under the exception in 9.1.
 
-The service sees only ephemeral pubkeys, a code, and an event id. Pairing never transfers an unencrypted queue key; the passphrase is still needed on the new device.
+1.  On an unlocked existing device, the user starts pairing. The device generates NIP-AB's ephemeral keypair and session secret and builds the `nostrpair://` URI, listing the first relay of the queue's kind 10013. It shows the URI as a QR code.
+2.  The device also posts the URI to the service (`POST /pair`, NIP-98 signed by the queue key) and shows the short code the service returns beside the QR. The code is 8 Crockford base32 characters, single use, and expires with the NIP-AB session (120 seconds).
+3.  The new device scans the QR or, without a camera, takes the typed code and fetches the URI from the service (`GET /pair/:code`, unauthenticated and rate-limited per client and per code). The service deletes the row on the first successful fetch.
+4.  The devices run NIP-AB from the offer through SAS verification. The new device authenticates to the relay (NIP-42) as its ephemeral key. Both screens show the 6-digit SAS, and the user confirms on both.
+5.  The existing device sends NIP-AB's `payload` message. Its `payload` field is the queue key's `ncryptsec`, never an `nsec`. The same decrypted message also carries `qusme_relays` (the queue's kind 10013 relay list) and `qusme_npub` (the queue npub). NIP-AB requires implementations to ignore unknown fields, so these do not break a plain NIP-AB peer.
+6.  The new device stores the `ncryptsec`, unlocks it with the passphrase, checks that the key's pubkey equals `qusme_npub`, and sends `complete`.
+
+Pairing never transfers an unencrypted queue key; the passphrase is still needed on the new device. The QR path does not touch the service. On the typed-code path the service sees the queue pubkey, the code, and the URI, which includes the source's ephemeral pubkey and the session secret. A compromised service could use the session secret to send its own offer first; the source then locks to the service's key, the SAS codes on the two screens differ, and the user denies. The SAS comparison is the defense on both paths, as NIP-AB intends.
+
+What 8.3 needs that NIP-AB does not define, and which qus.me raises on the NIP-AB PR rather than in a separate NIP:
+
+- A typed-code rendezvous for a new device without a camera (a desktop browser extension). NIP-AB has only the QR.
+- Relay list and npub alongside the key. NIP-AB's `payload` message has one field; qus.me adds `qusme_relays` and `qusme_npub` and proposes a defined optional field for them.
+- A requirement that the payload be an `ncryptsec`. NIP-AB prefers it but allows an `nsec`.
+- Storage: NIP-AB requires platform-secure storage (a keychain or keystore). The extension's `storage.local` is not one; the NIP-49 encryption protects the key at rest there.
+- Authenticated relays. NIP-AB assumes ordinary relay routing; a NIP-42 relay that restricts reads and writes has to let ephemeral keys exchange kind 24134 (9.1).
 
 ### 8.4 MCP tools
 
@@ -278,13 +332,24 @@ Streamable HTTP at `/mcp`, stateless, official MCP TypeScript SDK on Hono.
 | `create_draft`      | Validate against constraints (422-equivalent error on violation unless `lenient`), seal with the agent key, gift-wrap to the queue, publish to the grant's inbox relay. Returns a receipt (gift wrap id, timestamp) |
 | `list_submissions`  | Receipts for this agent's submissions. No content and no status, since the service retains no plaintext and cannot read the queue                                                                                   |
 
-A draft for a destination not in the grant is accepted only if the grant allows new destinations (a per-grant flag); the user's devices then create it as `pending`.
+A draft for a destination not in the grant is accepted only if the grant's `allow_new_destinations` is true (7.4); the user's devices then create it as `pending`.
 
-The service retains no submission plaintext after publishing.
+The service retains no submission plaintext after publishing. For each published submission it stores a receipt (8.5) holding the agent key id, the queue pubkey, the gift wrap id, and the time; `list_submissions` returns these, and the service counts them against the grant's quota for the current period (7.4) before publishing.
 
 ### 8.5 Portability
 
-The service is a `createApp(deps)` Hono factory using only Web-standard APIs, with thin Workers and Node entrypoints, as in v0.1. Its own state is small: OAuth clients and tokens, agent keys (encrypted), queue-pubkey bindings, pairing sessions (TTL). SQLite on both targets (D1 on Workers, a SQLite file on Node). Pairing sessions live in the same SQL store on both targets, with an `expires_at` column, not in KV: KV's free-tier write limit is account-wide and small, and every pairing step is a write. Nostr publishing uses outbound websockets, available on both runtimes.
+The service is a `createApp(deps)` Hono factory using only Web-standard APIs, with thin Workers and Node entrypoints, as in v0.1. Its own state is small:
+
+- OAuth clients (cached Client ID Metadata Documents), authorization codes and tokens (hashed, with expiry);
+- pending authorizations (8.2: short code, client id, PKCE challenge, scopes, minted agent key id, `expires_at`);
+- agent keys (encrypted, with a key version so the service secret can rotate);
+- bindings of agent keys to queue pubkeys;
+- submission receipts (agent key id, queue pubkey, gift wrap id, created at; no content), for `list_submissions` and quota (8.4);
+- pairing sessions (8.3: code, `nostrpair://` URI, queue pubkey, attempt count, `expires_at`);
+- recently seen NIP-98 event ids, for replay protection;
+- queues registered for the hosted relay (9.2).
+
+SQLite on both targets (D1 on Workers, a SQLite file on Node). Rows with a TTL carry an `expires_at` column, every read filters on it, and a sweep deletes expired rows. Nothing lives in KV: KV's free-tier write limit is account-wide and small, and every pairing step is a write. Nostr publishing uses outbound websockets, available on both runtimes.
 
 ```text
 packages/
@@ -304,13 +369,32 @@ The `nostr` package is shared by the service, extension, and PWA, so every clien
 
 ### 9.1 Requirements
 
-NIP-42 authentication, which NIP-59 itself recommends relays require before accepting gift wraps; reads of kind 31234, 30078, 10013, and the submitters and grant kinds restricted to their author; writes of kind 1059 accepted only from connections authenticated as a pubkey in the recipient's current submitters list; NIP-40 expiration honored; hard deletion of the author's own events, and of gift wraps by their `p`-tagged recipient, on request.
+"AUTH pubkey" below is the pubkey a connection authenticated as under NIP-42. The relay applies read rules to every event it would return, not only to the filter in a REQ, and silently omits events a rule does not allow.
 
-The write check authenticates the connection, not the event: a gift wrap is signed by an ephemeral key, so the relay checks the AUTH pubkey of the submitting connection against the list. This tells the relay operator which agent submitted each wrap, acceptable on a user's own or service-bundled relay and a reason not to use a third-party relay for the inbox.
+1.  **Authentication.** NIP-42 AUTH is required before any REQ or EVENT. NIP-59 itself recommends relays require it before accepting gift wraps.
+2.  **Queue reads.** Kinds 31234, 30078, 10013, `KIND_SUBMITTERS`, and `KIND_AGENT_GRANT` are readable by their author, with three exceptions:
+    - kind 30078 with `d` = `qus.me/recovery` is readable by any authenticated connection, so a recovering device can authenticate with a throwaway key and fetch the backup (6.1);
+    - `KIND_AGENT_GRANT` is also readable by the AUTH pubkey equal to its `d` tag, the agent it is addressed to (7.4);
+    - `KIND_SUBMITTERS` is also readable by any AUTH pubkey listed in its `p` tags, so the service can confirm an approval as the agent key (8.2). An agent learns the pubkeys of the other agents on the list, not their labels.
+3.  **Gift wraps.** A kind 1059 event must carry exactly one `p` tag. It is accepted only from a connection whose AUTH pubkey is in the current `KIND_SUBMITTERS` of the `p`-tagged pubkey, and readable only by the AUTH pubkey equal to that `p` tag.
+4.  **Pairing messages.** A kind 24134 event (NIP-AB, 8.3) is accepted from a connection whose AUTH pubkey equals the event's pubkey, if it carries exactly one `p` tag and content within NIP-AB's size bounds. The relay never stores it, delivers it only to subscriptions on connections whose AUTH pubkey equals that `p` tag, and rate-limits it per connection.
+5.  **Other writes.** Any other event is accepted only when the AUTH pubkey equals the event's pubkey and the relay serves that pubkey (one queue, a configured list, or the queues registered with the hosted service, 9.2).
+6.  **Expiration and deletion.** NIP-40 expiration is honored. The relay hard-deletes the author's own events, and gift wraps at the request of their `p`-tagged recipient, and refuses to store a deleted gift wrap id again.
+
+The gift wrap write check authenticates the connection, not the event: a gift wrap is signed by an ephemeral key, so the relay checks the AUTH pubkey of the submitting connection against the list. This tells the relay operator which agent submitted each wrap, acceptable on a user's own or service-bundled relay and a reason not to use a third-party relay for the inbox.
 
 ### 9.2 Deployment
 
 Docker: strfry or nostr-rs-relay with a write-policy plugin implementing 9.1, bundled in the service's compose file. Workers: a Workers or Durable Objects relay implementation if one meets 9.1 (to be evaluated). Users may also point at any relay meeting 9.1.
+
+**Hosted relay.** The hosted service runs a relay for users who do not run their own, open only to queues bound to the hosted service. A queue pubkey becomes eligible when it authorizes its first agent (8.2), starts a typed-code pairing (8.3), or registers at setup when the user picks the hosted relay (a NIP-98 request to the service, 11.3). A rotation rebind (6.1) moves eligibility to the new key. Retention:
+
+- active drafts and NIP-78 data are kept indefinitely;
+- archived drafts are deleted after the settings' `archive_retention_days` (default 90, 7.2). The relay cannot see a draft's status, since it is inside the encrypted rumor, so devices do this: on sync, a device blanks and requests deletion of each archived draft whose wrap `created_at` (the time it was last republished, which archiving does) is older than the setting;
+- gift wraps are bounded by their NIP-40 expiration and deleted on ingestion;
+- each queue pubkey has an event count and byte cap, set in the relay's configuration; writes over the cap are refused with a NIP-01 `OK` false message naming the cap.
+
+The relay software for the hosted relay depends on the Workers relay evaluation above.
 
 ## 10. Site registry
 
@@ -341,15 +425,19 @@ Values below illustrate the shape; locator strings for real sites must be verifi
 }
 ```
 
-Locators match ARIA role and accessible name, keyed by `document.documentElement.lang`, with `en` as fallback. `constraints.counter` names a counting strategy implemented in the `nostr`/core packages (`default`: code points; `twitter-text`: X's weighting). Strategies are a closed set in code; definitions only reference them.
+Locators match ARIA role and accessible name, keyed by `document.documentElement.lang`, with `en` as fallback. `constraints.counter` names a counting strategy implemented in the `nostr`/core packages (`default`: code points; `graphemes`: extended grapheme clusters per Unicode UAX #29, as `Intl.Segmenter` with `granularity: "grapheme"` counts them, for Bluesky's 300-grapheme limit; `twitter-text`: X's weighting). Strategies are a closed set in code; definitions only reference them, and a definition naming an unknown strategy fails to load.
+
+A definition may leave `match` empty (`[]`) when the site has no fixed hosts. Every destination for such a site must supply `match` in its override, and devices refuse to save the destination without it. Mastodon is the case: one `mastodon` definition with `match: []` and a 500-character `maxLength`, and a destination per account whose override names that account's instance (`{ "match": ["https://mastodon.social/*"] }`), with `account` in `user@instance` form. Intent templates may use `{origin}`, replaced with the origin of the effective definition's first `match` pattern (`"compose": "{origin}/share?text={text}"`). An instance with a different post limit overrides `constraints` as well.
 
 ### 10.2 Resolution
 
-Effective definition = official definition with the destination's `override` merged over it. Custom destinations have only the override, which may be as little as `{ "match": [...] }`. At insertion time the extension targets the page's focused editable element first, then the field's locators, then asks the user to click into the target field (focus placement), which works on any site.
+Effective definition = official definition with the destination's `override` merged over it. Custom destinations have only the override, which may be as little as `{ "match": [...] }`.
+
+Merge rules: objects merge key by key, recursively; a scalar in the override replaces the official value; `null` in the override removes the key. Arrays replace the official array whole, including `match`, `locators`, and `inject`, so an override that adds a locator lists the official ones it keeps. `fields` is the one exception: its entries merge by `name`, an override entry with an existing `name` merging over that field by these same rules and an entry with a new `name` being appended. At insertion time the extension targets the page's focused editable element first, then the field's locators, then asks the user to click into the target field (focus placement), which works on any site.
 
 ### 10.3 Distribution and licensing
 
-Published as signed `KIND_SITE_DEF` events under a registry publisher key, and as JSON in its own repository under CC0 (proposed). Clients verify the publisher signature. Builds bundle a snapshot; devices refresh from relays.
+Published as signed `KIND_SITE_DEF` events under a registry publisher key, and as JSON in its own repository under CC0 (proposed). Clients verify the publisher signature. Builds bundle a snapshot, the registry publisher pubkey, and a snapshot of that key's NIP-65 relay list (kind 10002). Devices refresh by fetching the publisher's current kind 10002 from the bundled relays, then `KIND_SITE_DEF` events from its write relays; a definition replaces the bundled one only if its signature verifies against the pinned pubkey and its `version` is newer. If no relay answers, devices keep the bundled snapshot.
 
 ## 11. Browser extension
 
@@ -367,21 +455,21 @@ No host permissions for any site the user posts to, and no `tabs` permission. Pa
 
 ### 11.3 Setup
 
-Either create a new queue (generate key, choose passphrase, choose relay, publish 10013 and recovery backup) or pair with an existing device (section 8.3), or recover from backup (relay URL, npub, passphrase).
+Either create a new queue (generate key, choose passphrase, choose relay, publish 10013 and recovery backup) or pair with an existing device (section 8.3), or recover from backup (relay URL, npub, passphrase). Choosing the hosted relay registers the queue pubkey with the service (NIP-98) before the first publish (9.2).
 
 ### 11.4 Sync and ingestion
 
-On popup open (and on an alarm while unlocked), the background connects to the private relay, authenticates as the queue key, and requests the user's 31234 drafts, the destinations event, and kind 1059 addressed to the queue pubkey.
+On popup open (and on an alarm while unlocked), the background connects to the private relay, authenticates as the queue key, and requests the user's 31234 drafts, the destinations and settings events, the rotation marker (6.1), and kind 1059 addressed to the queue pubkey.
 
 Ingestion of submissions:
 
 - Unwrap; verify the seal's pubkey is in the current submitters list; discard otherwise.
-- Derive the draft's `d` tag deterministically from the gift wrap id (hash), so two devices ingesting concurrently produce the same addressable event rather than duplicates.
+- Derive the draft's `d` tag deterministically from the gift wrap id, so two devices ingesting concurrently produce the same addressable event rather than duplicates: `d` is the lowercase hex SHA-256 of the UTF-8 string `qus.me/submission:` followed by the gift wrap id in lowercase hex. Drafts created on a device use other ids, which never take this 64-hex-character form.
 - Skip any gift wrap whose derived `d` already exists.
 - Create a pending destination if the submission names an unknown one.
 - Query with a lookback of at least two days past the last sync, since NIP-59 randomizes gift wrap `created_at` into the past.
 - After the draft wrap is published, request deletion of the ingested gift wrap (NIP-59 permits the recipient to do this). A second device that fetched the wrap before deletion derives the same `d` and skips it.
-- Enforce the grant's quota (7.4) at ingestion as well as at the service; over-quota submissions are discarded and counted.
+- Enforce the grant's quota (7.4) at ingestion as well as at the service; over-quota submissions are discarded and counted. A submission counts in the period containing its rumor's `created_at`, the one timestamp NIP-59 does not randomize. Counts live in the settings event's `quota_counts` (7.2) so devices agree: per agent, the current `period_start` and the gift wrap ids `accepted` and `discarded` in that period. Before republishing settings, a device fetches the latest settings and merges by union of the id lists, keeping the later `period_start` and clearing the lists when the period advances. Two devices ingesting at once can together accept more than the quota; the service's count is the exact one, and the device check is a backstop against a compromised service.
 
 ### 11.5 Arming and inserting
 
@@ -413,7 +501,7 @@ A context menu item on editable contexts, "Save to qus.me," reads the focused el
 
 ### 11.8 Agent approvals
 
-The extension and PWA are where the user approves agent authorizations (8.2) and pending destinations. Approval UIs show the agent label and the requested destinations, and require the queue to be unlocked.
+The extension and PWA are where the user approves agent authorizations (8.2) and pending destinations. Approval UIs show the agent label, the host of its client ID URL (8.2), and the requested destinations, offer the `allow_new_destinations` toggle (off by default) with a one-line explanation, and require the queue to be unlocked.
 
 ### 11.9 Distribution
 
@@ -421,15 +509,15 @@ WXT builds and zips both targets, including the sources archive AMO requires; `w
 
 ## 12. Mobile PWA
 
-A full paired device: holds the queue key (NIP-49 at rest), syncs and ingests from the relay directly, and approves agents. Tapping a draft either opens the site's `compose` intent with the value (`pwa_intent`) or copies the value and opens the site or app (`pwa_copy`; Facebook personal profiles land here). Either archives the draft, with undo. No external signer is needed, so this works on iOS.
+A full paired device: holds the queue key (NIP-49 at rest), syncs and ingests from the relay directly, and approves agents. Tapping a draft either opens the site's `compose` intent with the value (`pwa_intent`) or copies the value and opens the site or app (`pwa_copy`; Facebook personal profiles land here). Neither archives the draft on tap, since the PWA cannot observe whether the user posted and an intent can fail (logged out, app not installed). When the PWA becomes visible again after an open, it asks "Posted?" for that draft: Yes archives it as `archived:inserted` with an `inserted` tag recording the method; Not yet, or dismissing the prompt, leaves it active. No external signer is needed, so this works on iOS.
 
 Firefox for Android users can also run the extension.
 
 ## 13. Security and privacy
 
-**The relay sees:** the queue pubkey, event kinds, `d` tags, sizes, and timestamps; that gift wraps arrive for the queue, and (on an enforcing relay) which agent pubkey submitted each. It does not see draft contents, destinations, sites, accounts, or status.
+**The relay sees:** the queue pubkey, event kinds, `d` tags, sizes, and timestamps; that gift wraps arrive for the queue, and (on an enforcing relay) which agent pubkey submitted each. It does not see draft contents, destinations, sites, accounts, or status. It serves the recovery backup's `ncryptsec` to any authenticated connection (9.1), so the passphrase is the only protection against anyone who knows the relay URL and queue npub.
 
-**The service sees:** agent submissions in plaintext at write time (not retained); which queue pubkeys it serves; agent grants for agents it holds keys for. It cannot read the queue, sign as the user, authorize a submitter, or approve a device. A compromised service can submit drafts as any agent key it holds, until the user revokes those agents at the relay.
+**The service sees:** agent submissions in plaintext at write time (not retained); contentless receipts of them; which queue pubkeys it serves; agent grants for agents it holds keys for, and the agent pubkeys on those queues' submitters lists; on a typed-code pairing, the NIP-AB URI including its session secret (8.3). It cannot read the queue, sign as the user, authorize a submitter, or approve a device. A compromised service can submit drafts as any agent key it holds, until the user revokes those agents at the relay.
 
 **Devices see:** everything; they hold the queue key. Every device holds the same key, so revoking one device means rotating the queue key (6.1).
 
@@ -437,7 +525,7 @@ Firefox for Android users can also run the extension.
 
 **Sites see** the inserted value, as if pasted. Nothing else from the queue.
 
-**Agents** can submit to destinations in their grant and read only their own grant. They cannot read, edit, or delete drafts. The human insertion step is the review gate.
+**Agents** can submit to destinations in their grant (or propose new ones if the grant allows) and read only their own grant and the pubkeys on the submitters list that names them. They cannot read, edit, or delete drafts. The human insertion step is the review gate.
 
 **Spam** is blocked by the submitters list at the relay and again at ingestion.
 
@@ -473,18 +561,24 @@ Firefox for Android users can also run the extension.
 
 **Nostr agent tooling** such as nostr-merchant drafts replies for approve/edit/skip review and then publishes them itself, with the agent holding the posting key.
 
-**Multi-device key transfer** has no NIP as of this draft. Implementations exist outside the NIP process (for example, QR-initiated ECDH pairing with an encrypted relay backup), which supports specifying Device Linking rather than inventing a private scheme.
+**Multi-device key transfer** has two open NIP drafts. NIP-4B, nsec Transfer ([nostr-protocol/nips#1768](https://github.com/nostr-protocol/nips/pull/1768)), transfers an nsec between apps. NIP-AB, Device Pairing ([nostr-protocol/nips#2328](https://github.com/nostr-protocol/nips/pull/2328)), builds on it with a QR bootstrap, ephemeral ECDH, and a short code compared on both screens before the key is sent; block/buzz uses it. qus.me adopts NIP-AB for pairing (8.3). Per-device keys linked to a master key ([nostr-protocol/nips#1810](https://github.com/nostr-protocol/nips/issues/1810)) and per-device encryption keys ([nostr-protocol/nips#1647](https://github.com/nostr-protocol/nips/pull/1647)) bear on the post-v1 per-device subkeys (15.6), not on v1.
 
 **Gift wrap as a general primitive** was anticipated in the Nostr DM design discussions, which treated wrapping any kind ("nostr-in-nostr") as the intended generality of NIP-59. The Draft Inbox NIP is an application of that generality to a new kind of payload.
 
 ## 17. Open questions
 
-- Subdomain layout: `mcp.qus.me` currently hosts Lokkju Labs MCP services. Move them, or run this service at `app.qus.me` with MCP at `/mcp` and the bundled relay at `relay.qus.me`.
-  - **Decided:** the service runs at `app.qus.me` with MCP at `/mcp`. `mcp.qus.me` is not used by this service.
-- **Decided:** pairing sessions live in D1 on Workers (and SQLite on Node) with an `expires_at` column, not KV (8.5).
-- Whether the hosted service bundles a relay for users who don't run one, and its retention policy.
-- Workers relay viability against 9.1.
-- Whether agent grants default to allowing new destinations.
-- Whether a PWA intent open archives immediately or after confirmation.
-- Default submission expiration (30 days proposed).
-- Kind numbers for the proposed NIPs, and whether Device Linking duplicates an existing proposal.
+- Workers relay viability against 9.1 ([#11](https://github.com/lokkju/qusme/issues/11)); the hosted relay's software depends on it (9.2).
+- The hosted relay's hostname. v0.2 proposed `relay.qus.me`; nothing has settled it.
+- The NIP-49 scrypt cost (`log_n`) for the queue key's `ncryptsec`. The recovery backup is readable by anyone who knows the relay URL and queue npub (6.1, 9.1), so the cost sets how fast an attacker can guess passphrases offline, against how long unlocking takes on a phone.
+- The relays the registry publisher key lists in its NIP-65 relay list, and so the ones builds bundle (10.3).
+
+### Decided
+
+- 2026-10-27: the service runs at `app.qus.me` with MCP at `/mcp`. `mcp.qus.me` is not used by this service.
+- 2026-10-27: pairing sessions live in D1 on Workers (and SQLite on Node) with an `expires_at` column, not KV (8.5).
+- 2026-10-27: the hosted service bundles a relay, open only to queues bound to the hosted service, with retention as in 9.2 ([#27](https://github.com/lokkju/qusme/issues/27)).
+- 2026-10-27: agent grants default to not allowing new destinations; the approval screen offers the toggle (7.4, 11.8; [#28](https://github.com/lokkju/qusme/issues/28)).
+- 2026-10-27: a PWA intent or copy open archives the draft only after a "Posted?" confirmation (12; [#29](https://github.com/lokkju/qusme/issues/29)).
+- 2026-10-27: submission expiration is a per-grant setting, default 30 days, refused above 90 (7.4, 7.5; [#30](https://github.com/lokkju/qusme/issues/30)).
+- 2026-10-27: kind numbers are picked from unused ranges before v1 and used in v1, with parsers accepting former numbers (2.2; [#31](https://github.com/lokkju/qusme/issues/31)).
+- 2026-10-27: device pairing adopts NIP-AB; there is no separate Device Linking NIP (8.3; [#26](https://github.com/lokkju/qusme/issues/26)).
