@@ -1,12 +1,12 @@
 import type { QusmeDb } from '@qusme/store-sql';
 import { describe, expect, it } from 'vitest';
-import { createApp } from '../src/index.ts';
+import { createAgentKeyRing, createApp } from '../src/index.ts';
 
 const app = createApp({
   version: 'test-version',
   // No route touches the database yet.
   db: {} as QusmeDb,
-  agentKeySecret: 'test-secret',
+  agentKeys: createAgentKeyRing({ secret: btoa('k'.repeat(32)) }),
   publicOrigin: 'https://app.qus.me',
 });
 
@@ -35,7 +35,7 @@ describe('createApp', () => {
       createApp({
         version: 'v',
         db: {} as QusmeDb,
-        agentKeySecret: 's',
+        agentKeys: createAgentKeyRing({ secret: btoa('k'.repeat(32)) }),
         publicOrigin: 'https://app.qus.me/api',
       })
     ).toThrow(/scheme and host only/);

@@ -12,7 +12,8 @@
   "dependencies": {
     "@qusme/nostr": "workspace:*",
     "@qusme/store-sql": "workspace:*",
-    "hono": "4.13.14"
+    "hono": "4.13.14",
+    "nostr-tools": "2.25.2"
   },
   "devDependencies": {
     "miniflare": "5.20261019.2-beta"

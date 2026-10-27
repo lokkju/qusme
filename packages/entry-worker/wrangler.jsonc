@@ -34,5 +34,6 @@
   "triggers": {
     "crons": ["*/5 * * * *"]
   }
-  // Secrets, set by Pulumi and kept across deploys: QUSME_AGENT_KEY_SECRET.
+  // Secrets, set by Pulumi and kept across deploys: QUSME_AGENT_KEY_SECRET (standard base64 of
+  // 32 bytes), and during a rotation QUSME_AGENT_KEY_VERSION and QUSME_AGENT_KEY_SECRET_PREVIOUS.
 }

@@ -1,10 +1,13 @@
+import { createAgentKeyRing } from '@qusme/core';
 import { buildHttpAuth, createLocalSigner, httpAuthHeader } from '@qusme/nostr';
 import { describe, expect, it } from 'vitest';
 import { buildApp, configFromEnv } from '../src/app.ts';
 
+const SECRET = btoa('n'.repeat(32));
+
 const config = {
   dbPath: ':memory:',
-  agentKeySecret: 'test-secret',
+  agentKeys: createAgentKeyRing({ secret: SECRET }),
   version: 'v-test',
   publicOrigin: 'https://app.qus.me',
 };
@@ -20,13 +23,38 @@ describe('the Node entrypoint', () => {
     expect(() => configFromEnv({})).toThrow(/QUSME_AGENT_KEY_SECRET/);
   });
 
+  it('refuses to start with a secret that is not base64 of 32 bytes', () => {
+    expect(() => configFromEnv({ QUSME_AGENT_KEY_SECRET: 'test-secret' })).toThrow(
+      /QUSME_AGENT_KEY_SECRET must be standard base64 of 32 bytes/
+    );
+    expect(() => configFromEnv({ QUSME_AGENT_KEY_SECRET: btoa('n'.repeat(31)) })).toThrow(
+      /32 bytes/
+    );
+  });
+
+  it('reads the key version and the previous secret for a rotation', () => {
+    const ring = configFromEnv({
+      QUSME_AGENT_KEY_SECRET: SECRET,
+      QUSME_AGENT_KEY_VERSION: '2',
+      QUSME_AGENT_KEY_SECRET_PREVIOUS: btoa('o'.repeat(32)),
+    }).agentKeys;
+    expect(ring.currentVersion).toBe(2);
+    expect(ring.rotating).toBe(true);
+    expect(ring.has(1)).toBe(true);
+    expect(() =>
+      configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET, QUSME_AGENT_KEY_SECRET_PREVIOUS: SECRET })
+    ).toThrow(/QUSME_AGENT_KEY_VERSION of 2 or more/);
+  });
+
   it('defaults the version to dev', () => {
-    expect(configFromEnv({ QUSME_AGENT_KEY_SECRET: 'x' }).version).toBe('dev');
+    expect(configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET }).version).toBe('dev');
   });
 
   it('defaults the public origin to app.qus.me and takes QUSME_PUBLIC_ORIGIN', () => {
-    expect(configFromEnv({ QUSME_AGENT_KEY_SECRET: 'x' }).publicOrigin).toBe('https://app.qus.me');
-    const env = { QUSME_AGENT_KEY_SECRET: 'x', QUSME_PUBLIC_ORIGIN: 'http://localhost:8787' };
+    expect(configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET }).publicOrigin).toBe(
+      'https://app.qus.me'
+    );
+    const env = { QUSME_AGENT_KEY_SECRET: SECRET, QUSME_PUBLIC_ORIGIN: 'http://localhost:8787' };
     expect(configFromEnv(env).publicOrigin).toBe('http://localhost:8787');
   });
 

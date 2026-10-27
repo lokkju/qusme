@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p .",
-    "dev": "QUSME_AGENT_KEY_SECRET=${QUSME_AGENT_KEY_SECRET:-dev-only-not-secret} node --watch src/server.ts",
-    "start": "node src/server.ts"
+    "dev": "QUSME_AGENT_KEY_SECRET=${QUSME_AGENT_KEY_SECRET:-ZGV2LW9ubHktbm90LXNlY3JldC1kZXYtb25seS0wMDA=} node --watch src/server.ts",
+    "start": "node src/server.ts",
+    "rotate-agent-keys": "node src/rotateAgentKeys.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",

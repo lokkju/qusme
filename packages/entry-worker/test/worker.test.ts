@@ -4,7 +4,7 @@ import worker, { type Env } from '../src/index.ts';
 // Neither test reaches the database: /healthz never does, and a missing header fails first.
 const env = {
   DB: {} as D1Database,
-  QUSME_AGENT_KEY_SECRET: 'test-secret',
+  QUSME_AGENT_KEY_SECRET: btoa('w'.repeat(32)),
   QUSME_PUBLIC_ORIGIN: 'https://app.qus.me',
 } satisfies Env;
 const ctx = {} as ExecutionContext;
