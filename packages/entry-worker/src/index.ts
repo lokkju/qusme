@@ -1,4 +1,5 @@
 import { createApp } from '@qusme/core';
+import { createStore } from '@qusme/store-sql';
 import { openD1 } from '@qusme/store-sql/d1';
 
 /** Bindings and secrets. DB and QUSME_AGENT_KEY_SECRET are provisioned by Pulumi in lokkju/infra. */
@@ -18,5 +19,10 @@ export default {
       agentKeySecret: env.QUSME_AGENT_KEY_SECRET,
     });
     return app.fetch(request, env, ctx);
+  },
+
+  // The cron trigger in wrangler.jsonc: delete expired service state (spec 8.5).
+  async scheduled(controller, env) {
+    await createStore(openD1(env.DB)).sweepExpired(Math.floor(controller.scheduledTime / 1000));
   },
 } satisfies ExportedHandler<Env>;

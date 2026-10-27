@@ -1,4 +1,5 @@
 import { createApp } from '@qusme/core';
+import { createStore } from '@qusme/store-sql';
 import { openSqlite } from '@qusme/store-sql/sqlite';
 
 export interface NodeConfig {
@@ -7,6 +8,9 @@ export interface NodeConfig {
   agentKeySecret: string;
   version: string;
 }
+
+/** How often the Node entrypoint sweeps expired service state, as the Workers cron does. */
+export const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Reads the Node entrypoint's settings from the environment. */
 export function configFromEnv(env: NodeJS.ProcessEnv): NodeConfig {
@@ -22,10 +26,15 @@ export function configFromEnv(env: NodeJS.ProcessEnv): NodeConfig {
   };
 }
 
+/** The app over a migrated SQLite file, and a sweep of that file's expired state. */
 export function buildApp(config: NodeConfig) {
-  return createApp({
+  const db = openSqlite(config.dbPath);
+  const store = createStore(db);
+  const app = createApp({
     version: config.version,
-    db: openSqlite(config.dbPath),
+    db,
     agentKeySecret: config.agentKeySecret,
   });
+  const sweep = () => store.sweepExpired(Math.floor(Date.now() / 1000));
+  return Object.assign(app, { sweep });
 }
