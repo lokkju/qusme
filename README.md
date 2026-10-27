@@ -36,7 +36,7 @@ pnpm -C packages/entry-worker dev                # wrangler dev, local D1
 pnpm -C packages/entry-node dev                  # Node on :8787, SQLite in ./qusme.db
 ```
 
-`wrangler dev` reads secrets from `packages/entry-worker/.dev.vars` (`QUSME_AGENT_KEY_SECRET=...`). The Node entrypoint reads `QUSME_AGENT_KEY_SECRET`, `QUSME_DB_PATH` and `PORT` from the environment; its `dev` script fills in a throwaway secret when none is set.
+`wrangler dev` reads secrets from `packages/entry-worker/.dev.vars` (`QUSME_AGENT_KEY_SECRET=...`). The Node entrypoint reads `QUSME_AGENT_KEY_SECRET`, `QUSME_DB_PATH` and `PORT` from the environment; its `dev` script fills in a throwaway secret when none is set. `QUSME_AGENT_KEY_SECRET` is 32 random bytes in standard base64 (`openssl rand -base64 32`); both entrypoints refuse to start without one, or with anything else.
 
 The clients:
 
@@ -59,6 +59,16 @@ The service is served at `https://app.qus.me`, with MCP at `/mcp`. It runs on th
 - lokkju/infra owns the registry credentials this repo pushes with (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD`, from its `build_repos`), the runner, the deployment, its `QUSME_AGENT_KEY_SECRET`, the SQLite volume and the tunnel route. Images go to zot only, never to ghcr.io.
 
 To build it locally: `docker build -f packages/entry-node/Dockerfile --build-arg QUSME_VERSION=$(git rev-parse --short HEAD) .`, then `docker run -e QUSME_AGENT_KEY_SECRET=... -p 8787:8787 <image>` serves `/healthz` on :8787.
+
+### Rotating the agent key secret
+
+`QUSME_AGENT_KEY_SECRET` encrypts every agent key at rest (spec 6.2), and each key records the version of the secret it is under. Losing the secret loses every agent key, so the old one stays configured until every key has moved. To rotate from version N to N+1:
+
+1. Set `QUSME_AGENT_KEY_SECRET_PREVIOUS` to the current secret, `QUSME_AGENT_KEY_SECRET` to a new one, and `QUSME_AGENT_KEY_VERSION` to N+1 (unset means 1, so the first rotation sets it to 2). New keys are encrypted under N+1 at once, and keys still under N keep working.
+2. Re-encrypt. On Node, `pnpm -C packages/entry-node rotate-agent-keys` (in the image, `node packages/entry-node/src/rotateAgentKeys.ts`) does it once with the server's environment and prints the count and the ids of any key it could not move; the server also runs a pass every five minutes while `QUSME_AGENT_KEY_SECRET_PREVIOUS` is set. On Workers the five-minute cron runs a pass under the same condition.
+3. When a pass reports nothing left to move and no failures, remove `QUSME_AGENT_KEY_SECRET_PREVIOUS`. Revoked keys have no ciphertext and are never re-encrypted.
+
+Only one previous version is held, so finish a rotation before starting the next. The secrets are lokkju/infra's to set: SOPS for the homelab deployment, Pulumi's Worker secrets on Workers (each new variable is a change there first).
 
 ### Workers (later)
 
