@@ -1,0 +1,16 @@
+{
+  "name": "@qusme/entry-node",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "dev": "QUSME_AGENT_KEY_SECRET=${QUSME_AGENT_KEY_SECRET:-dev-only-not-secret} node --watch src/server.ts",
+    "start": "node src/server.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "@qusme/core": "workspace:*",
+    "@qusme/store-sql": "workspace:*"
+  }
+}
