@@ -1,0 +1,7 @@
+packages:
+  - packages/*
+
+# Dependencies whose install scripts may run: esbuild and workerd fetch their platform binaries.
+allowBuilds:
+  esbuild: true
+  workerd: true
