@@ -33,7 +33,8 @@ describe('NIP-49', () => {
     expect(bytesToHex(decodeNcryptsec(ncryptsec, 'correct horse battery staple'))).toBe(
       bytesToHex(key)
     );
-  });
+    // Two scrypt runs at log_n 18 take about 2.5 s each on the runners, over vitest's 5 s default.
+  }, 30_000);
 
   it('takes log_n and the key security byte per call', () => {
     const ncryptsec = encodeNcryptsec(key, 'pw', { logN: 16, keySecurity: 0x01 });
