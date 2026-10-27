@@ -351,6 +351,8 @@ The service is a `createApp(deps)` Hono factory using only Web-standard APIs, wi
 - recently seen NIP-98 event ids, for replay protection;
 - queues registered for the hosted relay (9.2).
 
+Tokens don't store a queue pubkey. A token is bound to its agent key, and the queue comes from that key's binding, so a rotation rebind (6.1) is one update to the binding and every token follows it. A submission receipt carries its own `expires_at`, set no earlier than both the gift wrap's NIP-40 expiration and the end of the quota period it counts toward, so `list_submissions` shows a submission for as long as the wrap can exist and the quota count (7.4) never loses a receipt early.
+
 SQLite on both targets (D1 on Workers, a SQLite file on Node). Rows with a TTL carry an `expires_at` column, every read filters on it, and a sweep deletes expired rows. Nothing lives in KV: KV's free-tier write limit is account-wide and small, and every pairing step is a write. Nostr publishing uses outbound websockets, available on both runtimes.
 
 ```text
