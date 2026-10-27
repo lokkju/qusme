@@ -13,7 +13,8 @@
       "!packages/store-sql/migrations",
       "!**/.wxt",
       "!**/.output",
-      "!**/dist"
+      "!**/dist",
+      "!packages/nostr/test/vectors"
     ]
   },
   "formatter": {
