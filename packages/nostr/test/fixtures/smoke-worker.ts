@@ -2,6 +2,7 @@
 import {
   buildDraftWrap,
   buildSubmission,
+  countLength,
   createLocalSigner,
   decodeNcryptsec,
   encodeNcryptsec,
@@ -12,6 +13,7 @@ import {
   openSubmission,
   parseDraftWrap,
   unwrapGiftWrap,
+  validateFieldValue,
 } from '../../src/index.ts';
 
 const key = (byte: number): Uint8Array => new Uint8Array(32).fill(byte);
@@ -56,6 +58,16 @@ export default {
       rumor: opened.rumor.content,
       sealedByAgent: opened.sealPubkey === (await agent.getPublicKey()),
       ncryptsec: Array.from(decodeNcryptsec(ncryptsec, 'passphrase')).every((b) => b === 3),
+      // The counters: Intl.Segmenter and the v-flag emoji regex exist in workerd.
+      counts: [
+        countLength('\u{1F468}\u200D\u{1F469}\u200D\u{1F467}', 'default'),
+        countLength('\u{1F468}\u200D\u{1F469}\u200D\u{1F467}', 'graphemes'),
+        countLength('\u{1F468}\u200D\u{1F469}\u200D\u{1F467} https://example.com/', 'twitter-text'),
+        validateFieldValue('x'.repeat(281), {
+          name: 'text',
+          constraints: { maxLength: 280, counter: 'twitter-text' },
+        }).ok,
+      ],
     });
   },
 };

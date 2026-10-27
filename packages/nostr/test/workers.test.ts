@@ -34,6 +34,7 @@ it('runs under the Workers runtime', { timeout: 60_000 }, async () => {
       rumor: 'wrapped',
       sealedByAgent: true,
       ncryptsec: true,
+      counts: [5, 1, 26, false],
     });
   } finally {
     await mf.dispose();

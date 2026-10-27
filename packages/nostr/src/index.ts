@@ -48,6 +48,19 @@ export {
   type Settings,
 } from './appData.ts';
 export {
+  type ConstraintName,
+  type ConstraintViolation,
+  countCodePoints,
+  countGraphemes,
+  countLength,
+  countTwitterText,
+  FIELD_VALUE_MAX_BYTES,
+  type FieldValidation,
+  utf8Length,
+  validateFieldValue,
+  validationTagJson,
+} from './counting.ts';
+export {
   buildDeletionRequest,
   buildGiftWrapDeletion,
   type DeletionRequest,
@@ -160,4 +173,13 @@ export {
   type SubmittersOptions,
   type SubmittersPublic,
 } from './submitters.ts';
+export {
+  type ExtractedUrl,
+  extractUrlsWithIndices,
+  type ParsedTweet,
+  parseTweet,
+  TWITTER_TEXT_CONFIG_V2,
+  TWITTER_TEXT_CONFIG_V3,
+  type TwitterTextConfig,
+} from './twitterText.ts';
 export type { JsonObject, JsonValue } from './validate.ts';
