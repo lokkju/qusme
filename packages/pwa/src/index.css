@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: oklch(0.21 0.03 265);
+  --color-paper: oklch(0.98 0.005 265);
+  --color-accent: oklch(0.62 0.17 255);
+}

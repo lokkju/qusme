@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.output/
+.wxt/
+.wrangler/
+.dev.vars
+.env
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.tsbuildinfo
+coverage/

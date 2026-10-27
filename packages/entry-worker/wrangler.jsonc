@@ -1,0 +1,29 @@
+// The qus.me service on Cloudflare Workers.
+//
+// lokkju/infra's Pulumi stack owns this Worker's custom domain (app.qus.me), its D1 database and
+// its secrets; this file owns the code. Never declare routes, custom domains or a workers.dev
+// route here: app.qus.me is attached by Pulumi, and a route declared here would fight it.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "qusme",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  "workers_dev": false,
+  "send_metrics": false,
+  "preview_urls": false,
+  // Replaced at deploy time with the commit (deploy.yml passes --define).
+  "define": {
+    "__QUSME_VERSION__": "\"dev\""
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "qusme",
+      // Committed rather than substituted in CI: a D1 id is not a credential, and having it here
+      // lets wrangler dev, dry runs and migrations run anywhere without extra setup.
+      "database_id": "0e98b101-327b-4bf3-9fc5-f4136b42c235",
+      "migrations_dir": "../store-sql/migrations"
+    }
+  ]
+  // Secrets, set by Pulumi and kept across deploys: QUSME_AGENT_KEY_SECRET.
+}
