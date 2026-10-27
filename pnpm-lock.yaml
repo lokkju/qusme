@@ -288,6 +288,9 @@ importers:
       drizzle-kit:
         specifier: 0.31.11
         version: 0.31.11
+      miniflare:
+        specifier: 5.20261019.2-beta
+        version: 5.20261019.2-beta(@types/node@26.6.5)
 
 packages:
 
