@@ -5,8 +5,8 @@ import { decrypt, encrypt } from 'nostr-tools/nip49';
  * The scrypt cost (`log_n`, N = 2^log_n) used when a caller passes none. 18 costs 256 MiB of
  * memory per unlock (128 * r * N bytes with r = 8), within the reach of current phones, where the
  * PWA unlocks (spec 6.1, 12). Each step up doubles the time and memory of an unlock, and of every
- * offline passphrase guess against the recovery backup. The queue key's value is an open question
- * in the spec (section 17); this default is provisional.
+ * offline passphrase guess against the recovery backup. The spec sets 18 for the queue key
+ * (section 6.1, decided 2026-10-27 in section 17).
  */
 export const NCRYPTSEC_DEFAULT_LOG_N = 18;
 /** The lowest `log_n` accepted when encrypting: NIP-49's smallest example, 64 MiB. */

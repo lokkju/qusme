@@ -139,7 +139,7 @@ The relay is the source of truth for drafts, destinations, and state. The servic
 
 **Generation.** On first setup, the device generates the queue key locally. The service is not involved.
 
-**At rest on devices.** Stored NIP-49-encrypted (`ncryptsec`) in `storage.local` (extension) or IndexedDB (PWA). Unlocked per session with the user's passphrase; the unlocked key lives in `storage.session` (extension) or memory (PWA). Devices may offer a "stay unlocked on this device" option that stores the key unencrypted locally; off by default.
+**At rest on devices.** Stored NIP-49-encrypted (`ncryptsec`) in `storage.local` (extension) or IndexedDB (PWA), at scrypt cost `log_n` 18 (256 MiB per unlock). A device can raise the cost later by re-encrypting the key and republishing the recovery backup; decoders refuse an `ncryptsec` above `log_n` 20. Unlocked per session with the user's passphrase; the unlocked key lives in `storage.session` (extension) or memory (PWA). Devices may offer a "stay unlocked on this device" option that stores the key unencrypted locally; off by default.
 
 **Recovery backup.** The same `ncryptsec` is published to the private relay as an addressable NIP-78 event (`d` = `qus.me/recovery`). Recovery on a new device needs only the relay URL, the queue npub, and the passphrase. The recovering device authenticates to the relay with a throwaway key, since it does not yet hold the queue key, and the relay serves this one event to any authenticated connection (9.1). Anyone who knows the relay URL and the queue npub can therefore fetch the `ncryptsec` and try passphrases offline; the setup UI checks passphrase strength for that reason. A forgotten passphrase with no paired device remaining loses the queue; this is stated in the UI at setup.
 
@@ -569,7 +569,6 @@ Firefox for Android users can also run the extension.
 
 - Workers relay viability against 9.1 ([#11](https://github.com/lokkju/qusme/issues/11)); the hosted relay's software depends on it (9.2).
 - The hosted relay's hostname. v0.2 proposed `relay.qus.me`; nothing has settled it.
-- The NIP-49 scrypt cost (`log_n`) for the queue key's `ncryptsec`. The recovery backup is readable by anyone who knows the relay URL and queue npub (6.1, 9.1), so the cost sets how fast an attacker can guess passphrases offline, against how long unlocking takes on a phone.
 - The relays the registry publisher key lists in its NIP-65 relay list, and so the ones builds bundle (10.3).
 
 ### Decided
@@ -582,3 +581,4 @@ Firefox for Android users can also run the extension.
 - 2026-10-27: submission expiration is a per-grant setting, default 30 days, refused above 90 (7.4, 7.5; [#30](https://github.com/lokkju/qusme/issues/30)).
 - 2026-10-27: kind numbers are picked from unused ranges before v1 and used in v1, with parsers accepting former numbers (2.2; [#31](https://github.com/lokkju/qusme/issues/31)).
 - 2026-10-27: device pairing adopts NIP-AB; there is no separate Device Linking NIP (8.3; [#26](https://github.com/lokkju/qusme/issues/26)).
+- 2026-10-27: the queue key's `ncryptsec` uses NIP-49 `log_n` 18. The recovery backup is readable by anyone who knows the relay URL and queue npub (6.1, 9.1), so the cost sets how fast an attacker can guess passphrases offline, against how long unlocking takes on a phone. One unlock measured 1.28 s at 18 on a Node 24 server (0.32 s at 16, 5.2 s at 20); phones are slower, and a device unlocks once per session (6.1; [#40](https://github.com/lokkju/qusme/issues/40)).
