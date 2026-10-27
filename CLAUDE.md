@@ -26,7 +26,7 @@ CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on
 - `packages/nostr`: event builders and parsers shared by the service, extension and PWA.
 - `packages/store-sql`: Drizzle schema (`src/schema.ts`) and the generated migrations in `migrations/`. Never edit a migration that has been merged; generate a new one.
 - `packages/entry-worker`: Workers entrypoint and `wrangler.jsonc`.
-- `packages/entry-node`: Node entrypoint and Dockerfile. `image.yml` pushes the image to zot (`registry.lab.lokkju.com/lokkju/qusme`) only; never to ghcr.io.
+- `packages/entry-node`: Node entrypoint and Dockerfile. `image.yml` pushes the image to zot (`registry.lab.lokkju.com/builds/qusme`) only; never to ghcr.io.
 - `packages/extension`: WXT. Its permissions are exactly `activeTab`, `scripting`, `contextMenus`, `storage` (spec 11.2, `src/permissions.ts`, tested). No host permissions, no `tabs`.
 - `packages/pwa`: Preact, Vite, Tailwind v4 with the CSS-first `@theme` in `src/index.css`.
 

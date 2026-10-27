@@ -55,7 +55,7 @@ The service is served at `https://app.qus.me`, with MCP at `/mcp`. It runs on th
 
 `packages/entry-node` runs on the homelab's k3s cluster behind the Cloudflare tunnel at app.qus.me, deployed by [lokkju/infra](https://github.com/lokkju/infra) ([lokkju/infra#660](https://github.com/lokkju/infra/issues/660)). This repo builds the image:
 
-- `.github/workflows/image.yml` builds `packages/entry-node/Dockerfile` on the `homelab-build` runner and, on every push to `main` (or by hand), pushes it to zot as `registry.lab.lokkju.com/lokkju/qusme`, tagged with the full and the short commit SHA. The job summary has the digest. Pull requests that touch the image's packages build it without pushing.
+- `.github/workflows/image.yml` builds `packages/entry-node/Dockerfile` on the `homelab-build` runner and, on every push to `main` (or by hand), pushes it to zot as `registry.lab.lokkju.com/builds/qusme`, tagged with the full and the short commit SHA. The job summary has the digest. Pull requests that touch the image's packages build it without pushing.
 - lokkju/infra owns the registry credentials this repo pushes with (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD`, from its `build_repos`), the runner, the deployment, its `QUSME_AGENT_KEY_SECRET`, the SQLite volume and the tunnel route. Images go to zot only, never to ghcr.io.
 
 To build it locally: `docker build -f packages/entry-node/Dockerfile --build-arg QUSME_VERSION=$(git rev-parse --short HEAD) .`, then `docker run -e QUSME_AGENT_KEY_SECRET=... -p 8787:8787 <image>` serves `/healthz` on :8787.

@@ -2,7 +2,7 @@ name: image
 
 # Builds packages/entry-node's Dockerfile on the homelab-build runner (rootless
 # BuildKit) and, on main or by hand, pushes it to zot as
-# registry.lab.lokkju.com/lokkju/qusme, tagged with the full and the short
+# registry.lab.lokkju.com/builds/qusme, tagged with the full and the short
 # commit SHA. lokkju/infra's `build_repos` provides the REGISTRY_HOST,
 # REGISTRY_USER and REGISTRY_PASSWORD secrets and lokkju/infra deploys the
 # image (lokkju/infra#660). Never ghcr.io.
@@ -67,8 +67,8 @@ jobs:
           build-args: |
             QUSME_VERSION=${{ steps.v.outputs.short }}
           tags: |
-            ${{ secrets.REGISTRY_HOST }}/lokkju/qusme:${{ github.sha }}
-            ${{ secrets.REGISTRY_HOST }}/lokkju/qusme:${{ steps.v.outputs.short }}
+            ${{ secrets.REGISTRY_HOST }}/builds/qusme:${{ github.sha }}
+            ${{ secrets.REGISTRY_HOST }}/builds/qusme:${{ steps.v.outputs.short }}
           cache-from: type=registry,ref=${{ secrets.REGISTRY_HOST }}/cache/qusme
           # Only pushes write the cache
           cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/cache/qusme,mode=max,image-manifest=true,oci-mediatypes=true', secrets.REGISTRY_HOST) || '' }}
@@ -82,11 +82,11 @@ jobs:
           SHORT: ${{ steps.v.outputs.short }}
         run: |
           {
-            echo "### registry.lab.lokkju.com/lokkju/qusme"
+            echo "### registry.lab.lokkju.com/builds/qusme"
             echo
             echo "| | |"
             echo "| --- | --- |"
             echo "| Digest | \`${DIGEST}\` |"
             echo "| Tags | \`${GITHUB_SHA}\`, \`${SHORT}\` |"
-            echo "| Pin | \`registry.lab.lokkju.com/lokkju/qusme:${SHORT}@${DIGEST}\` |"
+            echo "| Pin | \`registry.lab.lokkju.com/builds/qusme:${SHORT}@${DIGEST}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
