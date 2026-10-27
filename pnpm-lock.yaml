@@ -181,12 +181,19 @@ importers:
 
   packages/core:
     dependencies:
+      '@qusme/nostr':
+        specifier: workspace:*
+        version: link:../nostr
       '@qusme/store-sql':
         specifier: workspace:*
         version: link:../store-sql
       hono:
         specifier: 4.13.14
         version: 4.13.14
+    devDependencies:
+      miniflare:
+        specifier: 5.20261019.2-beta
+        version: 5.20261019.2-beta(@types/node@26.6.5)
 
   packages/entry-node:
     dependencies:
@@ -199,6 +206,10 @@ importers:
       '@qusme/store-sql':
         specifier: workspace:*
         version: link:../store-sql
+    devDependencies:
+      '@qusme/nostr':
+        specifier: workspace:*
+        version: link:../nostr
 
   packages/entry-worker:
     dependencies:

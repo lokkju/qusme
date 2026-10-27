@@ -407,6 +407,8 @@ The service is a `createApp(deps)` Hono factory using only Web-standard APIs, wi
 
 Tokens don't store a queue pubkey. A token is bound to its agent key, and the queue comes from that key's binding, so a rotation rebind (6.1) is one update to the binding and every token follows it. A submission receipt carries its own `expires_at`, set no earlier than both the gift wrap's NIP-40 expiration and the end of the quota period it counts toward, so `list_submissions` shows a submission for as long as the wrap can exist and the quota count (7.4) never loses a receipt early.
 
+Requests that devices sign with NIP-98 are checked against the configured public origin (`https://app.qus.me`) plus the request's path and query, never against the `Host` or forwarded headers, since behind the tunnel the Node server sees neither. The service holds each accepted event id until the event's 60-second window has passed and refuses it again until then.
+
 SQLite on both targets (D1 on Workers, a SQLite file on Node). Rows with a TTL carry an `expires_at` column, every read filters on it, and a sweep deletes expired rows. Nothing lives in KV: KV's free-tier write limit is account-wide and small, and every pairing step is a write. Nostr publishing uses outbound websockets, available on both runtimes.
 
 ```text
