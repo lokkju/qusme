@@ -1,0 +1,784 @@
+{
+  "run_at": "2026-10-27T09:24:15.984Z",
+  "results": [
+    {
+      "relay": "wss://auth.nostr1.com",
+      "nip11": {
+        "software": "git+https://github.com/hoytech/strfry.git",
+        "version": "strfry v315-3cff8c9",
+        "supported_nips": [1, 2, 4, 9, 11, 12, 16, 20, 22, 28, 33, 40, 17, 86, 77, 42],
+        "limitation": {
+          "payment_required": false,
+          "max_message_length": 262200,
+          "max_subscriptions": 80,
+          "max_filters": 1000,
+          "max_limit": 10000,
+          "max_event_tags": 10000,
+          "max_content_length": 262140,
+          "min_pow_difficulty": 0,
+          "auth_required": true,
+          "created_at_lower_limit": 94608000,
+          "created_at_upper_limit": 900
+        }
+      },
+      "draft_31234": {
+        "write": "refused (blocked kind 31234 reason: this relay is for private messages only)",
+        "read": {
+          "author": "no",
+          "other_authed": "no",
+          "unauthed": "closed (auth-required: you must auth)"
+        }
+      },
+      "recovery_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "closed (auth-required: you must auth)"
+        }
+      },
+      "destinations_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "closed (auth-required: you must auth)"
+        }
+      },
+      "submitters_13234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "closed (auth-required: you must auth)",
+          "agent": "yes"
+        }
+      },
+      "grant_33234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "closed (auth-required: you must auth)",
+          "agent": "yes"
+        }
+      },
+      "giftwrap_1059": {
+        "write_agent_authed": "accepted",
+        "write_unknown_unauthed": "refused (auth-required: you must auth)",
+        "read_by_recipient": "yes",
+        "read_by_other_authed": "no",
+        "read_unauthed": "closed (auth-required: you must auth)"
+      },
+      "pairing_24134": {
+        "write": "accepted",
+        "live_to_recipient": "yes",
+        "live_to_other_authed": "yes",
+        "live_unauthed": "closed (auth-required: you must auth)",
+        "stored": "closed (auth-required: you must auth)"
+      },
+      "size": {
+        "10KB": "refused (blocked kind 31234 reason: this relay is for private messages only)",
+        "64KB": "refused (blocked kind 31234 reason: this relay is for private messages only)"
+      },
+      "delete_author": {
+        "write": "accepted",
+        "still_served": "no"
+      },
+      "delete_recipient_1059": {
+        "write": "accepted",
+        "still_served": "yes",
+        "republish": "accepted",
+        "served_after_republish": "yes"
+      },
+      "burst_30": {
+        "accepted": 0,
+        "ms": 123,
+        "refusals": ["blocked kind 31234 reason: this relay is for private messages only"]
+      },
+      "expiration": {
+        "write": "refused (blocked kind 31234 reason: this relay is for private messages only)",
+        "already_expired_write": "refused (invalid: event expired)",
+        "served_after_expiry": "no",
+        "wrap_write": "accepted",
+        "wrap_served_after_expiry": "no"
+      },
+      "auth": {
+        "challenge_on_connect": true,
+        "author": "ok",
+        "agent": "ok",
+        "other": "ok"
+      }
+    },
+    {
+      "relay": "wss://relay.0xchat.com",
+      "nip11": {
+        "error": "TypeError: fetch failed"
+      },
+      "error": "Error: connect error"
+    },
+    {
+      "relay": "wss://inbox.nostr.wine",
+      "nip11": {
+        "software": "https://inbox.nostr.wine",
+        "version": "0.1.4",
+        "supported_nips": [1, 2, 4, 9, 11, 40, 42],
+        "limitation": {
+          "auth_required": true,
+          "created_at_lower_limit": 94608000,
+          "created_at_upper_limit": 300,
+          "max_event_tags": 2000,
+          "max_limit": 1000,
+          "max_message_length": 196608,
+          "max_subid_length": 71,
+          "max_subscriptions": 50,
+          "min_pow_difficulty": 0,
+          "payment_required": true
+        },
+        "fees": {
+          "subscription": [
+            {
+              "amount": 2500000,
+              "period": 2592000,
+              "unit": "msats"
+            }
+          ]
+        },
+        "retention": [
+          {
+            "kinds": [4, 1059, 1984, 9735, 65000, 65001],
+            "time": null
+          },
+          {
+            "time": 0
+          }
+        ]
+      },
+      "draft_31234": {
+        "write": "refused (blocked: inbox.nostr.wine does not accept this event kind)",
+        "read": {
+          "author": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "other_authed": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "unauthed": "closed (blocked: this relay does not store any of the kinds in this request)"
+        }
+      },
+      "recovery_30078": {
+        "write": "refused (blocked: inbox.nostr.wine does not accept this event kind)",
+        "read": {
+          "author": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "other_authed": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "unauthed": "closed (blocked: this relay does not store any of the kinds in this request)"
+        }
+      },
+      "destinations_30078": {
+        "write": "refused (blocked: inbox.nostr.wine does not accept this event kind)",
+        "read": {
+          "author": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "other_authed": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "unauthed": "closed (blocked: this relay does not store any of the kinds in this request)"
+        }
+      },
+      "submitters_13234": {
+        "write": "refused (blocked: inbox.nostr.wine does not accept this event kind)",
+        "read": {
+          "author": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "other_authed": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "unauthed": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "agent": "closed (blocked: this relay does not store any of the kinds in this request)"
+        }
+      },
+      "grant_33234": {
+        "write": "refused (blocked: inbox.nostr.wine does not accept this event kind)",
+        "read": {
+          "author": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "other_authed": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "unauthed": "closed (blocked: this relay does not store any of the kinds in this request)",
+          "agent": "closed (blocked: this relay does not store any of the kinds in this request)"
+        }
+      },
+      "giftwrap_1059": {
+        "write_agent_authed": "refused (blocked: the inbox you tried to reach does not exist)",
+        "write_unknown_unauthed": "refused (blocked: the inbox you tried to reach does not exist)",
+        "read_by_recipient": "closed (auth-required: this relay only serves private notes to authenticated authors or recipients)",
+        "read_by_other_authed": "closed (auth-required: this relay only serves private notes to authenticated authors or recipients)",
+        "read_unauthed": "closed (auth-required: this relay only serves private notes to authenticated authors or recipients)"
+      },
+      "pairing_24134": {
+        "write": "refused (blocked: inbox.nostr.wine does not accept this event kind)",
+        "live_to_recipient": "closed (blocked: this relay does not store any of the kinds in this request)",
+        "live_to_other_authed": "closed (blocked: this relay does not store any of the kinds in this request)",
+        "live_unauthed": "closed (blocked: this relay does not store any of the kinds in this request)",
+        "stored": "closed (blocked: this relay does not store any of the kinds in this request)"
+      },
+      "size": {
+        "10KB": "refused (blocked: inbox.nostr.wine does not accept this event kind)",
+        "64KB": "refused (blocked: inbox.nostr.wine does not accept this event kind)"
+      },
+      "delete_author": {
+        "write": "accepted",
+        "still_served": "closed (blocked: this relay does not store any of the kinds in this request)"
+      },
+      "delete_recipient_1059": {
+        "skipped": "gift wrap not stored"
+      },
+      "burst_30": {
+        "accepted": 0,
+        "ms": 39,
+        "refusals": ["blocked: inbox.nostr.wine does not accept this event kind"]
+      },
+      "expiration": {
+        "write": "refused (blocked: inbox.nostr.wine does not accept this event kind)",
+        "already_expired_write": "refused (invalid: event expired)",
+        "served_after_expiry": "closed (blocked: this relay does not store any of the kinds in this request)",
+        "wrap_write": "refused (blocked: the inbox you tried to reach does not exist)",
+        "wrap_served_after_expiry": "not stored"
+      },
+      "auth": {
+        "challenge_on_connect": true,
+        "author": "refused: restricted: user unauthorized",
+        "agent": "not attempted",
+        "other": "refused: restricted: user unauthorized"
+      }
+    },
+    {
+      "relay": "wss://nostr.wine",
+      "nip11": {
+        "software": "https://nostr.wine",
+        "version": "0.3.3",
+        "supported_nips": [1, 2, 4, 9, 11, 40, 42, 50, 70],
+        "limitation": {
+          "auth_required": false,
+          "created_at_lower_limit": 94608000,
+          "created_at_upper_limit": 300,
+          "max_event_tags": 4000,
+          "max_limit": 1000,
+          "max_message_length": 524288,
+          "max_subid_length": 71,
+          "max_subscriptions": 50,
+          "min_pow_difficulty": 0,
+          "payment_required": true,
+          "restricted_writes": true
+        },
+        "fees": {
+          "admission": [
+            {
+              "amount": 18888000,
+              "unit": "msats"
+            }
+          ]
+        }
+      },
+      "draft_31234": {
+        "write": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "read": {
+          "author": "no",
+          "other_authed": "no",
+          "unauthed": "no"
+        }
+      },
+      "recovery_30078": {
+        "write": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "read": {
+          "author": "no",
+          "other_authed": "no",
+          "unauthed": "no"
+        }
+      },
+      "destinations_30078": {
+        "write": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "read": {
+          "author": "no",
+          "other_authed": "no",
+          "unauthed": "no"
+        }
+      },
+      "submitters_13234": {
+        "write": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "read": {
+          "author": "no",
+          "other_authed": "no",
+          "unauthed": "no",
+          "agent": "no"
+        }
+      },
+      "grant_33234": {
+        "write": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "read": {
+          "author": "no",
+          "other_authed": "no",
+          "unauthed": "no",
+          "agent": "no"
+        }
+      },
+      "giftwrap_1059": {
+        "write_agent_authed": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "write_unknown_unauthed": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "read_by_recipient": "no",
+        "read_by_other_authed": "closed (auth-required: this relay only serves private notes to authenticated authors or recipients)",
+        "read_unauthed": "closed (auth-required: this relay only serves private notes to authenticated authors or recipients)"
+      },
+      "pairing_24134": {
+        "write": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "live_to_recipient": "no",
+        "live_to_other_authed": "no",
+        "live_unauthed": "no",
+        "stored": "no"
+      },
+      "size": {
+        "10KB": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "64KB": "refused (restricted: sign up at https://nostr.wine to write events to this relay)"
+      },
+      "delete_author": {
+        "write": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "still_served": "no"
+      },
+      "delete_recipient_1059": {
+        "skipped": "gift wrap not stored"
+      },
+      "burst_30": {
+        "accepted": 0,
+        "ms": 7594,
+        "refusals": ["restricted: sign up at https://nostr.wine to write events to this relay"]
+      },
+      "expiration": {
+        "write": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "already_expired_write": "refused (invalid: event expired)",
+        "served_after_expiry": "no",
+        "wrap_write": "refused (restricted: sign up at https://nostr.wine to write events to this relay)",
+        "wrap_served_after_expiry": "not stored"
+      },
+      "auth": {
+        "challenge_on_connect": true,
+        "author": "ok",
+        "agent": "not attempted",
+        "other": "ok"
+      }
+    },
+    {
+      "relay": "wss://nos.lol",
+      "nip11": {
+        "software": "git+https://github.com/hoytech/strfry.git",
+        "version": "1.1.3",
+        "supported_nips": [1, 2, 4, 9, 11, 28, 40, 45, 70],
+        "limitation": {
+          "max_limit": 500,
+          "max_message_length": 131072,
+          "max_subscriptions": 100
+        }
+      },
+      "draft_31234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "recovery_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "destinations_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "submitters_13234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes",
+          "agent": "yes"
+        }
+      },
+      "grant_33234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes",
+          "agent": "yes"
+        }
+      },
+      "giftwrap_1059": {
+        "write_agent_authed": "accepted",
+        "write_unknown_unauthed": "accepted",
+        "read_by_recipient": "yes",
+        "read_by_other_authed": "yes",
+        "read_unauthed": "yes"
+      },
+      "pairing_24134": {
+        "write": "accepted",
+        "live_to_recipient": "yes",
+        "live_to_other_authed": "yes",
+        "live_unauthed": "yes",
+        "stored": "yes"
+      },
+      "size": {
+        "10KB": "accepted",
+        "64KB": "refused (invalid: event too large: 65909)"
+      },
+      "delete_author": {
+        "write": "accepted",
+        "still_served": "no"
+      },
+      "delete_recipient_1059": {
+        "write": "accepted",
+        "still_served": "yes",
+        "republish": "accepted",
+        "served_after_republish": "yes"
+      },
+      "burst_30": {
+        "accepted": 30,
+        "ms": 302,
+        "refusals": []
+      },
+      "expiration": {
+        "write": "accepted",
+        "already_expired_write": "refused (invalid: event expired)",
+        "served_after_expiry": "no",
+        "wrap_write": "accepted",
+        "wrap_served_after_expiry": "no"
+      },
+      "auth": {
+        "challenge_on_connect": false,
+        "author": "not attempted",
+        "agent": "not attempted",
+        "other": "not attempted"
+      }
+    },
+    {
+      "relay": "wss://relay.damus.io",
+      "nip11": {
+        "software": "git+https://github.com/hoytech/strfry.git",
+        "version": "1.1.0-158-gb705403ddf49",
+        "supported_nips": [1, 2, 4, 9, 11, 28, 40, 45, 59, 70],
+        "limitation": {
+          "max_limit": 500,
+          "max_message_length": 1000000,
+          "max_subscriptions": 200
+        }
+      },
+      "error": "Error: connect error"
+    },
+    {
+      "relay": "wss://relay.primal.net",
+      "nip11": {
+        "software": "git+https://github.com/hoytech/strfry.git",
+        "version": "1.1.3",
+        "supported_nips": [1, 2, 4, 9, 11, 28, 40, 45, 70],
+        "limitation": {
+          "max_limit": 500,
+          "max_message_length": 1000000,
+          "max_subscriptions": 20
+        }
+      },
+      "draft_31234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "recovery_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "destinations_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "submitters_13234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes",
+          "agent": "yes"
+        }
+      },
+      "grant_33234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes",
+          "agent": "yes"
+        }
+      },
+      "giftwrap_1059": {
+        "write_agent_authed": "accepted",
+        "write_unknown_unauthed": "accepted",
+        "read_by_recipient": "yes",
+        "read_by_other_authed": "yes",
+        "read_unauthed": "yes"
+      },
+      "pairing_24134": {
+        "write": "accepted",
+        "live_to_recipient": "yes",
+        "live_to_other_authed": "yes",
+        "live_unauthed": "yes",
+        "stored": "yes"
+      },
+      "size": {
+        "10KB": "accepted",
+        "64KB": "accepted"
+      },
+      "delete_author": {
+        "write": "accepted",
+        "still_served": "no"
+      },
+      "delete_recipient_1059": {
+        "write": "accepted",
+        "still_served": "yes",
+        "republish": "accepted",
+        "served_after_republish": "yes"
+      },
+      "burst_30": {
+        "accepted": 30,
+        "ms": 360,
+        "refusals": []
+      },
+      "expiration": {
+        "write": "accepted",
+        "already_expired_write": "refused (invalid: event expired)",
+        "served_after_expiry": "no",
+        "wrap_write": "accepted",
+        "wrap_served_after_expiry": "no"
+      },
+      "auth": {
+        "challenge_on_connect": false,
+        "author": "not attempted",
+        "agent": "not attempted",
+        "other": "not attempted"
+      }
+    },
+    {
+      "relay": "wss://relay.nostr.net",
+      "nip11": {
+        "software": "git+https://github.com/hoytech/strfry.git",
+        "version": "1.1.2-148-g4cd3cf6",
+        "supported_nips": [1, 2, 4, 9, 11, 28, 40, 45, 59, 70, 77],
+        "limitation": {
+          "max_limit": 100,
+          "max_message_length": 262144,
+          "max_subscriptions": 100
+        }
+      },
+      "draft_31234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "recovery_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "destinations_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "submitters_13234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes",
+          "agent": "yes"
+        }
+      },
+      "grant_33234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes",
+          "agent": "yes"
+        }
+      },
+      "giftwrap_1059": {
+        "write_agent_authed": "accepted",
+        "write_unknown_unauthed": "accepted",
+        "read_by_recipient": "closed (ERROR: auth-required: requested filter requires authentication)",
+        "read_by_other_authed": "closed (ERROR: auth-required: requested filter requires authentication)",
+        "read_unauthed": "closed (ERROR: auth-required: requested filter requires authentication)"
+      },
+      "pairing_24134": {
+        "write": "accepted",
+        "live_to_recipient": "yes",
+        "live_to_other_authed": "yes",
+        "live_unauthed": "yes",
+        "stored": "yes"
+      },
+      "size": {
+        "10KB": "accepted",
+        "64KB": "accepted"
+      },
+      "delete_author": {
+        "write": "accepted",
+        "still_served": "no"
+      },
+      "delete_recipient_1059": {
+        "write": "accepted",
+        "still_served": "no",
+        "republish": "refused (deleted: user requested deletion)",
+        "served_after_republish": "no"
+      },
+      "burst_30": {
+        "accepted": 30,
+        "ms": 395,
+        "refusals": []
+      },
+      "expiration": {
+        "write": "accepted",
+        "already_expired_write": "refused (invalid: event expired)",
+        "served_after_expiry": "yes",
+        "wrap_write": "accepted",
+        "wrap_served_after_expiry": "closed (ERROR: auth-required: requested filter requires authentication)"
+      },
+      "auth": {
+        "challenge_on_connect": true,
+        "author": "refused: error: relay needs serviceUrl to be configured before AUTH can work",
+        "agent": "not attempted",
+        "other": "refused: error: relay needs serviceUrl to be configured before AUTH can work"
+      }
+    },
+    {
+      "relay": "wss://relay.ditto.pub",
+      "nip11": {
+        "software": "https://gitworkshop.dev/soapbox.pub/ditto-relay",
+        "version": "2.5.1",
+        "supported_nips": [1, 9, 11, 40, 42, 45, 50, 62, 70, 77],
+        "limitation": {
+          "max_message_length": 4000000,
+          "max_subscriptions": 20,
+          "max_filters": 100,
+          "max_subid_length": 100,
+          "max_limit": 1000,
+          "default_limit": 100,
+          "created_at_upper_limit": 900,
+          "min_pow_difficulty": 0,
+          "auth_required": false,
+          "payment_required": false,
+          "max_filter_values": 20000
+        }
+      },
+      "draft_31234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "recovery_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "destinations_30078": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes"
+        }
+      },
+      "submitters_13234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes",
+          "agent": "yes"
+        }
+      },
+      "grant_33234": {
+        "write": "accepted",
+        "read": {
+          "author": "yes",
+          "other_authed": "yes",
+          "unauthed": "yes",
+          "agent": "yes"
+        }
+      },
+      "giftwrap_1059": {
+        "write_agent_authed": "accepted",
+        "write_unknown_unauthed": "accepted",
+        "read_by_recipient": "yes",
+        "read_by_other_authed": "yes",
+        "read_unauthed": "yes"
+      },
+      "pairing_24134": {
+        "write": "accepted",
+        "live_to_recipient": "yes",
+        "live_to_other_authed": "yes",
+        "live_unauthed": "yes",
+        "stored": "no"
+      },
+      "size": {
+        "10KB": "accepted",
+        "64KB": "accepted"
+      },
+      "delete_author": {
+        "write": "accepted",
+        "still_served": "no"
+      },
+      "delete_recipient_1059": {
+        "write": "accepted",
+        "still_served": "no",
+        "republish": "refused (blocked: this event has been deleted)",
+        "served_after_republish": "no"
+      },
+      "burst_30": {
+        "accepted": 30,
+        "ms": 85,
+        "refusals": []
+      },
+      "expiration": {
+        "write": "accepted",
+        "already_expired_write": "refused (invalid: event has expired)",
+        "served_after_expiry": "no",
+        "wrap_write": "accepted",
+        "wrap_served_after_expiry": "no"
+      },
+      "auth": {
+        "challenge_on_connect": false,
+        "author": "not attempted",
+        "agent": "not attempted",
+        "other": "not attempted"
+      }
+    }
+  ]
+}
