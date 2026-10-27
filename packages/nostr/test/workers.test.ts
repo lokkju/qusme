@@ -29,6 +29,7 @@ it('runs under the Workers runtime', { timeout: 60_000 }, async () => {
   try {
     const res = await mf.dispatchFetch('http://localhost/');
     expect(await res.json()).toEqual({
+      draft: 'field_value',
       self: 'to self',
       rumor: 'wrapped',
       sealedByAgent: true,

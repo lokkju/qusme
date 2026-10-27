@@ -2,13 +2,10 @@ import { randomBytes } from '@noble/hashes/utils.js';
 import type { EventTemplate, NostrEvent, UnsignedEvent } from 'nostr-tools/core';
 import { validateEvent } from 'nostr-tools/core';
 import { finalizeEvent, generateSecretKey, getEventHash, verifyEvent } from 'nostr-tools/pure';
+import { KIND_GIFT_WRAP, KIND_SEAL } from './kinds.ts';
 import { nip44Encrypt } from './nip44.ts';
 import type { Signer } from './signer.ts';
 
-/** NIP-59 seal. */
-export const KIND_SEAL = 13;
-/** NIP-59 gift wrap. */
-export const KIND_GIFT_WRAP = 1059;
 /**
  * How far into the past NIP-59 timestamps are randomized, in seconds. Ingestion queries with a
  * lookback longer than this (spec 11.4).

@@ -1,11 +1,16 @@
 // Bundled by workers.test.ts and run in workerd: the helpers using only what a Worker has.
 import {
+  buildDraftWrap,
+  buildSubmission,
   createLocalSigner,
   decodeNcryptsec,
   encodeNcryptsec,
   giftWrap,
+  ingestedDraftD,
   nip44DecryptFromSelf,
   nip44EncryptToSelf,
+  openSubmission,
+  parseDraftWrap,
   unwrapGiftWrap,
 } from '../../src/index.ts';
 
@@ -25,7 +30,28 @@ export default {
     // log_n 16 (64 MiB) stays inside a Worker's 128 MB memory limit.
     const ncryptsec = encodeNcryptsec(key(3), 'passphrase', { logN: 16 });
 
+    // The section 7 builders and parsers: a submission ingested into a draft wrap.
+    const submission = await openSubmission(
+      await buildSubmission(agent, queuePubkey, {
+        site: 'x',
+        account: 'a',
+        field: 'text',
+        content: 'sub',
+      }),
+      queue
+    );
+    if (!submission.ok) throw new Error(submission.error.message);
+    const draftWrap = await buildDraftWrap(queue, {
+      d: ingestedDraftD(submission.value.wrapId),
+      draft: {
+        type: 'field_value',
+        value: { ...submission.value.value, status: 'active', inserted: [] },
+      },
+    });
+    const parsed = await parseDraftWrap(draftWrap, queue);
+
     return Response.json({
+      draft: parsed.ok && !parsed.value.deleted ? parsed.value.draft.type : 'failed',
       self: await nip44DecryptFromSelf(queue, selfPayload),
       rumor: opened.rumor.content,
       sealedByAgent: opened.sealPubkey === (await agent.getPublicKey()),
