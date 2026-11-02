@@ -1,0 +1,1 @@
+ALTER TABLE `bindings` ADD `storage_relays` text DEFAULT '[]' NOT NULL;
