@@ -2,6 +2,7 @@ import { createStore, type QusmeDb } from '@qusme/store-sql';
 import { Hono } from 'hono';
 import type { AgentKeyRing } from './agentKeyRing.ts';
 import { nip98Auth } from './nip98.ts';
+import { pairingRoutes } from './pairing.ts';
 
 /**
  * What an entrypoint hands the app. Everything runtime-specific (the database driver, secrets,
@@ -37,8 +38,11 @@ export function createApp(deps: AppDeps): Hono {
   // Streamable HTTP MCP endpoint (spec 8.4); not implemented yet.
   app.all('/mcp', (c) => c.json({ error: 'not implemented' }, 501));
 
-  // NIP-98 signed by the queue key (spec 8.3 step 2, 6.1); not implemented yet.
-  app.post('/pair', requireNip98, (c) => c.json({ error: 'not implemented' }, 501));
+  // Typed-code pairing rendezvous (spec 8.3 steps 2 and 3).
+  app.route(
+    '/pair',
+    pairingRoutes({ sessions: createStore(deps.db).pairingSessions, requireNip98 })
+  );
   app.post('/rotate', requireNip98, (c) => c.json({ error: 'not implemented' }, 501));
 
   return app;
