@@ -18,6 +18,12 @@ describe('agent key custody logging', () => {
     expect(text).not.toMatch(/\bconsole\s*\.|\blogger\b|\bdebug\s*\(/);
   });
 
+  // The OAuth server handles authorization codes, tokens and PKCE verifiers; it logs nothing.
+  it.each(readdirSync(join(src, 'oauth')))('oauth/%s makes no logging call', (file) => {
+    const text = readFileSync(join(src, 'oauth', file), 'utf8');
+    expect(text).not.toMatch(/\bconsole\s*\.|\blogger\b|\bdebug\s*\(/);
+  });
+
   it('entrypoints log rotation results without key material', () => {
     for (const file of [
       '../../entry-node/src/server.ts',
