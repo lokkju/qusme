@@ -7,10 +7,14 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p . && tsc -p test"
   },
   "dependencies": {
+    "@qusme/nostr": "workspace:*",
     "@qusme/store-sql": "workspace:*",
     "hono": "4.13.14"
+  },
+  "devDependencies": {
+    "miniflare": "5.20261019.2-beta"
   }
 }

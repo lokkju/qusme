@@ -7,7 +7,12 @@ export interface NodeConfig {
   dbPath: string;
   agentKeySecret: string;
   version: string;
+  /** The origin clients sign NIP-98 requests for (spec 8.5); never taken from request headers. */
+  publicOrigin: string;
 }
+
+/** Where the service is served in production, behind the Cloudflare tunnel and Traefik. */
+export const DEFAULT_PUBLIC_ORIGIN = 'https://app.qus.me';
 
 /** How often the Node entrypoint sweeps expired service state, as the Workers cron does. */
 export const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
@@ -23,6 +28,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv): NodeConfig {
     agentKeySecret,
     // Baked into the image at build time (the Dockerfile's QUSME_VERSION build argument).
     version: env.QUSME_VERSION ?? 'dev',
+    publicOrigin: env.QUSME_PUBLIC_ORIGIN ?? DEFAULT_PUBLIC_ORIGIN,
   };
 }
 
@@ -34,6 +40,7 @@ export function buildApp(config: NodeConfig) {
     version: config.version,
     db,
     agentKeySecret: config.agentKeySecret,
+    publicOrigin: config.publicOrigin,
   });
   const sweep = () => store.sweepExpired(Math.floor(Date.now() / 1000));
   return Object.assign(app, { sweep });

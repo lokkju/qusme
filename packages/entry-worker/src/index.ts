@@ -6,6 +6,8 @@ import { openD1 } from '@qusme/store-sql/d1';
 export interface Env {
   DB: D1Database;
   QUSME_AGENT_KEY_SECRET: string;
+  /** The origin clients sign NIP-98 requests for; a plain var in wrangler.jsonc. */
+  QUSME_PUBLIC_ORIGIN: string;
 }
 
 /** Set at build time through wrangler's `define` (the commit, in deploy.yml). */
@@ -17,6 +19,7 @@ export default {
       version: __QUSME_VERSION__,
       db: openD1(env.DB),
       agentKeySecret: env.QUSME_AGENT_KEY_SECRET,
+      publicOrigin: env.QUSME_PUBLIC_ORIGIN,
     });
     return app.fetch(request, env, ctx);
   },
