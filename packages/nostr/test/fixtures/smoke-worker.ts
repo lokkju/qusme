@@ -11,7 +11,10 @@ import {
   nip44DecryptFromSelf,
   nip44EncryptToSelf,
   openSubmission,
+  PairingSource,
+  PairingTarget,
   parseDraftWrap,
+  parsePairingUri,
   unwrapGiftWrap,
   validateFieldValue,
 } from '../../src/index.ts';
@@ -52,11 +55,24 @@ export default {
     });
     const parsed = await parseDraftWrap(draftWrap, queue);
 
+    // NIP-AB: @noble/curves' raw ECDH and the state machines, up to the released payload.
+    const source = new PairingSource(['wss://relay.example.com']);
+    const uri = parsePairingUri(source.uri);
+    if (!uri.ok) throw new Error(uri.error.message);
+    const target = new PairingTarget(uri.value, 'qr');
+    source.receive(target.offer);
+    target.confirmSas();
+    const steps = source
+      .confirmSas({ passphraseCopy: ncryptsec, relays: ['wss://relay.example.com'], queuePubkey })
+      .publish.map((event) => target.receive(event));
+    const released = steps[1]?.notice;
+
     return Response.json({
       draft: parsed.ok && !parsed.value.deleted ? parsed.value.draft.type : 'failed',
       self: await nip44DecryptFromSelf(queue, selfPayload),
       rumor: opened.rumor.content,
       sealedByAgent: opened.sealPubkey === (await agent.getPublicKey()),
+      pairing: source.sas === target.sas && released?.type === 'payload',
       ncryptsec: Array.from(decodeNcryptsec(ncryptsec, 'passphrase')).every((b) => b === 3),
       // The counters: Intl.Segmenter and the v-flag emoji regex exist in workerd.
       counts: [

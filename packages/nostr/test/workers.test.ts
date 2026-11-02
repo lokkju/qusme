@@ -33,6 +33,7 @@ it('runs under the Workers runtime', { timeout: 60_000 }, async () => {
       self: 'to self',
       rumor: 'wrapped',
       sealedByAgent: true,
+      pairing: true,
       ncryptsec: true,
       counts: [5, 1, 26, false],
     });

@@ -135,6 +135,52 @@ export {
   verifyHttpAuth,
 } from './nip98.ts';
 export {
+  ABORT_REASONS,
+  type AbortReason,
+  matchesQueuePubkey,
+  PAIRING_CREATED_AT_JITTER,
+  PAIRING_SESSION_TIMEOUT_MS,
+  PAIRING_STEP_TIMEOUT_MS,
+  type PairingChannel,
+  type PairingNotice,
+  type PairingOptions,
+  PairingSource,
+  type PairingSourceState,
+  type PairingStep,
+  PairingTarget,
+  type PairingTargetState,
+  pairingFilter,
+  type ReceivedPayload,
+  type SourcePayload,
+  type UnlockSecret,
+  unlockSecretFor,
+} from './nipAb.ts';
+export {
+  constantTimeEqual,
+  deriveSas,
+  deriveSessionId,
+  deriveTranscriptHash,
+  ecdhShared,
+  isCurvePoint,
+  type Sas,
+} from './nipAbCrypto.ts';
+export {
+  buildPairingUri,
+  NIP_AB_VERSION,
+  NOSTRPAIR_MAX_LENGTH,
+  NOSTRPAIR_MAX_RELAYS,
+  NOSTRPAIR_SCHEME,
+  type PairingUri,
+  parsePairingUri,
+} from './nipAbUri.ts';
+export {
+  CROCKFORD_ALPHABET,
+  formatPairingCode,
+  generatePairingCode,
+  normalizePairingCode,
+  PAIRING_CODE_LENGTH,
+} from './pairingCode.ts';
+export {
   buildPrivateRelayList,
   type PrivateRelayList,
   parsePrivateRelayList,
