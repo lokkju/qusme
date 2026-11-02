@@ -180,6 +180,8 @@ The rotation marker is a NIP-78 event under the old key, `d` = `qus.me/rotated`,
 
 Minted by the service when a device fetches a pending OAuth authorization (section 8.2, step 3), and destroyed if the user denies it or it expires before approval. Stored by the service, encrypted at rest with a service secret. One agent key per MCP client authorization, so revocation is per client.
 
+The service secret is 32 random bytes; each agent key is encrypted with AES-256-GCM under a key derived from it with HKDF-SHA256, bound to the secret's version, the agent pubkey and the key's row id, and is decrypted only for the duration of one operation. The secret rotates one version at a time: while the previous version's secret is still configured, the service re-encrypts every key under the new one, and a revoked key's ciphertext is discarded rather than re-encrypted.
+
 ### 6.3 External signers
 
 A user who prefers to keep the queue key in a NIP-46 bunker or NIP-07 extension can do so; devices then call the signer for every signature and decryption. Opening the popup over N drafts costs N remote `nip44_decrypt` round trips with a bunker. Supported, documented as slower, not the default.

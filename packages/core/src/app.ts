@@ -1,5 +1,6 @@
 import { createStore, type QusmeDb } from '@qusme/store-sql';
 import { Hono } from 'hono';
+import type { AgentKeyRing } from './agentKeyRing.ts';
 import { nip98Auth } from './nip98.ts';
 
 /**
@@ -12,8 +13,11 @@ export interface AppDeps {
   version: string;
   /** The service's own state (spec 8.5): D1 on Workers, a SQLite file on Node. */
   db: QusmeDb;
-  /** Encrypts agent keys at rest (spec 6.2). Unused until agent key custody lands. */
-  agentKeySecret: string;
+  /**
+   * The service secrets that encrypt agent keys at rest (spec 6.2), from `agentKeyRingFromEnv`.
+   * Routes take custody with `createAgentKeyCustody(createStore(db), agentKeys)`.
+   */
+  agentKeys: AgentKeyRing;
   /**
    * The origin clients sign NIP-98 requests for, `https://app.qus.me` in production. Configured,
    * never read from the request or forwarded headers.
