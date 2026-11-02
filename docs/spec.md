@@ -347,6 +347,8 @@ It does not hold queue keys, read drafts, sign as the user, or authorize submitt
 
 A pending authorization expires if no device approves it in time; the service then destroys any agent key minted for it. No live agent key exists without an approval.
 
+The endpoints, lifetimes, scope, and the rules for fetching client metadata and matching redirect URIs are in `docs/oauth.md`.
+
 **Client registration.** MCP clients identify themselves with OAuth Client ID Metadata Documents: the `client_id` is an HTTPS URL serving the client's metadata, and the service advertises `client_id_metadata_document_supported` in its authorization server metadata. The MCP authorization specification (revision 2025-11-25) makes this the recommended approach for clients and servers with no prior relationship, and lists Dynamic Client Registration only as an optional fallback. It also fits this service: there is no open registration endpoint that anyone can fill with client rows, and the client name on the approval screen comes from a document at a URL the client's publisher controls, whose host the approval screen shows next to the name. Clients that support only Dynamic Client Registration cannot connect until the service adds it.
 
 Revocation: the user removes the agent from the submitters list on any device, then optionally tells the service to destroy the key. Regardless of the service, devices discard the agent's submissions at ingestion from then on, and a relay meeting the qus.me relay profile refuses them at once. On the baseline profile the agent still knows the inbox pubkey, so the user may also rotate the inbox key (6.4).
