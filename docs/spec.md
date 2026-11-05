@@ -605,6 +605,12 @@ A context menu item on editable contexts, "Save to qus.me," reads the focused el
 
 The extension and PWA are where the user approves agent authorizations (8.2) and pending destinations. Approval UIs show the agent label, the host of its client ID URL (8.2), and the requested destinations, offer the `allow_new_destinations` toggle (off by default) with a one-line explanation, and require the queue to be unlocked.
 
+An approval re-reads the submitters list, grants, destinations and settings from every storage relay and goes no further if any relay is unreachable or does not answer, since a list republished from a partial read could drop an agent another device added. It publishes the submitters list with the agent added, then the grant, and needs every storage relay to accept both before it posts the approval naming those relays. The service may not see the new list at once, so the device retries a 409 `submitters_list_not_found` or `agent_not_in_submitters_list` a few times over about eight seconds before it reports the error; the request stays open and the user can approve again. Destinations the user shares are the confirmed ones, each with the fields the user lists for it (`text` until site definitions offer more) and its `override` when it has one (7.4).
+
+Revocation on a device publishes the submitters list without the agent first, then a NIP-09 deletion request for the agent's grant, best effort, then `DELETE /device/bindings/:agentPubkey` at the service (8.2). The agents view lists the agents on the submitters list with their labels, joined with the service's bindings for the client name and the host of its client ID; an agent the service still holds a key for but the list no longer names is shown as such, and revoking it again only tells the service.
+
+Confirming a pending destination sets its `status` to `confirmed`. Rejecting one first republishes each active draft submitted for it (by `destination` id, or by site and account for a draft without one) as `archived:dismissed`, then removes the destination; if a draft fails to republish, the destination stays pending and the user can reject it again.
+
 ### 11.9 Distribution
 
 WXT builds and zips both targets, including the sources archive AMO requires; `wxt submit` covers both stores.

@@ -338,7 +338,13 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
 
       // The device fetches the request: the agent key is minted now (spec 8.2 step 3).
       const fetched = await fetchOnDevice(s.code);
-      expect(fetched).toMatchObject({ client_name: 'Example Agent', scopes: ['drafts:submit'] });
+      expect(fetched).toMatchObject({
+        client_id: CLIENT_ID,
+        client_name: 'Example Agent',
+        client_host: 'client.example',
+        redirect_host: 'client.example',
+        scopes: ['drafts:submit'],
+      });
       expect(fetched.agent_pubkey).toMatch(/^[0-9a-f]{64}$/);
       const key = await h.store.agentKeys.getByPubkey(fetched.agent_pubkey);
       expect(key?.clientId).toBe(CLIENT_ID);
