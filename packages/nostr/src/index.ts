@@ -94,6 +94,24 @@ export {
   type SubmissionValue,
   submissionRumor,
 } from './fieldValue.ts';
+export {
+  DISCARD_REASONS,
+  type DiscardedWrap,
+  type DiscardReason,
+  INGEST_CAP,
+  INGEST_LOOKBACK_SECONDS,
+  type IngestedDraft,
+  type IngestInput,
+  type IngestOutcome,
+  inboxSince,
+  ingestSubmissions,
+  mergeDestinations,
+  mergeQuotaCounts,
+  pendingDestinationId,
+  RUMOR_FUTURE_SKEW_SECONDS,
+  retiredInboxDrainEnd,
+  type WrapRef,
+} from './ingest.ts';
 export * from './kinds.ts';
 export { minePow, powOf } from './nip13.ts';
 export {
@@ -126,7 +144,9 @@ export {
   type Rumor,
   type RumorTemplate,
   randomizedTimestamp,
+  SealRefused,
   type TimestampOptions,
+  type UnwrapOptions,
   type Unwrapped,
   unwrapGiftWrap,
 } from './nip59.ts';

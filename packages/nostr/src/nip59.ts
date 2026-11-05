@@ -54,6 +54,25 @@ export interface Unwrapped {
   expiration?: number;
 }
 
+/** What {@link unwrapGiftWrap} may be told to check between layers. */
+export interface UnwrapOptions {
+  /**
+   * Called with the seal's pubkey once the gift wrap layer is decrypted, before the seal's
+   * signature is verified or the rumor decrypted (spec 11.4). Returning false stops the unwrap
+   * with a {@link SealRefused}, so an unknown sender costs one ECDH, not three.
+   */
+  acceptSeal?: (sealPubkey: string) => boolean;
+}
+
+/** {@link UnwrapOptions.acceptSeal} refused the seal's pubkey. */
+export class SealRefused extends Error {
+  readonly sealPubkey: string;
+  constructor(sealPubkey: string) {
+    super('seal pubkey is not accepted');
+    this.sealPubkey = sealPubkey;
+  }
+}
+
 const currentTime = (options: TimestampOptions): number =>
   options.now ?? Math.floor(Date.now() / 1000);
 
@@ -165,10 +184,15 @@ function parseJson(text: string, layer: string): unknown {
 /**
  * Opens a gift wrap addressed to the signer and returns the rumor and the seal's pubkey. Throws
  * unless the wrap and seal are the right kinds with valid signatures, the seal's tags are empty,
- * the rumor is unsigned with a correct id, and the rumor's pubkey equals the seal's. The caller
- * still checks that the seal's pubkey is an authorized submitter (spec 11.4).
+ * the rumor is unsigned with a correct id, and the rumor's pubkey equals the seal's. Pass
+ * `acceptSeal` to check the seal's pubkey against the submitters list before the costlier layers
+ * (spec 11.4); without it the caller still has to check it.
  */
-export async function unwrapGiftWrap(wrapEvent: NostrEvent, signer: Signer): Promise<Unwrapped> {
+export async function unwrapGiftWrap(
+  wrapEvent: NostrEvent,
+  signer: Signer,
+  options: UnwrapOptions = {}
+): Promise<Unwrapped> {
   const wrap = signedFields(wrapEvent, 'gift wrap');
   if (wrap.kind !== KIND_GIFT_WRAP) throw new Error(`expected kind ${KIND_GIFT_WRAP}`);
   if (!verifyEvent(wrap)) throw new Error('gift wrap signature is invalid');
@@ -177,6 +201,9 @@ export async function unwrapGiftWrap(wrapEvent: NostrEvent, signer: Signer): Pro
   const seal = signedFields(parseJson(sealText, 'seal'), 'seal');
   if (seal.kind !== KIND_SEAL) throw new Error(`expected a kind ${KIND_SEAL} seal`);
   if (seal.tags.length !== 0) throw new Error('seal tags must be empty');
+  if (options.acceptSeal !== undefined && !options.acceptSeal(seal.pubkey)) {
+    throw new SealRefused(seal.pubkey);
+  }
   if (!verifyEvent(seal)) throw new Error('seal signature is invalid');
 
   const rumorValue = parseJson(await signer.nip44Decrypt(seal.pubkey, seal.content), 'rumor');
