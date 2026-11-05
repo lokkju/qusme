@@ -18,6 +18,7 @@ COPY packages/core packages/core
 COPY packages/nostr packages/nostr
 COPY packages/store-sql packages/store-sql
 COPY packages/entry-node packages/entry-node
+COPY registry registry
 
 ARG QUSME_VERSION=dev
 ENV QUSME_VERSION=${QUSME_VERSION} \

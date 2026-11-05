@@ -1,11 +1,13 @@
 import {
   type AgentKeyRing,
   agentKeyRingFromEnv,
+  bundledRegistry,
   createAgentKeyCustody,
   createApp,
 } from '@qusme/core';
 import { createStore } from '@qusme/store-sql';
 import { openSqlite } from '@qusme/store-sql/sqlite';
+import snapshot from '../../../registry/snapshot.json' with { type: 'json' };
 
 export interface NodeConfig {
   /** SQLite file for the service's state; ':memory:' for tests. */
@@ -15,6 +17,11 @@ export interface NodeConfig {
   version: string;
   /** The origin clients sign NIP-98 requests for (spec 8.5); never taken from request headers. */
   publicOrigin: string;
+  /**
+   * Tests only: a registry snapshot and the key to pin for it, in place of the bundled
+   * `registry/snapshot.json` and the production publisher key. Never read from the environment.
+   */
+  registry?: { snapshot: unknown; publisher: string };
 }
 
 /** Where the service is served in production, behind the Cloudflare tunnel and Traefik. */
@@ -39,18 +46,25 @@ export function configFromEnv(env: NodeJS.ProcessEnv): NodeConfig {
 
 /**
  * The app over a migrated SQLite file, a sweep of that file's expired state, and a re-encryption
- * pass that moves agent keys to the current secret version (a no-op unless one is below it).
+ * pass that moves agent keys to the current secret version (a no-op unless one is below it). The
+ * MCP tools get the bundled registry's verified definitions; a definition that fails
+ * verification is dropped with a log line.
  */
-export function buildApp(config: NodeConfig) {
+export function buildApp(config: NodeConfig, log: (line: string) => void = console.warn) {
   const db = openSqlite(config.dbPath);
   const store = createStore(db);
+  const registry = bundledRegistry(config.registry?.snapshot ?? snapshot, {
+    ...(config.registry && { publisher: config.registry.publisher }),
+    log,
+  });
   const app = createApp({
     version: config.version,
     db,
     agentKeys: config.agentKeys,
     publicOrigin: config.publicOrigin,
+    mcp: { registry },
   });
   const sweep = () => store.sweepExpired(Math.floor(Date.now() / 1000));
   const rotateAgentKeys = () => createAgentKeyCustody(store, config.agentKeys).rotate();
-  return Object.assign(app, { sweep, rotateAgentKeys });
+  return Object.assign(app, { sweep, rotateAgentKeys, registry });
 }

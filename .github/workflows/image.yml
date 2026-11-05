@@ -16,6 +16,7 @@ on:
       - packages/nostr/**
       - packages/store-sql/**
       - packages/entry-node/**
+      - registry/**
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml

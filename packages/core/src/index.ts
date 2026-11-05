@@ -17,6 +17,8 @@ export {
 export { type AppDeps, createApp } from './app.ts';
 export type { FoundGrant, GrantCache } from './mcp/grants.ts';
 export {
+  type BundledRegistryOptions,
+  bundledRegistry,
   type EffectiveDefinition,
   effectiveDefinition,
   loadRegistry,

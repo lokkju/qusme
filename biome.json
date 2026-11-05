@@ -14,7 +14,8 @@
       "!**/.wxt",
       "!**/.output",
       "!**/dist",
-      "!packages/nostr/test/vectors"
+      "!packages/nostr/test/vectors",
+      "!registry/snapshot.json"
     ]
   },
   "formatter": {

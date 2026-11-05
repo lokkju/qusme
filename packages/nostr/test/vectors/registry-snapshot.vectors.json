@@ -1,0 +1,673 @@
+{
+  "description": "qusme-registry-snapshot/1 vectors, written by packages/nostr/scripts/registry-vectors.ts in lokkju/qusme. Verify each snapshot against `publisher`; `valid` says whether it must pass.",
+  "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+  "cases": [
+    {
+      "name": "good",
+      "valid": true,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+          "id": "b03d009fbc65ded618244800c9c511dfab418a77307b7b5abc555719e1390dac",
+          "sig": "03fc3bd1f5b2a545cd8e089be1d7424e100a58eeca3939f8fb3ca10b2f887b90a9c48e0cba276854e50b080007e1d41d78e88457a1ae30631e961840129e0332"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "36136d3886bb8d60ed78334ce68337a0d4a68a20b0367b765482530bb8ccf062",
+            "sig": "28dbd6018a2bd62f239281712659aa9ddabc2e0a5b3bd907f04c0a82bdede64b699264c9773df63f87a72fc5d4ce23f299744626160ca37b6946000f39851d75"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "other"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Other 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"other\",\"version\":\"2026.11.1\",\"name\":\"Other\",\"match\":[\"https://other.example/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "5c1511d865fe34c7c67d9dd98c19c13d8967afe2ec4e3160e79a85cfd50ebc0f",
+            "sig": "69bc146455208f5018a0993095317f474ff9381f417edb695187bb3ce50a05674b8d070540d524d15bea22aeb77cc0ba030a32c7acc6bab6c1f8eaea0df0a66e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no definitions",
+      "valid": true,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+          "id": "b03d009fbc65ded618244800c9c511dfab418a77307b7b5abc555719e1390dac",
+          "sig": "c47d47611c4f265f219fbc9e02526daf4b17b1aedb0ba0a894fd6abda5645cd9c52ae42691494f71413b1b59d0c5100d970ac816527267dbdc606dfe7adbd923"
+        },
+        "siteDefinitions": []
+      }
+    },
+    {
+      "name": "tampered definition content",
+      "valid": false,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+          "id": "b03d009fbc65ded618244800c9c511dfab418a77307b7b5abc555719e1390dac",
+          "sig": "03fc3bd1f5b2a545cd8e089be1d7424e100a58eeca3939f8fb3ca10b2f887b90a9c48e0cba276854e50b080007e1d41d78e88457a1ae30631e961840129e0332"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":2800,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "36136d3886bb8d60ed78334ce68337a0d4a68a20b0367b765482530bb8ccf062",
+            "sig": "28dbd6018a2bd62f239281712659aa9ddabc2e0a5b3bd907f04c0a82bdede64b699264c9773df63f87a72fc5d4ce23f299744626160ca37b6946000f39851d75"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "other"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Other 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"other\",\"version\":\"2026.11.1\",\"name\":\"Other\",\"match\":[\"https://other.example/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "5c1511d865fe34c7c67d9dd98c19c13d8967afe2ec4e3160e79a85cfd50ebc0f",
+            "sig": "69bc146455208f5018a0993095317f474ff9381f417edb695187bb3ce50a05674b8d070540d524d15bea22aeb77cc0ba030a32c7acc6bab6c1f8eaea0df0a66e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tampered definition tag",
+      "valid": false,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+          "id": "b03d009fbc65ded618244800c9c511dfab418a77307b7b5abc555719e1390dac",
+          "sig": "03fc3bd1f5b2a545cd8e089be1d7424e100a58eeca3939f8fb3ca10b2f887b90a9c48e0cba276854e50b080007e1d41d78e88457a1ae30631e961840129e0332"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ],
+              [
+                "t",
+                "x"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "36136d3886bb8d60ed78334ce68337a0d4a68a20b0367b765482530bb8ccf062",
+            "sig": "28dbd6018a2bd62f239281712659aa9ddabc2e0a5b3bd907f04c0a82bdede64b699264c9773df63f87a72fc5d4ce23f299744626160ca37b6946000f39851d75"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "other"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Other 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"other\",\"version\":\"2026.11.1\",\"name\":\"Other\",\"match\":[\"https://other.example/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "5c1511d865fe34c7c67d9dd98c19c13d8967afe2ec4e3160e79a85cfd50ebc0f",
+            "sig": "69bc146455208f5018a0993095317f474ff9381f417edb695187bb3ce50a05674b8d070540d524d15bea22aeb77cc0ba030a32c7acc6bab6c1f8eaea0df0a66e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "definition signed by another key",
+      "valid": false,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+          "id": "b03d009fbc65ded618244800c9c511dfab418a77307b7b5abc555719e1390dac",
+          "sig": "143d967ed31f033038cc7063b72b55b6eb3407c561730cd68464b36ca01490913eaa5cae42463a945e82cd35d7c3c3ec02e56029317361bde9f1339a33e17d3f"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "9a41dce778eefc3db285fed71530555e6b2ef6734dbdab96c33401cf5401a365",
+            "id": "732ca9238f1779604ed5e507ac1cced29c5352c45ae613026526a303f1c9b642",
+            "sig": "e1de1a69626e28a3a533893c733b2dccc21e485dd2db92693fa9cf64e25f0da9893f43a5c18c43934e8526bdaa3711d91f2327528a2c3de9d083e224e4f41562"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "other"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Other 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"other\",\"version\":\"2026.11.1\",\"name\":\"Other\",\"match\":[\"https://other.example/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "5c1511d865fe34c7c67d9dd98c19c13d8967afe2ec4e3160e79a85cfd50ebc0f",
+            "sig": "69bc146455208f5018a0993095317f474ff9381f417edb695187bb3ce50a05674b8d070540d524d15bea22aeb77cc0ba030a32c7acc6bab6c1f8eaea0df0a66e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "definition with the pinned pubkey and another key signature",
+      "valid": false,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+          "id": "b03d009fbc65ded618244800c9c511dfab418a77307b7b5abc555719e1390dac",
+          "sig": "03fc3bd1f5b2a545cd8e089be1d7424e100a58eeca3939f8fb3ca10b2f887b90a9c48e0cba276854e50b080007e1d41d78e88457a1ae30631e961840129e0332"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "36136d3886bb8d60ed78334ce68337a0d4a68a20b0367b765482530bb8ccf062",
+            "sig": "96cd132e47daaf7fe8d759d1bdc9e94430cbd4efbd4f23150a83613b8fc87521a827d92d7eccee72a9d5a1831dd8cd300cf697b7d79122fe24c3aac92a03839d"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "other"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Other 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"other\",\"version\":\"2026.11.1\",\"name\":\"Other\",\"match\":[\"https://other.example/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "5c1511d865fe34c7c67d9dd98c19c13d8967afe2ec4e3160e79a85cfd50ebc0f",
+            "sig": "69bc146455208f5018a0993095317f474ff9381f417edb695187bb3ce50a05674b8d070540d524d15bea22aeb77cc0ba030a32c7acc6bab6c1f8eaea0df0a66e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "whole snapshot re-signed by another key",
+      "valid": false,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "9a41dce778eefc3db285fed71530555e6b2ef6734dbdab96c33401cf5401a365",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "9a41dce778eefc3db285fed71530555e6b2ef6734dbdab96c33401cf5401a365",
+          "id": "aa4f950e678437ce90f1027b149b8716c2c60179a3ab48c793f2112da5ba2209",
+          "sig": "8779238707701973fa54b8745ea35985e0e762e480d348d6452bc23f83f38f519dd6dc122e94d5c5ef6319399ff10d9413265708f04c9248cb9045503283bc2c"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "9a41dce778eefc3db285fed71530555e6b2ef6734dbdab96c33401cf5401a365",
+            "id": "732ca9238f1779604ed5e507ac1cced29c5352c45ae613026526a303f1c9b642",
+            "sig": "25180e4344f3ae53a1a591ee16f6c8b0551304ba6eddd4b0db645cfa2c8360cf0b9a56aeed8ed910727681456f4bfc849c86898133288c5922596cb7ebc5b8f9"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "other"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Other 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"other\",\"version\":\"2026.11.1\",\"name\":\"Other\",\"match\":[\"https://other.example/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "9a41dce778eefc3db285fed71530555e6b2ef6734dbdab96c33401cf5401a365",
+            "id": "5094773c55408af6639c69257a1eef646a00176c6a2a0c4fd98d9fa49c05d36f",
+            "sig": "de52445ee99dfe851dd91f4df3aa4504d6a020e165cef74d3b6ee29d03b044b7e02cf2b6e7149013cbc59288c07c91a91ed3fced44a81cad47641fec66bb6791"
+          }
+        ]
+      }
+    },
+    {
+      "name": "relay list signed by another key",
+      "valid": false,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "9a41dce778eefc3db285fed71530555e6b2ef6734dbdab96c33401cf5401a365",
+          "id": "aa4f950e678437ce90f1027b149b8716c2c60179a3ab48c793f2112da5ba2209",
+          "sig": "3573d02902bae9bcdef2b2104e978833457052a3ab91a8bd346dd177df66ff3136f23b2ec0a2cb729ce9a67112501b9f81479315c26969ff56986c837cf20b7b"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "36136d3886bb8d60ed78334ce68337a0d4a68a20b0367b765482530bb8ccf062",
+            "sig": "90a8e9217f1d4daf116fead62611a0abe3d95340c0857ca5523501d1faafb815f64cc3e648bb77aab0675e91c75bbbfad7deee7cc0eb8681c6306737a67ac91e"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "other"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Other 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"other\",\"version\":\"2026.11.1\",\"name\":\"Other\",\"match\":[\"https://other.example/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "5c1511d865fe34c7c67d9dd98c19c13d8967afe2ec4e3160e79a85cfd50ebc0f",
+            "sig": "4fcdcea3ab80c42c57ab2f0c8b6b3dbf8e30b6ace5b1e32290ae7a800907c949b48d120c7b680a7a7c202bff981778d231b752ad5ba0830a20f2ecf12e4d3ce8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tampered relay list",
+      "valid": false,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://evil.example"
+            ]
+          ],
+          "content": "",
+          "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+          "id": "b03d009fbc65ded618244800c9c511dfab418a77307b7b5abc555719e1390dac",
+          "sig": "03fc3bd1f5b2a545cd8e089be1d7424e100a58eeca3939f8fb3ca10b2f887b90a9c48e0cba276854e50b080007e1d41d78e88457a1ae30631e961840129e0332"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "36136d3886bb8d60ed78334ce68337a0d4a68a20b0367b765482530bb8ccf062",
+            "sig": "28dbd6018a2bd62f239281712659aa9ddabc2e0a5b3bd907f04c0a82bdede64b699264c9773df63f87a72fc5d4ce23f299744626160ca37b6946000f39851d75"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "other"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Other 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"other\",\"version\":\"2026.11.1\",\"name\":\"Other\",\"match\":[\"https://other.example/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "5c1511d865fe34c7c67d9dd98c19c13d8967afe2ec4e3160e79a85cfd50ebc0f",
+            "sig": "69bc146455208f5018a0993095317f474ff9381f417edb695187bb3ce50a05674b8d070540d524d15bea22aeb77cc0ba030a32c7acc6bab6c1f8eaea0df0a66e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "wrong format",
+      "valid": false,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/2",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+          "id": "b03d009fbc65ded618244800c9c511dfab418a77307b7b5abc555719e1390dac",
+          "sig": "3fa5cbbd1a46541eeb0afa877c8fd4f51960e765b3399f54e61cf872f00f4f483fe21d7b289ad27a751f176097a1f5ed6c32bf5c17fb08d79464c9e529402681"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "36136d3886bb8d60ed78334ce68337a0d4a68a20b0367b765482530bb8ccf062",
+            "sig": "357dc113e56fa2d45b3485f6433700b029f706e580b84f235b48bc7852756c56dfef33002a9ce314fc77bbf4ae770b16ff09a11a3f87f19f7c3c2688ecc206e6"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "other"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Other 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"other\",\"version\":\"2026.11.1\",\"name\":\"Other\",\"match\":[\"https://other.example/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "5c1511d865fe34c7c67d9dd98c19c13d8967afe2ec4e3160e79a85cfd50ebc0f",
+            "sig": "2356d4e713ea34819e8e5c40eea8105212cf2ddd4e8799e6ee046f62420fa7974e3ee85616821bd3165901d051f932f008ffcb19155e39c7eeeba90508abfdfd"
+          }
+        ]
+      }
+    },
+    {
+      "name": "repeated site",
+      "valid": false,
+      "snapshot": {
+        "format": "qusme-registry-snapshot/1",
+        "publisher": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+        "relayList": {
+          "kind": 10002,
+          "created_at": 1793836800,
+          "tags": [
+            [
+              "r",
+              "wss://nos.lol"
+            ],
+            [
+              "r",
+              "wss://relay.ditto.pub"
+            ]
+          ],
+          "content": "",
+          "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+          "id": "b03d009fbc65ded618244800c9c511dfab418a77307b7b5abc555719e1390dac",
+          "sig": "523448f8462c8bfbd04d11a0a9840beedae02143528d272553dbc91a473637502e34ec73df2bb6409c2570a07d1e637744e9352890ad9c4e4b7dcad655cb3428"
+        },
+        "siteDefinitions": [
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "36136d3886bb8d60ed78334ce68337a0d4a68a20b0367b765482530bb8ccf062",
+            "sig": "28dbd6018a2bd62f239281712659aa9ddabc2e0a5b3bd907f04c0a82bdede64b699264c9773df63f87a72fc5d4ce23f299744626160ca37b6946000f39851d75"
+          },
+          {
+            "kind": 31236,
+            "created_at": 1793836800,
+            "tags": [
+              [
+                "d",
+                "example"
+              ],
+              [
+                "alt",
+                "qus.me site definition: Example (local test page) 2026.11.1"
+              ]
+            ],
+            "content": "{\"id\":\"example\",\"version\":\"2026.11.1\",\"name\":\"Example (local test page)\",\"match\":[\"http://localhost/*\",\"http://127.0.0.1/*\"],\"account\":{\"locator\":{\"role\":\"status\",\"name\":{\"en\":[\"Signed in\"]}},\"extract\":\"Signed in as @([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"{origin}/test/fixtures/example/?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"],\"de\":[\"Beitragstext\"]}}],\"inject\":[\"paste\",\"insertText\",\"native\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"default\"}}]}",
+            "pubkey": "2ef8b5988def8f334db44a75956eed640d623fb01af95154f1992821ad1e559a",
+            "id": "36136d3886bb8d60ed78334ce68337a0d4a68a20b0367b765482530bb8ccf062",
+            "sig": "28dbd6018a2bd62f239281712659aa9ddabc2e0a5b3bd907f04c0a82bdede64b699264c9773df63f87a72fc5d4ce23f299744626160ca37b6946000f39851d75"
+          }
+        ]
+      }
+    }
+  ]
+}

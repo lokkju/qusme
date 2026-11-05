@@ -529,6 +529,8 @@ Merge rules: objects merge key by key, recursively; a scalar in the override rep
 
 Published as signed `KIND_SITE_DEF` events under a registry publisher key, and as JSON in its own repository under CC0 (proposed). Clients verify the publisher signature. Builds bundle a snapshot, the registry publisher pubkey, and a snapshot of that key's NIP-65 relay list (kind 10002). Devices refresh by fetching the publisher's current kind 10002 from the bundled relays, then `KIND_SITE_DEF` events from its write relays; a definition replaces the bundled one only if its signature verifies against the pinned pubkey and its `version` is newer. If no relay answers, devices keep the bundled snapshot.
 
+The registry is lokkju/qusme-registry. Its `pnpm snapshot` writes a `qusme-registry-snapshot/1` file (`format`, `publisher`, `relayList`: the signed kind 10002, `siteDefinitions`: one signed `KIND_SITE_DEF` per site), and this repository commits it as `registry/snapshot.json`, refreshed with `pnpm registry:update`, which verifies it against the pinned key and refuses a downgrade. The pinned key is `REGISTRY_PUBLISHER` in `@qusme/nostr` (`144986da…f54c`, created 2026-11-05). A build may bundle a snapshot without `relayList`; devices then read the relay list from the fallback relays, `wss://nos.lol` and `wss://relay.ditto.pub`, which are also the publisher's own. The service and the extension verify every bundled event at startup and drop, with a log line on the service, any that fails. The extension refreshes on sync at most every six hours, keeps the newest version per site across the bundle, its cache and the relays, never accepts an equal or older version, and caches the verified events in `storage.local`, since they are public.
+
 ## 11. Browser extension
 
 ### 11.1 Framework and targets
@@ -683,7 +685,6 @@ Content is end-to-end encrypted on every relay: values, sites, accounts, fields,
 
 - Workers relay viability against the qus.me relay profile ([#11](https://github.com/lokkju/qusme/issues/11)); the hosted relay's software depends on it (9.3). With it, whether stock strfry can limit delivery of kind 24134 to the `p`-tagged AUTH pubkey (9.2, rule 4).
 - The hosted relay's hostname. v0.2 proposed `relay.qus.me`; nothing has settled it.
-- The relays the registry publisher key lists in its NIP-65 relay list, and so the ones builds bundle (10.3).
 - How a qus.me-profile inbox relay knows which agents may write to an inbox key. 9.2 rule 3 has devices publish a copy of the submitters list signed by the inbox key to that relay only (7.3); settle with [#39](https://github.com/lokkju/qusme/issues/39).
 - Whether the Draft Inbox NIP publishes inbox relays as NIP-17's kind 10050, and under which key; v0.4 keeps them in the grant and the encrypted settings.
 
@@ -706,4 +707,5 @@ Content is end-to-end encrypted on every relay: values, sites, accounts, fields,
 - 2026-10-27: the `qus.me/` `d`-tag prefix stays, as NIP-78's application identifier (7.2).
 - 2026-10-27: a pairing session started with a typed code sends the recovery backup, encrypted with the 128-bit recovery code, and the new device asks for the recovery code; a QR session sends the passphrase copy. Whoever relays the URI can defeat the SAS, so on the typed path a compromised service could receive the payload, and the recovery backup gives it nothing it could not already fetch from the storage relays or attack offline. Sending the passphrase copy on both paths was the alternative: more convenient, but it would let a compromised service guess the passphrase offline (8.3; [#48](https://github.com/lokkju/qusme/issues/48)).
 - 2026-10-27: pairing keeps the typed code; 8.3 states that a party relaying the URI can defeat the SAS, and qus.me raises the commit-then-reveal fix on the NIP-AB PR instead of changing the protocol locally (8.3; [#26](https://github.com/lokkju/qusme/issues/26)).
+- 2026-11-05: the registry publisher key lists `wss://nos.lol` and `wss://relay.ditto.pub` (read and write) in its NIP-65 relay list, also sent to the indexer `wss://purplepag.es`; builds bundle that list and fall back to the same two relays without it (10.3; lokkju/qusme-registry).
 - 2026-11-05: a grant's destinations carry the destination's `override`, since the service cannot read the settings and validates against the effective definition (7.4, 8.4); the service mines `min_pow` up to 24 bits and refuses a grant asking for more (7.4; [#9](https://github.com/lokkju/qusme/issues/9)).

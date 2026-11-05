@@ -18,7 +18,7 @@ A pnpm workspace, laid out as in section 8.5 of the spec:
 | `packages/extension` | The browser extension (WXT, Chrome and Firefox MV3) |
 | `packages/pwa` | The mobile PWA (Preact, Vite, Tailwind v4) |
 
-The site registry will be its own repository.
+The site registry is its own repository, lokkju/qusme-registry. Builds bundle its signed snapshot from `registry/snapshot.json`; to take a new one, build it in a registry checkout (`pnpm snapshot`) and run `pnpm registry:update [<checkout>]` here (default `../qusme-registry`), which verifies it against the pinned publisher key before writing (spec 10.3).
 
 ## Running it locally
 

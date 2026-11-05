@@ -1,5 +1,11 @@
 import { createAgentKeyRing } from '@qusme/core';
-import { buildHttpAuth, createLocalSigner, httpAuthHeader } from '@qusme/nostr';
+import {
+  buildHttpAuth,
+  createLocalSigner,
+  httpAuthHeader,
+  KIND_SITE_DEF,
+  REGISTRY_SNAPSHOT_FORMAT,
+} from '@qusme/nostr';
 import { describe, expect, it } from 'vitest';
 import { buildApp, configFromEnv } from '../src/app.ts';
 
@@ -78,5 +84,66 @@ describe('the Node entrypoint', () => {
     const replay = await send();
     expect(replay.status).toBe(401);
     expect(await replay.json()).toEqual({ error: 'unauthorized', reason: 'event already used' });
+  });
+
+  it('loads the bundled registry snapshot, which verifies against the pinned key', () => {
+    const logs: string[] = [];
+    const app = buildApp(config, (line) => logs.push(line));
+    expect(logs).toEqual([]);
+    expect(Array.isArray(app.registry)).toBe(true);
+  });
+
+  it('loads verified definitions from a snapshot and drops the rest with a log line', async () => {
+    // A throwaway publisher, pinned for this test only, and a key that isn't it.
+    const publisher = createLocalSigner(crypto.getRandomValues(new Uint8Array(32)));
+    const stranger = createLocalSigner(crypto.getRandomValues(new Uint8Array(32)));
+    const pubkey = await publisher.getPublicKey();
+    const definition = {
+      id: 'example',
+      version: '2026.11.1',
+      name: 'Example',
+      match: ['https://example.com/*'],
+      fields: [
+        {
+          name: 'text',
+          label: 'Post text',
+          locators: [{ role: 'textbox', name: { en: ['Post text'] } }],
+          inject: ['paste', 'clipboard'],
+          constraints: { maxLength: 280 },
+        },
+      ],
+    };
+    const sign = (def: typeof definition, signer = publisher) =>
+      signer.signEvent({
+        kind: KIND_SITE_DEF,
+        created_at: 1_793_836_800,
+        tags: [['d', def.id]],
+        content: JSON.stringify(def),
+      });
+    const tampered = { ...(await sign({ ...definition, id: 'tampered' })), content: '{}' };
+    const foreign = await sign({ ...definition, id: 'foreign' }, stranger);
+    const snapshot = {
+      format: REGISTRY_SNAPSHOT_FORMAT,
+      publisher: pubkey,
+      siteDefinitions: [await sign(definition), tampered, foreign],
+    };
+    const logs: string[] = [];
+    const app = buildApp({ ...config, registry: { snapshot, publisher: pubkey } }, (line) =>
+      logs.push(line)
+    );
+    expect(app.registry).toEqual([definition]);
+    expect(logs).toEqual([
+      'registry snapshot: dropped siteDefinitions[1]: id or signature does not verify',
+      'registry snapshot: dropped siteDefinitions[2]: pubkey: not signed by the registry publisher key',
+    ]);
+
+    // Without the test pin, the production key refuses the whole snapshot.
+    const unpinned: string[] = [];
+    const refused = buildApp(
+      { ...config, registry: { snapshot, publisher: 'f'.repeat(64) } },
+      (l) => unpinned.push(l)
+    );
+    expect(refused.registry).toEqual([]);
+    expect(unpinned).toEqual(['registry snapshot: dropped publisher: not the pinned key']);
   });
 });
