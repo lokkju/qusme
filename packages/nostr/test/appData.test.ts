@@ -163,6 +163,27 @@ describe('settings (NIP-78)', () => {
     expect(archiveRetentionDays(settings, false)).toBe(90);
   });
 
+  it('round-trips the inbox key, its relays and retired keys in spec order (7.2)', async () => {
+    const withInbox: Settings = {
+      archive_retention_days: null,
+      inbox_key: 'c'.repeat(64),
+      inbox_relays: ['wss://auth.nostr1.com/'],
+      retired_inbox_keys: [{ key: 'd'.repeat(64), retired_at: 1_761_400_000, extra: { why: 'x' } }],
+      quota_counts: {},
+    };
+    const event = await buildSettings(queue, withInbox, { createdAt: NOW });
+    expect(event.content).not.toContain('c'.repeat(64));
+    const wire = await queue.nip44Decrypt(queuePubkey, event.content);
+    expect(Object.keys(JSON.parse(wire))).toEqual([
+      'archive_retention_days',
+      'inbox_key',
+      'inbox_relays',
+      'retired_inbox_keys',
+      'quota_counts',
+    ]);
+    expect(expectOk(await parseSettings(event, queue)).content).toEqual(withInbox);
+  });
+
   it('rejects malformed settings', async () => {
     const count = settings.quota_counts[agentPubkey];
     const cases: unknown[] = [
@@ -174,6 +195,10 @@ describe('settings (NIP-78)', () => {
       { quota_counts: { [agentPubkey]: { ...count, period_start: -1 } } },
       { quota_counts: { [agentPubkey]: { period_start: 0, accepted: [] } } },
       { quota_counts: JSON.parse('{"__proto__":{}}') },
+      { inbox_key: 'not hex' },
+      { inbox_relays: ['https://not.a.relay'] },
+      { inbox_relays: 'wss://a.example' },
+      { retired_inbox_keys: [{ key: 'e'.repeat(64) }] },
       [],
     ];
     for (const content of cases) {

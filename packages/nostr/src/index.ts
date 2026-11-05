@@ -42,6 +42,7 @@ export {
   parseSettings,
   type QuotaCount,
   type RecoveryBackup,
+  type RetiredInboxKey,
   type RotationMarker,
   readDestinations,
   readSettings,
@@ -181,10 +182,46 @@ export {
   PAIRING_CODE_LENGTH,
 } from './pairingCode.ts';
 export {
+  formatRecoveryBase32,
+  generateRecoveryCode,
+  parseRecoveryCode,
+  RECOVERY_CODE_BASE32_LENGTH,
+  RECOVERY_CODE_BYTES,
+  RECOVERY_CODE_WORDS,
+  recoveryCodeToBase32,
+  recoveryCodeToWords,
+  recoveryPassword,
+} from './recoveryCode.ts';
+export {
+  type AuthSigner,
+  newestFirst,
+  type PublishReport,
+  publishToAll,
+  queryAll,
+  RELAY_CONNECT_TIMEOUT_MS,
+  RELAY_TIMEOUT_MS,
+  type RelayClientOptions,
+  RelayConnection,
+  RelayError,
+  type SocketFactory,
+  type SocketLike,
+} from './relayClient.ts';
+export {
   buildPrivateRelayList,
   type PrivateRelayList,
   parsePrivateRelayList,
 } from './relayList.ts';
+export {
+  PROBE_LARGE_EVENT_BYTES,
+  type ProbeCheck,
+  type ProbeOptions,
+  type ProbeResult,
+  probeInboxRelay,
+  probeRelay,
+  probeStorageRelay,
+  type RelayRole,
+  STORAGE_KINDS,
+} from './relayProbe.ts';
 export type { ParseError, ParseErrorCode, ParseResult } from './result.ts';
 export { createLocalSigner, type Signer } from './signer.ts';
 export {
