@@ -27,7 +27,7 @@ import { device, INBOX, network, PASSPHRASE, STORAGE } from './helpers.ts';
 
 const d = (e: NostrEvent) => e.tags.find((t) => t[0] === 'd')?.[1];
 
-describe('create flow (spec 11.3)', () => {
+describe('create flow (spec 11.3)', { timeout: 30_000 }, () => {
   it('suggests the relays of spec 9.1', () => {
     expect([...DEFAULT_STORAGE_RELAYS]).toEqual(['wss://nos.lol', 'wss://relay.ditto.pub']);
     expect([...DEFAULT_INBOX_RELAYS]).toEqual(['wss://auth.nostr1.com']);

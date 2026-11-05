@@ -57,7 +57,7 @@ async function runPairing(
   return { net, service, a, b, src, tgt, source, target, resolved };
 }
 
-describe('pairing end to end (spec 8.3)', () => {
+describe('pairing end to end (spec 8.3)', { timeout: 30_000 }, () => {
   it('pairs over a QR session: same SAS, passphrase copy, then a new local passphrase', async () => {
     const { a, b, src, tgt, source, target, resolved } = await runPairing();
     expect(resolved.channel).toBe('qr');

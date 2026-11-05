@@ -82,7 +82,10 @@ export function pairingSuite(driver: string, setup: () => { fresh(): Promise<Qus
       db = await fresh();
     });
 
-    it('runs the whole sequence: code, lookup, NIP-AB with the recovery backup', async () => {
+    // Two scrypt runs at log_n 16 to build the payload; slow on a busy CI runner.
+    it('runs the whole sequence: code, lookup, NIP-AB with the recovery backup', {
+      timeout: 30_000,
+    }, async () => {
       const { app, store } = rendezvous(db);
       const source = new PairingSource(RELAYS, { now: NOW * 1000 });
       source.markTypedCode();

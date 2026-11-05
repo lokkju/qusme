@@ -88,7 +88,8 @@ describe('recovery code', () => {
     expect(parseRecoveryCode('')).toBeUndefined();
   });
 
-  it('uses the 32-character lowercase hex as the NIP-49 password', () => {
+  // An encrypt and a decrypt at log_n 16; slow on a busy CI runner.
+  it('uses the 32-character lowercase hex as the NIP-49 password', { timeout: 30_000 }, () => {
     const bytes = hexToBytes('00ff00ff00ff00ff00ff00ff00ff00ff');
     expect(recoveryPassword(bytes)).toBe('00ff00ff00ff00ff00ff00ff00ff00ff');
     const ncryptsec = encodeNcryptsec(queueKey, recoveryPassword(bytes), { logN: 16 });
