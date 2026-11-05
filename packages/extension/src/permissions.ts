@@ -3,3 +3,12 @@
  * site the user posts to and no `tabs`. Page access comes from activeTab, after a user gesture.
  */
 export const PERMISSIONS = ['activeTab', 'scripting', 'contextMenus', 'storage'] as const;
+
+/** The qus.me service (spec 8.5). Pairing by typed code talks to it (8.3). */
+export const SERVICE_ORIGIN = 'https://app.qus.me';
+
+/**
+ * The one optional host permission (spec 11.2): the service origin, requested at the moment a
+ * typed pairing code is used, never at install. Relay websockets need no host permission.
+ */
+export const OPTIONAL_HOST_PERMISSIONS = [`${SERVICE_ORIGIN}/*`] as const;
