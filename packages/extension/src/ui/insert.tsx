@@ -8,8 +8,10 @@
  */
 import type { SiteAccount } from '@qusme/nostr';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
+import { addDestination } from '../agents/destinations.ts';
 import { type ArmedDraft, arm, disarm, readArmed, readInsertionState } from '../insertion/armed.ts';
 import type { SiteDefinitionSource } from '../insertion/definitions.ts';
+import { type DestinationOffer, destinationOffers, registrySitesOn } from '../insertion/detect.ts';
 import {
   accountLocators,
   draftsForPage,
@@ -18,7 +20,9 @@ import {
 } from '../insertion/matching.ts';
 import type { InsertResponse } from '../insertion/service.ts';
 import type { KeyStore } from '../keyStore.ts';
+import type { SetupDeps } from '../setup/deps.ts';
 import { readDraftCache } from '../sync/state.ts';
+import { messageOf } from './app.tsx';
 import { Button } from './components.tsx';
 import { firstLine } from './drafts.tsx';
 
@@ -81,6 +85,9 @@ interface ViewProps {
   status: string | undefined;
   unrecorded: number;
   busy: boolean;
+  /** Detected accounts on registry sites with no destination yet (spec 7.2). */
+  offers?: DestinationOffer[];
+  onAddOffer?(offer: DestinationOffer): void;
   onArm(entry: PageDraft): void;
   onDisarm(): void;
   onInsert(): void;
@@ -133,6 +140,18 @@ export function InsertView(props: ViewProps) {
             <p key={site} class="mt-1 text-ink/70 text-xs">
               Signed in to {site} as {account}.
             </p>
+          ))}
+          {(props.offers ?? []).map((offer) => (
+            <div key={`${offer.site}:${offer.account}`} class="mt-2">
+              <Button
+                variant="plain"
+                class="px-2 py-1 text-xs"
+                disabled={props.busy}
+                onClick={() => props.onAddOffer?.(offer)}
+              >
+                Add {offer.account} on {offer.siteName} as a destination
+              </Button>
+            </div>
           ))}
           {props.undetected.map((site) => (
             <p key={site} class="mt-1 text-ink/70 text-xs">
@@ -226,8 +245,13 @@ export function InsertView(props: ViewProps) {
 }
 
 /** The panel with its effects: tab, detection, arming and inserting. */
-export function InsertPanel(props: { store: KeyStore; deps: InsertionUiDeps }) {
-  const { store, deps } = props;
+export function InsertPanel(props: {
+  store: KeyStore;
+  deps: InsertionUiDeps;
+  /** For the add-destination shortcut; without it the panel offers none. */
+  setup?: SetupDeps;
+}) {
+  const { store, deps, setup } = props;
   const [tab, setTab] = useState<{ id: number; url: string } | undefined>();
   const [page, setPage] = useState<PageDrafts | undefined>();
   const [undetected, setUndetected] = useState<string[]>([]);
@@ -236,10 +260,16 @@ export function InsertPanel(props: { store: KeyStore; deps: InsertionUiDeps }) {
   const [status, setStatus] = useState<string>();
   const [unrecorded, setUnrecorded] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [offers, setOffers] = useState<DestinationOffer[]>([]);
   // The tab and the detected accounts are read once per popup open.
   const tabRef = useRef<Promise<{ id: number; url: string } | undefined> | undefined>(undefined);
   const detectedRef = useRef<
-    Promise<{ found: Record<string, string>; undetected: string[] }> | undefined
+    | Promise<{
+        found: Record<string, string>;
+        undetected: string[];
+        registry: ReturnType<typeof registrySitesOn>;
+      }>
+    | undefined
   >(undefined);
 
   const load = useCallback(async () => {
@@ -260,6 +290,12 @@ export function InsertPanel(props: { store: KeyStore; deps: InsertionUiDeps }) {
       // Step 2: one read-only detection per site among the drafts for this page.
       detectedRef.current ??= (async () => {
         const locators = accountLocators(drafts, destinations, deps.definitions, url);
+        const draftSites = [...locators.keys()];
+        // Registry sites on this page too, for the add-destination shortcut.
+        const registry = setup === undefined ? [] : registrySitesOn(deps.definitions, url);
+        for (const site of registry) {
+          if (!locators.has(site.id) && site.account) locators.set(site.id, site.account);
+        }
         const sites = [...locators.keys()];
         const results = await deps
           .detectAccounts(active.id, [...locators.values()])
@@ -269,11 +305,20 @@ export function InsertPanel(props: { store: KeyStore; deps: InsertionUiDeps }) {
           const account = results[i];
           if (typeof account === 'string' && account !== '') found[site] = account;
         }
-        return { found, undetected: sites.filter((s) => found[s] === undefined) };
+        return {
+          found,
+          undetected: draftSites.filter((s) => found[s] === undefined),
+          registry,
+        };
       })();
     }
     const detection = await detectedRef.current;
     setUndetected(detection?.undetected ?? []);
+    setOffers(
+      detection === undefined
+        ? []
+        : destinationOffers(detection.registry, detection.found, destinations)
+    );
     setPage(
       draftsForPage({
         drafts,
@@ -326,6 +371,25 @@ export function InsertPanel(props: { store: KeyStore; deps: InsertionUiDeps }) {
       await load();
     }
   };
+  const onAddOffer = async (offer: DestinationOffer) => {
+    if (setup === undefined) return;
+    setBusy(true);
+    setStatus(undefined);
+    try {
+      const added = await addDestination(
+        { site: offer.site, account: offer.account, override: null },
+        deps.definitions,
+        setup
+      );
+      setStatus(`Added ${added.label}.`);
+      void setup.requestSync?.().catch(() => undefined);
+    } catch (error) {
+      setStatus(messageOf(error));
+    } finally {
+      setBusy(false);
+      await load();
+    }
+  };
   const onRetry = async () => {
     const result = await deps.retryRecord();
     setStatus(result.remaining === 0 ? 'Recorded.' : (result.messages[0] ?? 'Still not recorded.'));
@@ -342,6 +406,8 @@ export function InsertPanel(props: { store: KeyStore; deps: InsertionUiDeps }) {
       status={status}
       unrecorded={unrecorded}
       busy={busy}
+      offers={offers}
+      onAddOffer={(o) => void onAddOffer(o)}
       onArm={(e) => void onArm(e)}
       onDisarm={() => void onDisarm()}
       onInsert={() => void onInsert()}
