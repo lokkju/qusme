@@ -10,6 +10,7 @@ import {
   parseDraftWrap,
   publishToAll,
   RelayConnection,
+  sameAccount,
 } from '@qusme/nostr';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { describe, expect, it } from 'vitest';
@@ -24,7 +25,6 @@ import {
   documentUrlPatterns,
   draftsForPage,
   matchesPattern,
-  sameAccount,
 } from '../src/insertion/matching.ts';
 import { MENU_CHOOSE, MENU_INSERT, menuItem } from '../src/insertion/menu.ts';
 import type { PageInsertRequest, PageOutcome } from '../src/insertion/protocol.ts';
@@ -147,8 +147,8 @@ describe('match patterns', () => {
   });
 
   it('compares accounts without @ and case-blind', () => {
-    expect(sameAccount('@Lokkju', 'lokkju')).toBe(true);
-    expect(sameAccount('lokkju', 'other')).toBe(false);
+    expect(sameAccount('x', '@Lokkju', 'lokkju')).toBe(true);
+    expect(sameAccount('x', 'lokkju', 'other')).toBe(false);
   });
 });
 
@@ -228,6 +228,46 @@ describe('drafts for the page (11.5 step 3)', () => {
     expect(page.otherAccounts).toBe(1);
     expect(page.elsewhere.map((p) => p.draft.d)).toEqual(['masto']);
     expect(page.matching[0]?.match).toEqual(['https://x.com/*', 'https://twitter.com/*']);
+  });
+
+  it('matches " @Lokkju " to lokkju, and tells case apart on a case-sensitive site', () => {
+    const loose = draftsForPage({
+      drafts: [draft({ d: 'mine' })],
+      destinations: DESTINATIONS,
+      source,
+      url: 'https://x.com/home',
+      detected: { x: ' @LOKKJU ' },
+    });
+    expect(loose.matching.map((p) => p.draft.d)).toEqual(['mine']);
+    const strict = DESTINATIONS.map((d) =>
+      d.id === 'dest-x' ? { ...d, override: { account: { caseSensitive: true } } } : d
+    );
+    const page = draftsForPage({
+      drafts: [draft({ d: 'mine' })],
+      destinations: strict,
+      source,
+      url: 'https://x.com/home',
+      detected: { x: '@Lokkju' },
+    });
+    expect(page.matching).toEqual([]);
+    expect(page.otherAccounts).toBe(1);
+    const exact = draftsForPage({
+      drafts: [draft({ d: 'mine' })],
+      destinations: strict,
+      source,
+      url: 'https://x.com/home',
+      detected: { x: '@lokkju' },
+    });
+    expect(exact.matching.map((p) => p.draft.d)).toEqual(['mine']);
+  });
+
+  it('finds a draft without a destination id by its normalized account', () => {
+    const found = definitionForDraft(
+      source,
+      draft({ account: '@LOKKJU', destination: undefined }),
+      [destination({ override: { name: 'X (mine)' } })]
+    );
+    expect(found.definition?.name).toBe('X (mine)');
   });
 
   it('shows every account at the site, newest first, when detection fails', () => {

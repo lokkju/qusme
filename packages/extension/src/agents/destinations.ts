@@ -13,11 +13,12 @@ import {
   type Destination,
   type Destinations,
   type DraftWrap,
+  displayAccount,
   type FieldValue,
   type JsonObject,
+  sameAccount,
 } from '@qusme/nostr';
-import type { SiteDefinitionSource } from '../insertion/definitions.ts';
-import { sameAccount } from '../insertion/matching.ts';
+import { effectiveDefinition, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import { SetupError } from '../setup/deps.ts';
 import { readDraftCache, writeDraftCache } from '../sync/state.ts';
 import {
@@ -107,14 +108,24 @@ export async function confirmPendingDestination(id: string, deps: AgentDeps): Pr
   await updateCache(deps, pubkey, next);
 }
 
-/** Whether an active draft was submitted for this destination. */
-function belongsTo(wrap: DraftWrap, destination: Destination): FieldValue | undefined {
+/**
+ * Whether an active draft was submitted for this destination: by its `destination` id, else by
+ * site and account, compared by `normalizeAccount` (case-insensitively unless `source` gives a
+ * definition whose accounts are case-sensitive).
+ */
+function belongsTo(
+  wrap: DraftWrap,
+  destination: Destination,
+  source: SiteDefinitionSource | undefined
+): FieldValue | undefined {
   if (wrap.draft.type !== 'field_value') return undefined;
   const value = wrap.draft.value;
   if (value.status !== 'active') return undefined;
   if (value.destination !== undefined)
     return value.destination === destination.id ? value : undefined;
-  return value.site === destination.site && value.account === destination.account
+  if (value.site !== destination.site) return undefined;
+  const rules = source && effectiveDefinition(source, destination.site, destination.override);
+  return sameAccount(destination.site, value.account, destination.account, rules)
     ? value
     : undefined;
 }
@@ -128,12 +139,13 @@ async function dismissDraftsFor(
   session: QueueSession,
   snapshot: QueueSnapshot,
   destination: Destination,
-  failure: string
+  failure: string,
+  source: SiteDefinitionSource | undefined
 ): Promise<string[]> {
   const refusals: string[] = [];
   const dismissed: string[] = [];
   for (const wrap of snapshot.drafts) {
-    const value = belongsTo(wrap, destination);
+    const value = belongsTo(wrap, destination, source);
     if (value === undefined) continue;
     const event = await buildDraftWrap(session.queue, {
       d: wrap.d,
@@ -156,12 +168,19 @@ async function dismissAndRemove(
   id: string,
   deps: AgentDeps,
   find: (snapshot: QueueSnapshot) => Destination,
-  failure: (destination: Destination) => string
+  failure: (destination: Destination) => string,
+  source: SiteDefinitionSource | undefined
 ): Promise<{ dismissed: number }> {
   const { pubkey, next, dismissed } = await withQueue(deps, async (session) => {
     const snapshot = await readQueue(session, { drafts: true });
     const destination = find(snapshot);
-    const dismissed = await dismissDraftsFor(session, snapshot, destination, failure(destination));
+    const dismissed = await dismissDraftsFor(
+      session,
+      snapshot,
+      destination,
+      failure(destination),
+      source
+    );
     const next = listOf(snapshot).filter((d) => d.id !== id);
     await publishDestinations(session, snapshot, next);
     return { pubkey: session.pubkey, next, dismissed };
@@ -176,13 +195,15 @@ async function dismissAndRemove(
  */
 export function rejectPendingDestination(
   id: string,
-  deps: AgentDeps
+  deps: AgentDeps,
+  source?: SiteDefinitionSource
 ): Promise<{ dismissed: number }> {
   return dismissAndRemove(
     id,
     deps,
     (snapshot) => pendingOf(snapshot, id),
-    (d) => `Some drafts for ${d.label} could not be dismissed, so it stays pending`
+    (d) => `Some drafts for ${d.label} could not be dismissed, so it stays pending`,
+    source
   );
 }
 
@@ -190,12 +211,17 @@ export function rejectPendingDestination(
  * Removes any destination, confirmed or pending, the way a rejection does: its active drafts are
  * dismissed first, then it leaves the list. Resolves with the drafts dismissed.
  */
-export function removeDestination(id: string, deps: AgentDeps): Promise<{ dismissed: number }> {
+export function removeDestination(
+  id: string,
+  deps: AgentDeps,
+  source?: SiteDefinitionSource
+): Promise<{ dismissed: number }> {
   return dismissAndRemove(
     id,
     deps,
     (snapshot) => existingOf(snapshot, id),
-    (d) => `Some drafts for ${d.label} could not be dismissed, so it stays`
+    (d) => `Some drafts for ${d.label} could not be dismissed, so it stays`,
+    source
   );
 }
 
@@ -219,7 +245,7 @@ function cleanLabel(label: string): string {
 }
 
 /** The account as devices store it: trimmed, without the leading `@` handles are shown with. */
-export const cleanAccount = (account: string): string => account.trim().replace(/^@/, '');
+export const cleanAccount = displayAccount;
 
 /** The site's name from its official definition, else its id. */
 export function siteName(source: SiteDefinitionSource, site: string): string {
@@ -263,7 +289,11 @@ export async function addDestination(
   const { pubkey, next, added } = await withQueue(deps, async (session) => {
     const snapshot = await readQueue(session);
     const current = listOf(snapshot);
-    const same = current.find((d) => d.site === site && sameAccount(d.account, account));
+    const same = current.find(
+      (d) =>
+        d.site === site &&
+        sameAccount(site, d.account, account, effectiveDefinition(source, site, d.override))
+    );
     if (same !== undefined) {
       throw new SetupError(
         same.status === 'pending'

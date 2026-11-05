@@ -3,9 +3,16 @@
  * active tab is on, and which account the site's account locator finds there. The detection is
  * the insertion script's read-only `detectAccount`, run under activeTab like the insert panel's.
  */
-import type { Destination, JsonObject, SiteAccount, SiteDefinition } from '@qusme/nostr';
+import {
+  type Destination,
+  displayAccount,
+  type JsonObject,
+  type SiteAccount,
+  type SiteDefinition,
+  sameAccount,
+} from '@qusme/nostr';
 import { effectiveDefinition, type SiteDefinitionSource } from './definitions.ts';
-import { matchesPattern, sameAccount } from './matching.ts';
+import { matchesPattern } from './matching.ts';
 
 /** What detection needs from the browser: the panel's own functions. */
 export interface DetectDeps {
@@ -81,8 +88,11 @@ export function destinationOffers(
   for (const site of sites) {
     const account = detected[site.id];
     if (account === undefined) continue;
-    if (destinations.some((d) => d.site === site.id && sameAccount(d.account, account))) continue;
-    offers.push({ site: site.id, siteName: site.name, account: account.replace(/^@/, '') });
+    const known = destinations.some(
+      (d) => d.site === site.id && sameAccount(site.id, d.account, account, site)
+    );
+    if (known) continue;
+    offers.push({ site: site.id, siteName: site.name, account: displayAccount(account) });
   }
   return offers;
 }

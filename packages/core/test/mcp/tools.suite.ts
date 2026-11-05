@@ -607,6 +607,50 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
       expect(inbox.published).toHaveLength(2);
     });
 
+    it('matches "@Handle", "handle" and " handle " to a grant for handle', async () => {
+      const { client } = await granted({
+        destinations: [{ site: 'x', account: 'handle', fields: ['text'] }],
+        quota: { max_submissions: 10, period: 'day' },
+      });
+      for (const account of ['@Handle', 'handle', ' handle ']) {
+        const res = await call(client, 'create_draft', draft('hi', { account }));
+        expect(res.isError).toBeFalsy();
+        expect(res.structuredContent?.pending_destination).toBe(false);
+      }
+      // The rumor names the grant's spelling, so devices file it under that destination.
+      const opened = await openSubmission(inbox.published[0]?.event, inboxKey);
+      expect(opened.ok && opened.value.value.account).toBe('handle');
+      const definition = await call(client, 'get_definition', { site: 'x', account: '@HANDLE' });
+      expect(definition.structuredContent).toMatchObject({ account: 'handle', granted: true });
+      const listed = await call(client, 'list_destinations');
+      expect(listed.structuredContent?.destinations).toMatchObject([{ account: 'handle' }]);
+    });
+
+    it('tells accounts apart by case where the definition says they are case-sensitive', async () => {
+      const { client } = await granted({
+        destinations: [
+          {
+            site: 'x',
+            account: 'Handle',
+            fields: ['text'],
+            // The test registry's X has no account locator, so the override gives a whole one.
+            override: {
+              account: {
+                locator: { role: 'button', name: { en: ['Account menu'] } },
+                extract: '@(\\w+)',
+                caseSensitive: true,
+              },
+            },
+          },
+        ],
+      });
+      const refused = await call(client, 'create_draft', draft('hi', { account: 'handle' }));
+      expect(refused.structuredContent).toMatchObject({ error: 'destination_not_granted' });
+      const accepted = await call(client, 'create_draft', draft('hi', { account: ' @Handle' }));
+      expect(accepted.isError).toBeFalsy();
+      expect(inbox.published).toHaveLength(1);
+    });
+
     it('enforces the quota before publishing and rolls over with the period', async () => {
       const { client, key } = await granted({ quota: { max_submissions: 2, period: 'day' } });
       // One receipt from the day before does not count toward today.

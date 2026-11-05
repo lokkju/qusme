@@ -28,6 +28,7 @@ import {
   type IngestOutcome,
   inboxSince,
   ingestSubmissions,
+  type JsonObject,
   KIND_AGENT_GRANT,
   KIND_APP_DATA,
   KIND_DRAFT_WRAP,
@@ -54,6 +55,7 @@ import {
   type WrapRef,
 } from '@qusme/nostr';
 import type { Filter } from 'nostr-tools/filter';
+import { effectiveDefinition, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import type { KeyStore } from '../keyStore.ts';
 import {
   type CachedDraft,
@@ -75,6 +77,8 @@ export interface SyncDeps {
   now?: () => number;
   /** Gift wraps opened per sync; defaults to 100 (11.4). */
   cap?: number;
+  /** Site definitions, for whether a site's accounts are case-sensitive (10.1) at ingestion. */
+  definitions?: SiteDefinitionSource;
 }
 
 export type SyncResult =
@@ -309,6 +313,7 @@ export async function syncOnce(deps: SyncDeps): Promise<SyncResult> {
     }
 
     const handled = new Set(Object.keys(syncState.handled));
+    const { definitions } = deps;
     const outcome = await ingestSubmissions({
       wraps,
       inboxes,
@@ -320,6 +325,10 @@ export async function syncOnce(deps: SyncDeps): Promise<SyncResult> {
       quotaCounts: settings?.quota_counts ?? {},
       now,
       ...(deps.cap !== undefined && { cap: deps.cap }),
+      ...(definitions !== undefined && {
+        definitionFor: (site: string, override: JsonObject | null | undefined) =>
+          effectiveDefinition(definitions, site, override),
+      }),
     });
 
     // 1. New pending destinations, merged into the latest destinations event.

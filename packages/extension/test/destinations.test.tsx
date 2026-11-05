@@ -83,6 +83,38 @@ describe('adding destinations', { timeout: 30_000 }, () => {
     q.close();
   });
 
+  it('stores the account as typed without @, and refuses "@Handle", "handle" and " handle "', async () => {
+    const q = await destinationsQueue();
+    const added = await addDestination(
+      { site: 'x', account: ' @Handle ', override: null },
+      source,
+      q.deps
+    );
+    expect(added).toMatchObject({ account: 'Handle', label: 'X / Handle' });
+    for (const account of ['@Handle', 'handle', ' handle ']) {
+      await expect(
+        addDestination({ site: 'x', account, override: null }, source, q.deps)
+      ).rejects.toThrow('X / Handle is already a destination.');
+    }
+    q.close();
+  });
+
+  it('tells accounts apart by case where the definition says they are case-sensitive', async () => {
+    const q = await destinationsQueue();
+    const strict = { account: { caseSensitive: true } };
+    await addDestination({ site: 'x', account: 'Handle', override: strict }, source, q.deps);
+    const lower = await addDestination(
+      { site: 'x', account: 'handle', override: strict },
+      source,
+      q.deps
+    );
+    expect(lower).toMatchObject({ account: 'handle' });
+    await expect(
+      addDestination({ site: 'x', account: '@handle', override: strict }, source, q.deps)
+    ).rejects.toThrow('X / handle is already a destination.');
+    q.close();
+  });
+
   it('adds a custom destination with its match patterns, and refuses one without', async () => {
     const q = await destinationsQueue();
     await expect(

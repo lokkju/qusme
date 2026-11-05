@@ -13,8 +13,8 @@ import { SYNC_ALARM, SYNC_MESSAGE, SYNC_PERIOD_MINUTES } from '../src/sync/messa
  */
 export default defineBackground(() => {
   const store = new KeyStore({ local: browser.storage.local, session: browser.storage.session });
-  const engine = new SyncEngine({ store });
   const definitions = new RegistryDefinitionSource({ local: browser.storage.local });
+  const engine = new SyncEngine({ store, definitions });
   definitions.load().catch(() => undefined);
   installInsertion(store, definitions);
   const sync = () => {
