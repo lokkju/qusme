@@ -80,6 +80,10 @@ export class RegistryDefinitionSource implements SiteDefinitionSource {
     return this.#bySite.get(site)?.json;
   }
 
+  sites(): JsonObject[] {
+    return [...this.#bySite.values()].map((d) => d.json);
+  }
+
   /** The version held for a site, for tests and the UI. */
   version(site: string): string | undefined {
     return this.#bySite.get(site)?.definition.version;

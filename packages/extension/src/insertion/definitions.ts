@@ -28,6 +28,8 @@ export const BUNDLED_SITE_DEFINITIONS: readonly JsonObject[] = BUNDLED_REGISTRY.
 export interface SiteDefinitionSource {
   /** The official definition JSON for a site id, unvalidated. */
   official(site: string): JsonObject | undefined;
+  /** Every official definition held, unvalidated, for choosing a site (the Destinations screen). */
+  sites(): JsonObject[];
   /** Calls `listener` whenever the definitions change; returns an unsubscribe function. */
   subscribe?(listener: () => void): () => void;
 }
@@ -40,7 +42,7 @@ export function definitionSource(
   for (const definition of definitions) {
     if (typeof definition.id === 'string') byId.set(definition.id, definition);
   }
-  return { official: (site) => byId.get(site) };
+  return { official: (site) => byId.get(site), sites: () => [...byId.values()] };
 }
 
 /**

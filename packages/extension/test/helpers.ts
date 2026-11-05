@@ -1,7 +1,23 @@
-import { KIND_DRAFT_WRAP, verifyHttpAuth } from '@qusme/nostr';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import {
+  buildDestinations,
+  buildSettings,
+  createLocalSigner,
+  D_DESTINATIONS,
+  type Destination,
+  KIND_APP_DATA,
+  KIND_DRAFT_WRAP,
+  type NostrEvent,
+  newestFirst,
+  parseDestinations,
+  publishToAll,
+  RelayConnection,
+  verifyHttpAuth,
+} from '@qusme/nostr';
 import { FakeRelayNetwork, type FakeRelayOptions } from '@qusme/nostr/testing';
-import { KeyStore } from '../src/keyStore.ts';
-import type { SetupDeps } from '../src/setup/deps.ts';
+import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
+import { KeyStore, LOCAL_QUEUE, type QueueRecord, SESSION_UNLOCKED } from '../src/keyStore.ts';
+import { closeAll, type SetupDeps } from '../src/setup/deps.ts';
 import { MemoryStorageArea } from '../src/storage.ts';
 
 export const ORIGIN = 'https://app.qus.me';
@@ -131,4 +147,107 @@ export async function createdDevice(net: FakeRelayNetwork, service = new FakeSer
     a.deps
   );
   return Object.assign(a, { words, base32, secretKey, inboxKey, npub, pubkey });
+}
+
+/**
+ * An unlocked queue on the fake storage relays with a destinations event that carries keys this
+ * version does not know (spec 7, "Unknown fields"): one at the top of the content, one on the
+ * destination, and an extra event tag. No service; for the destination flows.
+ */
+export async function destinationsQueue(options: { destinations?: Destination[] } = {}) {
+  const net = network();
+  const secretKey = generateSecretKey();
+  const inboxKey = generateSecretKey();
+  const queue = createLocalSigner(secretKey);
+  const pubkey = getPublicKey(secretKey);
+  const settings = await buildSettings(queue, {
+    inbox_key: bytesToHex(inboxKey),
+    inbox_relays: INBOX,
+    quota_counts: {},
+  });
+  const destinations = options.destinations ?? [
+    {
+      id: 'dest-x-alt',
+      site: 'x',
+      account: 'alt',
+      label: 'X / alt',
+      status: 'confirmed',
+      override: null,
+      extra: { color: 'teal' },
+    },
+  ];
+  const listEvent = await buildDestinations(
+    queue,
+    { destinations, extra: { sort: 'label' } },
+    { extraTags: [['future', 'kept']] }
+  );
+  const connections = await Promise.all(
+    STORAGE.map((url) => RelayConnection.open(url, { socket: net.socket, timeoutMs: 500 }))
+  );
+  for (const event of [settings, listEvent]) await publishToAll(connections, event);
+
+  const local = new MemoryStorageArea();
+  const session = new MemoryStorageArea();
+  const record: QueueRecord = {
+    version: 1,
+    pubkey,
+    ncryptsec: 'ncryptsec1unused',
+    storageRelays: STORAGE,
+    settings,
+  };
+  await local.set({ [LOCAL_QUEUE]: record });
+  await session.set({
+    [SESSION_UNLOCKED]: { queue: bytesToHex(secretKey), inbox: bytesToHex(inboxKey) },
+  });
+  const store = new KeyStore({ local, session });
+  let syncRequests = 0;
+  const deps: SetupDeps = {
+    store,
+    socket: net.socket,
+    relayTimeoutMs: 500,
+    serviceOrigin: ORIGIN,
+    fetch: (async () => new Response('not found', { status: 404 })) as typeof fetch,
+    requestServicePermission: async () => true,
+    requestSync: async () => {
+      syncRequests += 1;
+    },
+  };
+
+  /** Publishes `event` to every storage relay. */
+  const publish = async (event: NostrEvent) => {
+    for (const c of connections) await c.publish(event).catch(() => undefined);
+  };
+
+  /** The newest destinations event on each storage relay, decrypted. */
+  const onRelays = async () => {
+    const out = [];
+    for (const url of STORAGE) {
+      const event = net
+        .get(url)
+        .events.filter(
+          (e) =>
+            e.kind === KIND_APP_DATA &&
+            e.pubkey === pubkey &&
+            e.tags.some((t) => t[0] === 'd' && t[1] === D_DESTINATIONS)
+        )
+        .sort(newestFirst)[0];
+      const parsed = await parseDestinations(event, queue);
+      if (!parsed.ok) throw new Error(`no destinations on ${url}`);
+      out.push(parsed.value);
+    }
+    return out;
+  };
+
+  return {
+    net,
+    queue,
+    pubkey,
+    store,
+    session,
+    deps,
+    publish,
+    onRelays,
+    syncRequests: () => syncRequests,
+    close: () => closeAll(connections),
+  };
 }
