@@ -1,9 +1,10 @@
 /**
- * Where site definitions come from (spec 10.2, 10.3): the snapshot bundled with the build, with
- * each destination's `override` (7.2) merged over it. The registry has published no definitions
- * yet, so the bundled snapshot is empty and a destination works through its override or the 10.2
- * fallback (the focused field, then the user's click). The refresh from the registry's relays
- * replaces this source later; callers take a {@link SiteDefinitionSource}, not the snapshot.
+ * Where site definitions come from (spec 10.2, 10.3): the registry's definitions, with each
+ * destination's `override` (7.2) merged over them. The extension's source is
+ * `RegistryDefinitionSource` (`registry.ts`): the snapshot bundled with the build, refreshed
+ * from the publisher's relays. A site with no definition works through its destination's override
+ * or the 10.2 fallback (the focused field, then the user's click). Callers take a
+ * {@link SiteDefinitionSource}, not the snapshot.
  */
 import {
   type Destination,
@@ -14,13 +15,21 @@ import {
   type SiteField,
 } from '@qusme/nostr';
 import type { CachedDraft } from '../sync/state.ts';
+import { BUNDLED_REGISTRY } from './registry.ts';
 
-/** The registry snapshot bundled with this build: definition JSON, as the registry publishes it. */
-export const BUNDLED_SITE_DEFINITIONS: readonly JsonObject[] = [];
+/**
+ * The definitions of the registry snapshot bundled with this build that verify against the pinned
+ * publisher key: definition JSON, as the registry publishes it.
+ */
+export const BUNDLED_SITE_DEFINITIONS: readonly JsonObject[] = BUNDLED_REGISTRY.definitions.map(
+  (d) => d.json
+);
 
 export interface SiteDefinitionSource {
   /** The official definition JSON for a site id, unvalidated. */
   official(site: string): JsonObject | undefined;
+  /** Calls `listener` whenever the definitions change; returns an unsubscribe function. */
+  subscribe?(listener: () => void): () => void;
 }
 
 /** A source over a list of definition JSON objects, keyed by their `id`. */

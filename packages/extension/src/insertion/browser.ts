@@ -117,6 +117,8 @@ export function installInsertion(
 
   browser.runtime.onInstalled.addListener(rebuildMenu);
   browser.runtime.onStartup.addListener(rebuildMenu);
+  // A registry refresh can bring new match patterns.
+  definitions.subscribe?.(rebuildMenu);
   browser.storage.onChanged.addListener((changes, area) => {
     if (area === 'session' && (SESSION_ARMED in changes || SESSION_DRAFTS in changes))
       rebuildMenu();
