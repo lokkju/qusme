@@ -1,5 +1,42 @@
 {
   "format": "qusme-registry-snapshot/1",
   "publisher": "144986dabaeeb884d105f2da2cac0008b3eb408bab0447a39894f87b7d94f54c",
-  "siteDefinitions": []
+  "relayList": {
+    "kind": 10002,
+    "created_at": 1793861870,
+    "tags": [
+      [
+        "r",
+        "wss://nos.lol"
+      ],
+      [
+        "r",
+        "wss://relay.ditto.pub"
+      ]
+    ],
+    "content": "",
+    "pubkey": "144986dabaeeb884d105f2da2cac0008b3eb408bab0447a39894f87b7d94f54c",
+    "id": "47a9b7bb3489da76a302721d41134f67d7e06e4796204b97b815f552c7528b57",
+    "sig": "85990bd0f78aa418e63dfdd6e739a938c3a5583c6a630aae447dbac826b294f09727089e0ecfe5af1a7cc4b26c7c73552d656de3637b8efb8fa93f5be32c365b"
+  },
+  "siteDefinitions": [
+    {
+      "kind": 31236,
+      "created_at": 1793862709,
+      "tags": [
+        [
+          "d",
+          "x"
+        ],
+        [
+          "alt",
+          "qus.me site definition: X 2026.11.1"
+        ]
+      ],
+      "content": "{\"id\":\"x\",\"version\":\"2026.11.1\",\"name\":\"X\",\"match\":[\"https://x.com/*\",\"https://twitter.com/*\"],\"account\":{\"locator\":{\"role\":\"button\",\"name\":{\"en\":[\"Account menu\"],\"ar\":[\"قائمة الحساب\"],\"bg\":[\"Меню на профила\"],\"bn\":[\"অ্যাকাউন্ট মেনু\"],\"ca\":[\"Menú del compte\"],\"cs\":[\"Nabídka účtu\"],\"da\":[\"Kontomenu\"],\"de\":[\"Account-Menü\"],\"el\":[\"Μενού λογαριασμού\"],\"es\":[\"Menú de la cuenta\"],\"fa\":[\"منوی حساب کاربری\"],\"fi\":[\"Tilivalikko\"],\"fil\":[\"Menu ng account\"],\"fr\":[\"Menu du compte\"],\"gu\":[\"એકાઉન્ટ મેન્યૂ\"],\"he\":[\"תפריט החשבון\"],\"hi\":[\"खाता मेनू\"],\"hr\":[\"Izbornik računa\"],\"hu\":[\"Felhasználói fiók menü\"],\"id\":[\"Menu akun\"],\"it\":[\"Menu Account\"],\"ja\":[\"アカウントメニュー\"],\"kn\":[\"ಖಾತೆ ಮೆನು\"],\"ko\":[\"계정 메뉴\"],\"mr\":[\"खाते मेनू\"],\"msa\":[\"Menu akaun\"],\"nl\":[\"Accountmenu\"],\"no\":[\"Kontomeny\"],\"pl\":[\"Menu konta\"],\"pt\":[\"Menu da conta\"],\"ro\":[\"Meniu cont\"],\"ru\":[\"Меню учетной записи\"],\"sk\":[\"Ponuka účtu\"],\"sr\":[\"Мени налога\"],\"sv\":[\"Kontomeny\"],\"ta\":[\"கணக்கு மெனு\"],\"th\":[\"เมนูบัญชี\"],\"tr\":[\"Hesap menüsü\"],\"uk\":[\"Меню профілю\"],\"ur\":[\"اکاؤنٹ مینیو\"],\"vi\":[\"Menu tài khoản\"],\"zh-cn\":[\"账号菜单\"],\"zh-tw\":[\"帳戶選單\"]}},\"extract\":\"@([A-Za-z0-9_]{1,15})\"},\"intents\":{\"compose\":\"https://x.com/intent/post?text={text}\"},\"fields\":[{\"name\":\"text\",\"label\":\"Post text\",\"locators\":[{\"role\":\"textbox\",\"name\":{\"en\":[\"Post text\"]}},{\"role\":\"textbox\",\"name\":{\"en\":[\"What's happening?\"],\"ar\":[\"ماذا يحدث؟\"],\"bg\":[\"Какво се случва?\"],\"bn\":[\"কী হচ্ছে?\"],\"ca\":[\"Què passa?\"],\"cs\":[\"Co se právě děje?\"],\"da\":[\"Hvad sker der?\"],\"de\":[\"Was gibt’s Neues?\"],\"el\":[\"Τι συμβαίνει;\"],\"es\":[\"¿Qué está pasando?\"],\"fa\":[\"چه خبر؟\"],\"fi\":[\"Mitä tapahtuu?\"],\"fil\":[\"Ano'ng nangyayari?\"],\"fr\":[\"Quoi de neuf ?\"],\"gu\":[\"શું ચાલી રહ્યું છે?\"],\"he\":[\"מה קורה?\"],\"hi\":[\"क्या हो रहा है?\"],\"hr\":[\"Što se događa?\"],\"hu\":[\"Mi történik éppen most?\"],\"id\":[\"Apa yang sedang terjadi?\"],\"it\":[\"Che c'è di nuovo?\"],\"ja\":[\"いまどうしてる?\"],\"kn\":[\"ಏನು ನಡೆಯುತ್ತಿದೆ?\"],\"ko\":[\"무슨 일이 일어나고 있나요?\"],\"mr\":[\"ताज्या घडामोडी\"],\"msa\":[\"Apa yang sedang berlaku?\"],\"nl\":[\"Wat houdt je bezig?\"],\"no\":[\"Hva skjer?\"],\"pl\":[\"Co słychać?\"],\"pt\":[\"O que está acontecendo?\"],\"ro\":[\"Ce se întâmplă?\"],\"ru\":[\"Что происходит?\"],\"sk\":[\"Čo sa deje?\"],\"sr\":[\"Шта се дешава?\"],\"sv\":[\"Vad händer?\"],\"ta\":[\"என்ன நடக்கிறது?\"],\"th\":[\"มีอะไรเกิดขึ้นบ้างในตอนนี้\"],\"tr\":[\"Neler oluyor?\"],\"uk\":[\"Що відбувається?\"],\"ur\":[\"کیا ہو رہا ہے؟\"],\"vi\":[\"Chuyện gì đang xảy ra?\"],\"zh-cn\":[\"有什么新鲜事？\"],\"zh-tw\":[\"有什麼新鮮事？\"]}}],\"inject\":[\"paste\",\"insertText\",\"clipboard\"],\"constraints\":{\"maxLength\":280,\"counter\":\"twitter-text\"}}]}",
+      "pubkey": "144986dabaeeb884d105f2da2cac0008b3eb408bab0447a39894f87b7d94f54c",
+      "id": "8408644deab9e7218a01a2d221125b0aa49f2fe7965fdfc815b64675277c2174",
+      "sig": "d4d6d45a6045cc980e8c3b16c0106f757fee136b4eaff2c50521be2a8098c378dd118e8c99ee0e7e279e4e70e9e6dc0e5815990abe315ad06cc0ce7ad7c967c2"
+    }
+  ]
 }

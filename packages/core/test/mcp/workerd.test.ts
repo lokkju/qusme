@@ -103,7 +103,23 @@ it('serves MCP tools under the Workers runtime', { timeout: 60_000 }, async () =
       'list_submissions',
     ]);
     const registry = await rpc('tools/call', { name: 'list_registry', arguments: {} });
-    expect(registry.result.structuredContent).toEqual({ sites: [] });
+    expect(registry.result.structuredContent).toEqual({
+      sites: [
+        {
+          id: 'x',
+          name: 'X',
+          version: '2026.11.1',
+          match: ['https://x.com/*', 'https://twitter.com/*'],
+          fields: [
+            {
+              name: 'text',
+              label: 'Post text',
+              constraints: { maxLength: 280, counter: 'twitter-text' },
+            },
+          ],
+        },
+      ],
+    });
   } finally {
     await mf.dispose();
   }

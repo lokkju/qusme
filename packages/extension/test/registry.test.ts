@@ -90,9 +90,11 @@ function source(
 }
 
 describe('the bundled registry', () => {
-  it('verifies against the production key and has no definitions yet', () => {
+  it('verifies against the production key and holds the X definition', () => {
     expect(BUNDLED_REGISTRY.rejected).toEqual([]);
-    expect(BUNDLED_REGISTRY.definitions).toEqual([]);
+    expect(
+      BUNDLED_REGISTRY.definitions.map((d) => [d.definition.id, d.definition.version])
+    ).toEqual([['x', '2026.11.1']]);
   });
 
   it('drops a bundled definition that fails verification', () => {

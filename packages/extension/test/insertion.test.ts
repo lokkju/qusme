@@ -174,8 +174,14 @@ describe('effective definitions (10.2)', () => {
     ).toBeUndefined();
   });
 
-  it('is empty in the bundled snapshot until the registry publishes', () => {
-    expect(definitionSource().official('x')).toBeUndefined();
+  it('holds the X definition in the bundled snapshot', () => {
+    expect(definitionSource().official('x')).toMatchObject({
+      id: 'x',
+      version: '2026.11.1',
+      match: ['https://x.com/*', 'https://twitter.com/*'],
+      fields: [{ name: 'text', constraints: { maxLength: 280, counter: 'twitter-text' } }],
+    });
+    expect(definitionSource().official('mastodon')).toBeUndefined();
   });
 
   it('finds the draft field through its destination, by id or by site and account', () => {
