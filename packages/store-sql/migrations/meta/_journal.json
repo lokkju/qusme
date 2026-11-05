@@ -15,6 +15,13 @@
       "when": 1793093953555,
       "tag": "0001_service_state",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793651449904,
+      "tag": "0002_binding_storage_relays",
+      "breakpoints": true
     }
   ]
 }

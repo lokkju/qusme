@@ -291,6 +291,13 @@ export function createStore(db: QusmeDb) {
         )
         .get();
     },
+    /**
+     * The token whether or not it is revoked or expired (until swept), so a refresh token presented
+     * again after rotation can be recognized as a replay (OAuth 2.1 refresh token rotation).
+     */
+    async find(tokenHash: string): Promise<OAuthToken | undefined> {
+      return db.select().from(oauthTokens).where(eq(oauthTokens.tokenHash, tokenHash)).get();
+    },
     async listByAgentKey(agentKeyId: string, now: number): Promise<OAuthToken[]> {
       return db
         .select()

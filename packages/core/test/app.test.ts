@@ -6,7 +6,7 @@ import { createAgentKeyRing, createApp } from '../src/index.ts';
 
 const app = createApp({
   version: 'test-version',
-  // No route touches the database yet.
+  // These tests reach no route that touches the database.
   db: {} as QusmeDb,
   agentKeys: createAgentKeyRing({ secret: btoa('k'.repeat(32)) }),
   publicOrigin: 'https://app.qus.me',
@@ -19,9 +19,10 @@ describe('createApp', () => {
     expect(await res.json()).toEqual({ ok: true, version: 'test-version' });
   });
 
-  it('answers 501 on /mcp until MCP lands', async () => {
+  it('requires a bearer token on /mcp', async () => {
     const res = await app.request('/mcp', { method: 'POST' });
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(401);
+    expect(res.headers.get('WWW-Authenticate')).toMatch(/^Bearer resource_metadata=/);
   });
 
   it('requires NIP-98 on /pair and /rotate', async () => {

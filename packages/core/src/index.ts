@@ -23,6 +23,28 @@ export {
   signedUrl,
 } from './nip98.ts';
 export {
+  ClientMetadataError,
+  type FetchLike,
+} from './oauth/clientMetadata.ts';
+export {
+  checkStorageRelays,
+  createWebSocketRelayReader,
+  type RelayFilter,
+  type RelayQuery,
+  type RelayReader,
+} from './oauth/relayReader.ts';
+export {
+  type AgentAuth,
+  createOAuth,
+  DEFAULT_LIFETIMES,
+  type McpAuthEnv,
+  type OAuth,
+  type OAuthLifetimes,
+  type OAuthOptions,
+  type OAuthOverrides,
+  SCOPE_SUBMIT,
+} from './oauth/server.ts';
+export {
   PAIRING_CODE_TTL_SECONDS,
   PAIRING_LOOKUP_WINDOW_SECONDS,
   PAIRING_LOOKUPS_PER_WINDOW,

@@ -175,6 +175,11 @@ export const bindings = sqliteTable(
     queuePubkey: text('queue_pubkey').notNull(),
     /** The client name shown on the approval screen. */
     clientLabel: text('client_label').notNull(),
+    /**
+     * The queue's storage relays as the approving device named them (spec 8.2 step 4), where the
+     * service reads the agent's grant and the submitters list.
+     */
+    storageRelays: text('storage_relays', { mode: 'json' }).$type<string[]>().notNull().default([]),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
     revokedAt: integer('revoked_at'),

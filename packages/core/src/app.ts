@@ -2,6 +2,7 @@ import { createStore, type QusmeDb } from '@qusme/store-sql';
 import { Hono } from 'hono';
 import type { AgentKeyRing } from './agentKeyRing.ts';
 import { nip98Auth } from './nip98.ts';
+import { createOAuth, type OAuthOverrides } from './oauth/server.ts';
 import { pairingRoutes } from './pairing.ts';
 
 /**
@@ -24,6 +25,8 @@ export interface AppDeps {
    * never read from the request or forwarded headers.
    */
   publicOrigin: string;
+  /** Test and entrypoint overrides for the OAuth server: fetch, relay reader, clock, lifetimes. */
+  oauth?: OAuthOverrides;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -35,8 +38,18 @@ export function createApp(deps: AppDeps): Hono {
 
   app.get('/healthz', (c) => c.json({ ok: true, version: deps.version }));
 
-  // Streamable HTTP MCP endpoint (spec 8.4); not implemented yet.
-  app.all('/mcp', (c) => c.json({ error: 'not implemented' }, 501));
+  // OAuth 2.1 for MCP clients and the device-side approval API (spec 8.2).
+  const oauth = createOAuth({
+    ...deps.oauth,
+    db: deps.db,
+    agentKeys: deps.agentKeys,
+    publicOrigin: deps.publicOrigin,
+  });
+  app.route('/', oauth.routes);
+
+  // Streamable HTTP MCP endpoint (spec 8.4) behind the bearer check; tools not implemented yet.
+  app.use('/mcp', oauth.mcpCors);
+  app.all('/mcp', oauth.requireBearer(), (c) => c.json({ error: 'not implemented' }, 501));
 
   // Typed-code pairing rendezvous (spec 8.3 steps 2 and 3).
   app.route(
