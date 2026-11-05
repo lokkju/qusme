@@ -1,6 +1,12 @@
-import { agentKeyRingFromEnv, createAgentKeyCustody, createApp } from '@qusme/core';
+import {
+  agentKeyRingFromEnv,
+  bundledRegistry,
+  createAgentKeyCustody,
+  createApp,
+} from '@qusme/core';
 import { createStore } from '@qusme/store-sql';
 import { openD1 } from '@qusme/store-sql/d1';
+import snapshot from '../../../registry/snapshot.json' with { type: 'json' };
 
 /**
  * Bindings and secrets. DB and QUSME_AGENT_KEY_SECRET are provisioned by Pulumi in lokkju/infra,
@@ -20,6 +26,10 @@ export interface Env {
 /** Set at build time through wrangler's `define` (the commit, in deploy.yml). */
 declare const __QUSME_VERSION__: string;
 
+// The bundled registry's verified definitions, read once per isolate; a definition that fails
+// verification is dropped with a log line.
+const registry = bundledRegistry(snapshot, { log: (line) => console.warn(line) });
+
 export default {
   fetch(request, env, ctx) {
     const app = createApp({
@@ -27,6 +37,7 @@ export default {
       db: openD1(env.DB),
       agentKeys: agentKeyRingFromEnv({ ...env }),
       publicOrigin: env.QUSME_PUBLIC_ORIGIN,
+      mcp: { registry },
     });
     return app.fetch(request, env, ctx);
   },

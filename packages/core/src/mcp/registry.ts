@@ -1,12 +1,14 @@
 /**
  * The bundled registry snapshot (spec 10.3) and effective definitions (10.2). The snapshot is
- * injected: the service has no bundled registry yet, so the default is empty and every
- * destination resolves from its override alone.
+ * injected: entrypoints read the repository's `registry/snapshot.json` with
+ * {@link bundledRegistry}, and without one every destination resolves from its override alone.
  */
 import {
   type JsonObject,
   mergeSiteOverride,
   parseSiteDefinition,
+  REGISTRY_PUBLISHER,
+  readRegistrySnapshot,
   type SiteDefinition,
 } from '@qusme/nostr';
 
@@ -19,6 +21,30 @@ export interface Registry {
   get(site: string): SiteDefinition | undefined;
   /** The definition as published, for merging an override over it. */
   json(site: string): JsonObject | undefined;
+}
+
+export interface BundledRegistryOptions {
+  /** The pinned publisher key; {@link REGISTRY_PUBLISHER} unless a test pins its own. */
+  publisher?: string;
+  /** Told about each dropped event: its place in the snapshot and why, never its content. */
+  log?: (line: string) => void;
+}
+
+/**
+ * The definitions of a signed registry snapshot (`qusme-registry-snapshot/1`) whose events verify
+ * against the pinned publisher key, as published JSON for {@link loadRegistry}. Anything that
+ * fails verification is dropped and reported through `log`; a snapshot for another publisher
+ * yields no definitions.
+ */
+export function bundledRegistry(
+  snapshot: unknown,
+  options: BundledRegistryOptions = {}
+): RegistrySnapshot {
+  const read = readRegistrySnapshot(snapshot, options.publisher ?? REGISTRY_PUBLISHER);
+  for (const { path, reason } of read.rejected) {
+    options.log?.(`registry snapshot: dropped ${path === '' ? 'the snapshot' : path}: ${reason}`);
+  }
+  return read.definitions.map((d) => d.json);
 }
 
 /** Parses a snapshot, throwing on an invalid or repeated definition: the snapshot is ours. */

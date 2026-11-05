@@ -1,6 +1,12 @@
-import type { JsonObject } from '@qusme/nostr';
+import {
+  createLocalSigner,
+  type JsonObject,
+  KIND_SITE_DEF,
+  REGISTRY_PUBLISHER,
+  REGISTRY_SNAPSHOT_FORMAT,
+} from '@qusme/nostr';
 import { describe, expect, it } from 'vitest';
-import { effectiveDefinition, loadRegistry } from '../../src/index.ts';
+import { bundledRegistry, effectiveDefinition, loadRegistry } from '../../src/index.ts';
 import { REGISTRY } from './tools.suite.ts';
 
 describe('registry snapshot', () => {
@@ -31,5 +37,44 @@ describe('registry snapshot', () => {
       id: 'blog',
     });
     expect(custom.kind).toBe('definition');
+  });
+});
+
+describe('bundled registry', () => {
+  const publisher = createLocalSigner(new Uint8Array(32).fill(3));
+  const sign = (definition: unknown, signer = publisher) =>
+    signer.signEvent({
+      kind: KIND_SITE_DEF,
+      created_at: 1_793_836_800,
+      tags: [['d', (definition as { id: string }).id]],
+      content: JSON.stringify(definition),
+    });
+
+  it('keeps definitions signed by the pinned key, as published, and logs the rest', async () => {
+    const pubkey = await publisher.getPublicKey();
+    const stranger = createLocalSigner(new Uint8Array(32).fill(4));
+    const snapshot = {
+      format: REGISTRY_SNAPSHOT_FORMAT,
+      publisher: pubkey,
+      siteDefinitions: [
+        await sign(REGISTRY[0]),
+        await sign({ ...(REGISTRY[0] as JsonObject), id: 'other' }, stranger),
+      ],
+    };
+    const logs: string[] = [];
+    const definitions = bundledRegistry(snapshot, { publisher: pubkey, log: (l) => logs.push(l) });
+    expect(definitions).toEqual([REGISTRY[0]]);
+    expect(loadRegistry(definitions).get('x')?.id).toBe('x');
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatch(/^registry snapshot: dropped siteDefinitions\[1\]: /);
+  });
+
+  it('pins the production publisher by default', async () => {
+    const snapshot = {
+      format: REGISTRY_SNAPSHOT_FORMAT,
+      publisher: REGISTRY_PUBLISHER,
+      siteDefinitions: [await sign(REGISTRY[0])],
+    };
+    expect(bundledRegistry(snapshot)).toEqual([]);
   });
 });
