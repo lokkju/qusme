@@ -15,7 +15,9 @@ import {
   readArray,
   readBoolean,
   readExtra,
+  readHex64,
   readInteger,
+  readJsonObject,
   readOneOf,
   readRecord,
   readRelayUrl,
@@ -25,11 +27,13 @@ import {
   withExtra,
 } from './validate.ts';
 
-const DESTINATION_KEYS = ['site', 'account', 'fields'];
+const DESTINATION_REQUIRED = ['site', 'account', 'fields'];
+const DESTINATION_KEYS = [...DESTINATION_REQUIRED, 'override'];
 const QUOTA_KEYS = ['max_submissions', 'period'];
-const GRANT_REQUIRED = ['inbox', 'destinations', 'quota'];
+const GRANT_REQUIRED = ['inbox', 'inbox_pubkey', 'destinations', 'quota'];
 const GRANT_KEYS = [
   ...GRANT_REQUIRED,
+  'min_pow',
   'allow_new_destinations',
   'submission_expiration_days',
   'expires_at',
@@ -39,6 +43,8 @@ const GRANT_KEYS = [
 export const DEFAULT_SUBMISSION_EXPIRATION_DAYS = 30;
 /** The most `submission_expiration_days` may be; devices never publish more (spec 7.4). */
 export const MAX_SUBMISSION_EXPIRATION_DAYS = 90;
+/** The most `min_pow` may be: NIP-13 difficulty counts the leading zero bits of a 256-bit id. */
+export const MAX_MIN_POW = 256;
 
 export const QUOTA_PERIODS = ['day', 'week', 'month'] as const;
 export type QuotaPeriod = (typeof QUOTA_PERIODS)[number];
@@ -48,6 +54,12 @@ export interface GrantDestination {
   site: string;
   account: string;
   fields: string[];
+  /**
+   * The destination's `override` (spec 7.2), a partial site definition merged over the official
+   * one (10.2), so the agent's effective definition matches the devices'. Absent when the device
+   * shares none.
+   */
+  override?: JsonObject | null;
   /** Keys this version does not know (queue side only; spec 7, "Unknown fields"). */
   extra?: JsonObject;
 }
@@ -61,6 +73,10 @@ export interface GrantQuota {
 /** A grant's content with defaults applied. */
 export interface AgentGrant {
   inbox: string[];
+  /** The inbox key's pubkey (spec 6.4), which submissions are gift-wrapped to (7.5). */
+  inbox_pubkey: string;
+  /** NIP-13 difficulty the agent's gift wrap ids must have; 0 for none. */
+  min_pow: number;
   destinations: GrantDestination[];
   allow_new_destinations: boolean;
   submission_expiration_days: number;
@@ -71,11 +87,13 @@ export interface AgentGrant {
 }
 
 /** What a device builds a grant from; the defaulted fields may be left out. */
-export type AgentGrantInput = Omit<
-  AgentGrant,
-  'allow_new_destinations' | 'submission_expiration_days' | 'expires_at'
-> &
-  Partial<Pick<AgentGrant, 'allow_new_destinations' | 'submission_expiration_days' | 'expires_at'>>;
+type DefaultedGrantKeys =
+  | 'min_pow'
+  | 'allow_new_destinations'
+  | 'submission_expiration_days'
+  | 'expires_at';
+export type AgentGrantInput = Omit<AgentGrant, DefaultedGrantKeys> &
+  Partial<Pick<AgentGrant, DefaultedGrantKeys>>;
 
 export interface AgentGrantEvent {
   id: string;
@@ -91,7 +109,7 @@ export interface AgentGrantEvent {
 
 function readGrantDestination(value: unknown, path: string, keepExtra: boolean): GrantDestination {
   const record = readRecord(value, path);
-  const extra = readExtra(record, path, DESTINATION_KEYS, DESTINATION_KEYS);
+  const extra = readExtra(record, path, DESTINATION_REQUIRED, DESTINATION_KEYS);
   const fieldsPath = joinPath(path, 'fields');
   const fields = readArray(record.fields, fieldsPath).map((f, i) =>
     readString(f, joinPath(fieldsPath, i), { nonEmpty: true })
@@ -102,6 +120,10 @@ function readGrantDestination(value: unknown, path: string, keepExtra: boolean):
     account: readString(record.account, joinPath(path, 'account'), { nonEmpty: true }),
     fields,
   };
+  if (record.override === null) destination.override = null;
+  else if (record.override !== undefined) {
+    destination.override = readJsonObject(record.override, joinPath(path, 'override'));
+  }
   if (keepExtra && extra !== undefined) destination.extra = extra;
   return destination;
 }
@@ -124,6 +146,11 @@ export function readAgentGrant(value: unknown, options: { keepExtra?: boolean } 
   const quotaExtra = readExtra(quota, 'content.quota', QUOTA_KEYS, QUOTA_KEYS);
   const grant: AgentGrant = {
     inbox,
+    inbox_pubkey: readHex64(record.inbox_pubkey, 'content.inbox_pubkey'),
+    min_pow:
+      record.min_pow === undefined
+        ? 0
+        : readInteger(record.min_pow, 'content.min_pow', { min: 0, max: MAX_MIN_POW }),
     destinations: readArray(record.destinations, 'content.destinations').map((d, i) =>
       readGrantDestination(d, `content.destinations[${i}]`, keepExtra)
     ),
@@ -159,6 +186,8 @@ function writeAgentGrant(grant: AgentGrant): JsonObject {
   return withExtra(
     [
       ['inbox', grant.inbox],
+      ['inbox_pubkey', grant.inbox_pubkey],
+      ['min_pow', grant.min_pow],
       [
         'destinations',
         grant.destinations.map((d) =>
@@ -167,7 +196,8 @@ function writeAgentGrant(grant: AgentGrant): JsonObject {
               ['site', d.site],
               ['account', d.account],
               ['fields', d.fields],
-            ],
+              ...(d.override === undefined ? [] : [['override', d.override]]),
+            ] as [string, JsonValue][],
             d.extra,
             DESTINATION_KEYS
           )
@@ -207,6 +237,7 @@ export async function buildAgentGrant(
   if (!isHex64(agentPubkey)) throw new Error('agent pubkey must be 64 lowercase hex characters');
   const full: AgentGrant = {
     ...grant,
+    min_pow: grant.min_pow ?? 0,
     allow_new_destinations: grant.allow_new_destinations ?? false,
     submission_expiration_days:
       grant.submission_expiration_days ?? DEFAULT_SUBMISSION_EXPIRATION_DAYS,
@@ -280,4 +311,16 @@ export function quotaPeriodStart(period: QuotaPeriod, time: number): number {
   else if (period === 'week') start = Date.UTC(y, m, d - ((date.getUTCDay() + 6) % 7));
   else start = Date.UTC(y, m, 1);
   return start / 1000;
+}
+
+/**
+ * The end of the UTC calendar period containing `time`: the start of the next one (spec 7.4).
+ * Unix seconds in and out.
+ */
+export function quotaPeriodEnd(period: QuotaPeriod, time: number): number {
+  const start = quotaPeriodStart(period, time);
+  if (period === 'day') return start + 86_400;
+  if (period === 'week') return start + 7 * 86_400;
+  const date = new Date(start * 1000);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1) / 1000;
 }

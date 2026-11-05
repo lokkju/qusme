@@ -116,6 +116,7 @@ export function custodySuite(driver: string, setup: () => { fresh(): Promise<Har
         key.pubkey,
         {
           inbox: ['wss://inbox.example/'],
+          inbox_pubkey: await queue.getPublicKey(),
           destinations: [{ site: 'x', account: 'lokkju', fields: ['text'] }],
           quota: { max_submissions: 5, period: 'day' },
         },

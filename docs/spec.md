@@ -300,7 +300,9 @@ Addressable `KIND_AGENT_GRANT`, `d` = agent pubkey, signed by the queue key, con
   "inbox_pubkey": "<inbox pubkey, hex>",
   "min_pow": 0,
   "destinations": [
-    { "site": "x", "account": "lokkju", "fields": ["text"] }
+    { "site": "x", "account": "lokkju", "fields": ["text"] },
+    { "site": "mastodon", "account": "lokkju@mastodon.social", "fields": ["text"],
+      "override": { "match": ["https://mastodon.social/*"] } }
   ],
   "allow_new_destinations": false,
   "submission_expiration_days": 30,
@@ -315,7 +317,9 @@ Addressable `KIND_AGENT_GRANT`, `d` = agent pubkey, signed by the queue key, con
 
 `submission_expiration_days` sets the NIP-40 expiration on this agent's submissions (7.5). It defaults to 30 when absent. Devices do not publish a grant with a value above 90, and the service refuses to submit under one. A user whose inbox is a third-party relay can shorten it per agent.
 
-`inbox` lists the inbox relays and `inbox_pubkey` the inbox key (6.4) the agent addresses its submissions to. `min_pow`, when present and above 0, is the NIP-13 difficulty the agent's gift wrap ids must have; devices check it before any decryption (11.4). The service mines it for each submission. Mining 20 bits takes about a million SHA-256 hashes, more than the Workers free plan's CPU limit allows per request, so devices leave it absent unless the user turns it on for an agent, typically after rotating a flooded inbox (6.4).
+Each destination may carry the destination's `override` from the settings (7.2), so the agent's effective definition (10.2) is the one devices use; a device includes it whenever the destination has one, and always for a site whose definition has an empty `match`.
+
+`inbox` lists the inbox relays and `inbox_pubkey` the inbox key (6.4) the agent addresses its submissions to. `min_pow`, when present and above 0, is the NIP-13 difficulty the agent's gift wrap ids must have; devices check it before any decryption (11.4). The service mines it for each submission, up to 24 bits, and refuses to submit under a grant asking for more. Mining 20 bits takes about a million SHA-256 hashes, more than the Workers free plan's CPU limit allows per request, so devices leave it absent unless the user turns it on for an agent, typically after rotating a flooded inbox (6.4).
 
 This is how an agent learns where it may draft for the user: the subset of destinations the user chose to share with that agent, and the relay and key to deliver submissions to. The service reads it from the queue's storage relays, authenticating as the agent key where a relay asks for NIP-42 AUTH (9.2), and decrypts it with that key; it is the agent's view, scoped by the user.
 
@@ -392,7 +396,9 @@ Streamable HTTP at `/mcp`, stateless, official MCP TypeScript SDK on Hono.
 | `create_draft`      | Validate against constraints (422-equivalent error on violation unless `lenient`, which never relaxes the 32 KiB cap of 7.1), seal with the agent key, gift-wrap to the grant's `inbox_pubkey` with any `min_pow` work, publish to the grant's inbox relays. Returns a receipt (gift wrap id, timestamp) |
 | `list_submissions`  | Receipts for this agent's submissions. No content and no status, since the service retains no plaintext and cannot read the queue                                                                                   |
 
-A draft for a destination not in the grant is accepted only if the grant's `allow_new_destinations` is true (7.4); the user's devices then create it as `pending`.
+A draft for a destination not in the grant is accepted only if the grant's `allow_new_destinations` is true (7.4); the user's devices then create it as `pending`. For a destination in the grant, the field must be one of its `fields`. A value is validated against the field in the effective definition (10.2), the bundled definition with the grant's override for that destination merged over it; a destination with neither a bundled definition nor a whole definition in its override is checked against the 32 KiB cap alone, and a field the definition does not have is refused.
+
+Every tool except `list_registry` reads the agent's grant from the queue's storage relays first, as the agent key (7.4), and refuses to act without a current one: none found, or `expires_at` passed. A grant that was found is reused for up to 30 seconds. A tool that refuses returns an MCP tool error whose structured content names the reason in `error` (`grant_not_found`, `grant_expired`, `grant_unusable`, `destination_not_granted`, `field_not_granted`, `unknown_field`, `field_unusable`, `invalid_definition`, `constraint_violation` with the violations, `quota_exhausted` with the period and when it resets, `publish_failed` with each relay's answer), and publishes nothing. A submission counts as published when at least one inbox relay answers `OK` true; only then is its receipt stored, so a failed publish uses none of the quota.
 
 The service retains no submission plaintext after publishing. For each published submission it stores a receipt (8.5) holding the agent key id, the queue pubkey, the gift wrap id, and the time; `list_submissions` returns these, and the service counts them against the grant's quota for the current period (7.4) before publishing.
 
@@ -682,3 +688,4 @@ Content is end-to-end encrypted on every relay: values, sites, accounts, fields,
 - 2026-10-27: the `qus.me/` `d`-tag prefix stays, as NIP-78's application identifier (7.2).
 - 2026-10-27: a pairing session started with a typed code sends the recovery backup, encrypted with the 128-bit recovery code, and the new device asks for the recovery code; a QR session sends the passphrase copy. Whoever relays the URI can defeat the SAS, so on the typed path a compromised service could receive the payload, and the recovery backup gives it nothing it could not already fetch from the storage relays or attack offline. Sending the passphrase copy on both paths was the alternative: more convenient, but it would let a compromised service guess the passphrase offline (8.3; [#48](https://github.com/lokkju/qusme/issues/48)).
 - 2026-10-27: pairing keeps the typed code; 8.3 states that a party relaying the URI can defeat the SAS, and qus.me raises the commit-then-reveal fix on the NIP-AB PR instead of changing the protocol locally (8.3; [#26](https://github.com/lokkju/qusme/issues/26)).
+- 2026-11-05: a grant's destinations carry the destination's `override`, since the service cannot read the settings and validates against the effective definition (7.4, 8.4); the service mines `min_pow` up to 24 bits and refuses a grant asking for more (7.4; [#9](https://github.com/lokkju/qusme/issues/9)).

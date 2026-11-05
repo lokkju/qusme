@@ -24,6 +24,13 @@ describe('agent key custody logging', () => {
     expect(text).not.toMatch(/\bconsole\s*\.|\blogger\b|\bdebug\s*\(/);
   });
 
+  // The MCP tools hold submitted values in plaintext for the length of a call (spec 8.4, 13); they
+  // log nothing, so no value outlives the call in a log.
+  it.each(readdirSync(join(src, 'mcp')))('mcp/%s makes no logging call', (file) => {
+    const text = readFileSync(join(src, 'mcp', file), 'utf8');
+    expect(text).not.toMatch(/\bconsole\s*\.|\blogger\b|\bdebug\s*\(|\bonerror\b/);
+  });
+
   it('entrypoints log rotation results without key material', () => {
     for (const file of [
       '../../entry-node/src/server.ts',

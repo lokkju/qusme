@@ -15,6 +15,29 @@ export {
   type RotationResult,
 } from './agentKeys.ts';
 export { type AppDeps, createApp } from './app.ts';
+export type { FoundGrant, GrantCache } from './mcp/grants.ts';
+export {
+  type EffectiveDefinition,
+  effectiveDefinition,
+  loadRegistry,
+  type Registry,
+  type RegistrySnapshot,
+} from './mcp/registry.ts';
+export {
+  createWebSocketRelayPublisher,
+  type RelayPublisher,
+  type RelayPublishRequest,
+  type RelayPublishResult,
+} from './mcp/relayPublisher.ts';
+export {
+  createMcp,
+  DEFAULT_GRANT_CACHE_SECONDS,
+  DEFAULT_MAX_POW,
+  type Mcp,
+  type McpOptions,
+  type McpOverrides,
+  type McpToolErrorCode,
+} from './mcp/server.ts';
 export {
   type Nip98Env,
   type Nip98Options,

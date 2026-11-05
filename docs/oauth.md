@@ -19,7 +19,7 @@ The service is the OAuth 2.1 authorization server for its own MCP endpoint (spec
 | POST | `/device/authorizations/:code/deny` | Device, NIP-98: destroys the agent key |
 | GET | `/device/bindings` | Device, NIP-98: the agents bound to the signing queue |
 | DELETE | `/device/bindings/:agentPubkey` | Device, NIP-98: revokes the binding, its tokens and the agent key |
-| any | `/mcp` | MCP client, bearer token; 501 until the tools land (#9) |
+| POST | `/mcp` | MCP client, bearer token: the tools of spec 8.4 over stateless streamable HTTP (GET and DELETE answer 405) |
 
 A request to `/mcp` without a valid token gets 401 with `WWW-Authenticate: Bearer resource_metadata="https://app.qus.me/.well-known/oauth-protected-resource/mcp", scope="drafts:submit"`, which is where an MCP client starts. The metadata, token, revocation and `/mcp` endpoints answer CORS from any origin, so browser-based clients such as MCP Inspector can use them; none of them uses cookies.
 

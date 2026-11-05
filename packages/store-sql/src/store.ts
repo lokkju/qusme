@@ -7,7 +7,7 @@
  *
  * `now` is always passed in (unix seconds), so reads of TTL rows filter on it and tests control it.
  */
-import { and, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import type { QusmeDb } from './db.ts';
 import {
   agentKeys,
@@ -415,23 +415,31 @@ export function createStore(db: QusmeDb) {
     },
     /**
      * An agent key's receipts, newest first (`list_submissions`, spec 8.4). `before` pages by
-     * `created_at`: pass the last row's `createdAt` to get the next page.
+     * `created_at`: pass the last row's `createdAt` to get the next page, and its `giftWrapId` as
+     * `beforeId` so receipts sharing that second are not skipped.
      */
     async listByAgentKey(
       agentKeyId: string,
       now: number,
-      opts: { limit?: number; before?: number } = {}
+      opts: { limit?: number; before?: number; beforeId?: string } = {}
     ): Promise<SubmissionReceipt[]> {
+      const { before, beforeId } = opts;
+      const page =
+        before === undefined
+          ? undefined
+          : beforeId === undefined
+            ? lt(submissionReceipts.createdAt, before)
+            : or(
+                lt(submissionReceipts.createdAt, before),
+                and(
+                  eq(submissionReceipts.createdAt, before),
+                  lt(submissionReceipts.giftWrapId, beforeId)
+                )
+              );
       return db
         .select()
         .from(submissionReceipts)
-        .where(
-          and(
-            eq(submissionReceipts.agentKeyId, agentKeyId),
-            receiptsLive(now),
-            opts.before === undefined ? undefined : lt(submissionReceipts.createdAt, opts.before)
-          )
-        )
+        .where(and(eq(submissionReceipts.agentKeyId, agentKeyId), receiptsLive(now), page))
         .orderBy(desc(submissionReceipts.createdAt), desc(submissionReceipts.giftWrapId))
         .limit(opts.limit ?? 50)
         .all();

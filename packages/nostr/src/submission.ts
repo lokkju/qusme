@@ -10,7 +10,7 @@ import {
   submissionRumor,
 } from './fieldValue.ts';
 import { KIND_GIFT_WRAP } from './kinds.ts';
-import { giftWrap, unwrapGiftWrap } from './nip59.ts';
+import { type GiftWrapOptions, giftWrap, unwrapGiftWrap } from './nip59.ts';
 import { captureAsync, Invalid, type ParseResult } from './result.ts';
 import type { Signer } from './signer.ts';
 import { readSignedEvent } from './validate.ts';
@@ -39,14 +39,16 @@ export interface Submission {
 
 /**
  * Builds a submission (spec 7.5): the field value rumor, sealed by the agent's key and
- * gift-wrapped to the queue pubkey with a NIP-40 expiration `submissionExpirationDays` (the
- * grant's `submission_expiration_days`, default 30, at most 90) from now.
+ * gift-wrapped to `recipientPubkey` (the grant's `inbox_pubkey`, 6.4) with a NIP-40 expiration
+ * `submissionExpirationDays` (the grant's `submission_expiration_days`, default 30, at most 90)
+ * from now and, when `pow` is above 0, that much NIP-13 work on the wrap's id (the grant's
+ * `min_pow`).
  */
 export async function buildSubmission(
   agent: Signer,
-  queuePubkey: string,
+  recipientPubkey: string,
   value: SubmissionInput,
-  options: { submissionExpirationDays?: number; now?: number } = {}
+  options: { submissionExpirationDays?: number; now?: number; pow?: number } = {}
 ): Promise<NostrEvent> {
   const days = options.submissionExpirationDays ?? DEFAULT_SUBMISSION_EXPIRATION_DAYS;
   if (!Number.isInteger(days) || days < 1 || days > MAX_SUBMISSION_EXPIRATION_DAYS) {
@@ -58,12 +60,14 @@ export async function buildSubmission(
     createdAt: value.createdAt ?? now,
     reserved: value.reserved ?? [],
   });
-  return giftWrap(rumor, agent, queuePubkey, { now, expiration: now + days * DAY });
+  const wrapOptions: GiftWrapOptions = { now, expiration: now + days * DAY };
+  if (options.pow !== undefined) wrapOptions.pow = options.pow;
+  return giftWrap(rumor, agent, recipientPubkey, wrapOptions);
 }
 
 /**
- * Opens a submission gift wrap with the queue key's signer. Refuses a wrap not `p`-tagged to
- * exactly the queue, without a NIP-40 expiration, failing any NIP-59 check, or whose rumor is not
+ * Opens a submission gift wrap with the signer of the key it is addressed to (the inbox key,
+ * spec 6.4). Refuses a wrap not `p`-tagged to exactly that key, without a NIP-40 expiration, failing any NIP-59 check, or whose rumor is not
  * a valid submission. Does not check the submitters list or the expiration against the clock.
  */
 export function openSubmission(event: unknown, queue: Signer): Promise<ParseResult<Submission>> {

@@ -1,7 +1,9 @@
 import { createStore, type QusmeDb } from '@qusme/store-sql';
 import { Hono } from 'hono';
 import type { AgentKeyRing } from './agentKeyRing.ts';
+import { createMcp, type McpOverrides } from './mcp/server.ts';
 import { nip98Auth } from './nip98.ts';
+import { createWebSocketRelayReader } from './oauth/relayReader.ts';
 import { createOAuth, type OAuthOverrides } from './oauth/server.ts';
 import { pairingRoutes } from './pairing.ts';
 
@@ -27,6 +29,11 @@ export interface AppDeps {
   publicOrigin: string;
   /** Test and entrypoint overrides for the OAuth server: fetch, relay reader, clock, lifetimes. */
   oauth?: OAuthOverrides;
+  /**
+   * Test and entrypoint overrides for the MCP tools: registry snapshot, relay reader and
+   * publisher, clock, grant cache lifetime. The relay reader and clock default to the OAuth ones.
+   */
+  mcp?: McpOverrides;
 }
 
 export function createApp(deps: AppDeps): Hono {
@@ -39,17 +46,29 @@ export function createApp(deps: AppDeps): Hono {
   app.get('/healthz', (c) => c.json({ ok: true, version: deps.version }));
 
   // OAuth 2.1 for MCP clients and the device-side approval API (spec 8.2).
+  const relayReader = deps.oauth?.relayReader ?? createWebSocketRelayReader();
   const oauth = createOAuth({
     ...deps.oauth,
+    relayReader,
     db: deps.db,
     agentKeys: deps.agentKeys,
     publicOrigin: deps.publicOrigin,
   });
   app.route('/', oauth.routes);
 
-  // Streamable HTTP MCP endpoint (spec 8.4) behind the bearer check; tools not implemented yet.
+  // Stateless streamable HTTP MCP endpoint (spec 8.4) behind the bearer check.
+  const mcpOverrides: McpOverrides = { ...deps.mcp };
+  const now = deps.mcp?.now ?? deps.oauth?.now;
+  if (now !== undefined) mcpOverrides.now = now;
+  const mcp = createMcp({
+    relayReader,
+    ...mcpOverrides,
+    db: deps.db,
+    agentKeys: deps.agentKeys,
+    version: deps.version,
+  });
   app.use('/mcp', oauth.mcpCors);
-  app.all('/mcp', oauth.requireBearer(), (c) => c.json({ error: 'not implemented' }, 501));
+  app.all('/mcp', oauth.requireBearer(), (c) => mcp.handle(c));
 
   // Typed-code pairing rendezvous (spec 8.3 steps 2 and 3).
   app.route(

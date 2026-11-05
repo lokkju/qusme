@@ -216,7 +216,7 @@ describe('data devices republish keeps unknown fields', () => {
 });
 
 describe('agent grants: kept on the queue side, ignored on the agent side', () => {
-  const plaintext = `{"inbox":["wss://relay.example/"],"destinations":[{"site":"x","account":"lokkju","fields":["text"],"note":"main"}],"allow_new_destinations":false,"submission_expiration_days":30,"quota":{"max_submissions":5,"period":"day","burst":2},"expires_at":null,"scopes":["drafts"]}`;
+  const plaintext = `{"inbox":["wss://relay.example/"],"inbox_pubkey":"${otherPubkey}","min_pow":0,"destinations":[{"site":"x","account":"lokkju","fields":["text"],"note":"main"}],"allow_new_destinations":false,"submission_expiration_days":30,"quota":{"max_submissions":5,"period":"day","burst":2},"expires_at":null,"scopes":["drafts"]}`;
   const event = sign({
     kind: KIND_AGENT_GRANT,
     created_at: NOW,
