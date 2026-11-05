@@ -20,10 +20,10 @@
  * (the URI, decrypted JSON, the `ncryptsec`) can't be wiped; references to them are dropped.
  */
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js';
-import type { NostrEvent } from 'nostr-tools/core';
+import type { EventTemplate, NostrEvent } from 'nostr-tools/core';
 import { decode as nip19Decode, npubEncode } from 'nostr-tools/nip19';
 import { finalizeEvent, getPublicKey } from 'nostr-tools/pure';
-import { KIND_PAIRING } from './kinds.ts';
+import { KIND_PAIRING, KIND_RELAY_AUTH } from './kinds.ts';
 import { nip44ConversationKey, nip44DecryptWithKey, nip44EncryptWithKey } from './nip44.ts';
 import { NCRYPTSEC_MAX_LOG_N, ncryptsecParams } from './nip49.ts';
 import {
@@ -299,6 +299,17 @@ abstract class PairingSession {
   }
 
   abstract get terminal(): boolean;
+
+  /**
+   * Signs a NIP-42 AUTH event (kind 22242) as the session's ephemeral key, for a relay of the
+   * session that asks for AUTH (spec 8.3 step 4). Signs nothing else, and nothing once ended.
+   */
+  signAuth(template: EventTemplate): NostrEvent {
+    if (this.wiped) throw new Error('the pairing session has ended');
+    if (template.kind !== KIND_RELAY_AUTH)
+      throw new Error(`signAuth signs only kind ${KIND_RELAY_AUTH}`);
+    return finalizeEvent(template, this.secretKey);
+  }
 
   protected lockPeer(peer: string): void {
     this.peer = peer;

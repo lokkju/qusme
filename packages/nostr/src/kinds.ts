@@ -25,6 +25,8 @@ export const KIND_GIFT_WRAP = 1059;
 export const KIND_PRIVATE_RELAYS = 10013;
 /** NIP-AB device pairing message (ephemeral range, spec 8.3). */
 export const KIND_PAIRING = 24134;
+/** NIP-42 relay authentication. */
+export const KIND_RELAY_AUTH = 22242;
 /** NIP-98 HTTP auth. */
 export const KIND_HTTP_AUTH = 27235;
 /** NIP-78 application-specific data (addressable). */

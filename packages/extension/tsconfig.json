@@ -5,7 +5,9 @@
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
   },
   "include": [".wxt/wxt.d.ts", "entrypoints", "src", "test", "wxt.config.ts"]
 }

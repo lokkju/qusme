@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { npubEncode } from 'nostr-tools/nip19';
-import { finalizeEvent, getPublicKey } from 'nostr-tools/pure';
+import { finalizeEvent, getPublicKey, verifyEvent } from 'nostr-tools/pure';
 import { describe, expect, it } from 'vitest';
 import {
   buildPairingUri,
@@ -540,6 +540,20 @@ describe('NIP-AB sessions', () => {
       reason: 'protocol_error',
       by: 'peer',
     });
+  });
+
+  it('signs NIP-42 AUTH as the ephemeral key, nothing else, and nothing once ended', () => {
+    const { source, target } = pair();
+    const auth = (session: PairingSource | PairingTarget) =>
+      session.signAuth({ kind: 22242, created_at: 1, tags: [['challenge', 'c']], content: '' });
+    expect(auth(source).pubkey).toBe(source.pubkey);
+    expect(auth(target).pubkey).toBe(target.pubkey);
+    expect(verifyEvent(auth(target))).toBe(true);
+    expect(() => source.signAuth({ kind: 1, created_at: 1, tags: [], content: '' })).toThrow(
+      /22242/
+    );
+    source.deny(T0);
+    expect(() => auth(source)).toThrow(/ended/);
   });
 
   it('wipes its secrets when it ends', () => {

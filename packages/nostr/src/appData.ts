@@ -21,6 +21,7 @@ import {
   readJsonObject,
   readOneOf,
   readRecord,
+  readRelayUrl,
   readSignedEvent,
   readString,
   singleTag,
@@ -65,6 +66,14 @@ export interface QuotaCount {
   extra?: JsonObject;
 }
 
+/** An inbox key that was replaced and is still drained until its grants' wraps expire (6.4). */
+export interface RetiredInboxKey {
+  /** The retired inbox secret key, hex. */
+  key: string;
+  retired_at: number;
+  extra?: JsonObject;
+}
+
 /** The settings event's content (spec 7.2). */
 export interface Settings {
   /**
@@ -72,6 +81,11 @@ export interface Settings {
    * {@link archiveRetentionDays}.
    */
   archive_retention_days?: number | null;
+  /** The inbox secret key, hex (6.4). Every queue set up by v0.4 devices has one. */
+  inbox_key?: string;
+  /** The relays devices read the inbox key's gift wraps on (9.1). */
+  inbox_relays?: string[];
+  retired_inbox_keys?: RetiredInboxKey[];
   /** Keyed by agent pubkey. */
   quota_counts: Record<string, QuotaCount>;
   extra?: JsonObject;
@@ -117,7 +131,14 @@ export interface AppDataOptions {
 const ID_MAX = 128;
 const DESTINATION_KEYS = ['id', 'site', 'account', 'label', 'status', 'override'];
 const QUOTA_COUNT_KEYS = ['period_start', 'accepted', 'discarded'];
-const SETTINGS_KEYS = ['archive_retention_days', 'quota_counts'];
+const RETIRED_INBOX_KEYS = ['key', 'retired_at'];
+const SETTINGS_KEYS = [
+  'archive_retention_days',
+  'inbox_key',
+  'inbox_relays',
+  'retired_inbox_keys',
+  'quota_counts',
+];
 
 function readDestination(value: unknown, path: string): Destination {
   const record = readRecord(value, path);
@@ -183,6 +204,30 @@ export function readSettings(value: unknown): Settings {
         ? null
         : readInteger(retention, 'content.archive_retention_days', { min: 1 });
   }
+  if (record.inbox_key !== undefined) {
+    settings.inbox_key = readHex64(record.inbox_key, 'content.inbox_key');
+  }
+  if (record.inbox_relays !== undefined) {
+    settings.inbox_relays = readArray(record.inbox_relays, 'content.inbox_relays').map((url, i) =>
+      readRelayUrl(url, `content.inbox_relays[${i}]`)
+    );
+  }
+  if (record.retired_inbox_keys !== undefined) {
+    settings.retired_inbox_keys = readArray(
+      record.retired_inbox_keys,
+      'content.retired_inbox_keys'
+    ).map((item, i) => {
+      const path = `content.retired_inbox_keys[${i}]`;
+      const entry = readRecord(item, path);
+      const entryExtra = readExtra(entry, path, RETIRED_INBOX_KEYS, RETIRED_INBOX_KEYS);
+      const retired: RetiredInboxKey = {
+        key: readHex64(entry.key, `${path}.key`),
+        retired_at: readInteger(entry.retired_at, `${path}.retired_at`, { min: 0 }),
+      };
+      if (entryExtra !== undefined) retired.extra = entryExtra;
+      return retired;
+    });
+  }
   if (record.quota_counts !== undefined) {
     const counts = readRecord(record.quota_counts, 'content.quota_counts');
     for (const [agent, entry] of Object.entries(counts)) {
@@ -217,9 +262,22 @@ export function writeSettings(content: Settings): JsonObject {
       QUOTA_COUNT_KEYS
     );
   }
+  const retired = content.retired_inbox_keys?.map((entry) =>
+    withExtra(
+      [
+        ['key', entry.key],
+        ['retired_at', entry.retired_at],
+      ],
+      entry.extra,
+      RETIRED_INBOX_KEYS
+    )
+  );
   return withExtra(
     [
       ['archive_retention_days', content.archive_retention_days],
+      ['inbox_key', content.inbox_key],
+      ['inbox_relays', content.inbox_relays],
+      ['retired_inbox_keys', retired],
       ['quota_counts', counts],
     ],
     content.extra,
