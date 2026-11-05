@@ -13,12 +13,17 @@
  *   unlocked. Lock and turning the option off delete it.
  * - `qusme.pendingImport`: a pairing payload (an `ncryptsec`) stored before the user unlocks it,
  *   since the new device sends `complete` first (8.3 step 6).
+ * - `qusme.sync`: the sync engine's own state (`src/sync/state.ts`): the last inbox sync, the ids
+ *   of gift wraps already handled, the cap streak and counts from the last sync. Ids and counts
+ *   only, never decrypted content.
  *
  * `storage.session` (memory only, cleared when the browser closes, readable only by extension
  * pages and the service worker):
  * - `qusme.unlocked`: the unlocked queue key and inbox key, hex.
+ * - `qusme.drafts`: the decrypted drafts from the last sync, for the popup (`src/sync/state.ts`).
+ *   Decrypted drafts live here and nowhere else.
  *
- * Lock deletes `qusme.unlocked` and `qusme.plainKeys`.
+ * Lock deletes `qusme.unlocked`, `qusme.drafts` and `qusme.plainKeys`.
  */
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import {
@@ -37,7 +42,9 @@ export const LOCAL_QUEUE = 'qusme.queue';
 export const LOCAL_STAY_UNLOCKED = 'qusme.stayUnlocked';
 export const LOCAL_PLAIN_KEYS = 'qusme.plainKeys';
 export const LOCAL_PENDING_IMPORT = 'qusme.pendingImport';
+export const LOCAL_SYNC = 'qusme.sync';
 export const SESSION_UNLOCKED = 'qusme.unlocked';
+export const SESSION_DRAFTS = 'qusme.drafts';
 
 export interface QueueRecord {
   version: 1;
@@ -186,7 +193,8 @@ export class KeyStore {
     if (input.settings !== undefined) record.settings = input.settings;
     await this.local.remove([LOCAL_PLAIN_KEYS, LOCAL_PENDING_IMPORT]);
     await this.local.set({ [LOCAL_QUEUE]: record });
-    await this.session.remove([SESSION_UNLOCKED]);
+    await this.local.remove([LOCAL_SYNC]);
+    await this.session.remove([SESSION_UNLOCKED, SESSION_DRAFTS]);
     await this.#open(record, input.secretKey);
   }
 
@@ -223,7 +231,7 @@ export class KeyStore {
 
   /** Forgets the unlocked keys everywhere; the next use needs the passphrase. */
   async lock(): Promise<void> {
-    await this.session.remove([SESSION_UNLOCKED]);
+    await this.session.remove([SESSION_UNLOCKED, SESSION_DRAFTS]);
     await this.local.remove([LOCAL_PLAIN_KEYS]);
   }
 
@@ -258,9 +266,10 @@ export class KeyStore {
 
   /** Deletes everything this store wrote. */
   async forget(): Promise<void> {
-    await this.session.remove([SESSION_UNLOCKED]);
+    await this.session.remove([SESSION_UNLOCKED, SESSION_DRAFTS]);
     await this.local.remove([
       LOCAL_QUEUE,
+      LOCAL_SYNC,
       LOCAL_STAY_UNLOCKED,
       LOCAL_PLAIN_KEYS,
       LOCAL_PENDING_IMPORT,

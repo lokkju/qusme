@@ -23,6 +23,8 @@ export type ParseErrorCode =
   | 'invalid_content'
   /** A gift wrap or seal failed NIP-59 checks. */
   | 'unwrap_failed'
+  /** The seal is signed by a key the caller does not accept (spec 11.4). */
+  | 'unauthorized_submitter'
   /** NIP-98: the event is outside the time window. */
   | 'stale'
   /** NIP-98: the `u`, `method` or `payload` tag does not match the request. */

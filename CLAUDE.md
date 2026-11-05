@@ -27,7 +27,7 @@ CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on
 - `packages/store-sql`: Drizzle schema (`src/schema.ts`) and the generated migrations in `migrations/`. Never edit a migration that has been merged; generate a new one.
 - `packages/entry-worker`: Workers entrypoint and `wrangler.jsonc`.
 - `packages/entry-node`: Node entrypoint and Dockerfile. `image.yml` pushes the image to zot (`registry.lab.lokkju.com/builds/qusme`) only; never to ghcr.io.
-- `packages/extension`: WXT. Its permissions are exactly `activeTab`, `scripting`, `contextMenus`, `storage` (spec 11.2, `src/permissions.ts`, tested). No host permissions, no `tabs`.
+- `packages/extension`: WXT. Its permissions are exactly `activeTab`, `scripting`, `contextMenus`, `storage`, `alarms` (spec 11.2, `src/permissions.ts`, tested). No host permissions, no `tabs`.
 - `packages/pwa`: Preact, Vite, Tailwind v4 with the CSS-first `@theme` in `src/index.css`.
 
 Workspace packages export TypeScript source directly (`"exports": "./src/index.ts"`); bundlers and Node 24's type stripping consume it, so relative imports carry the `.ts` extension and only erasable TypeScript syntax is allowed (no enums, no parameter properties).

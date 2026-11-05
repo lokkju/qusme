@@ -10,7 +10,7 @@ import {
   submissionRumor,
 } from './fieldValue.ts';
 import { KIND_GIFT_WRAP } from './kinds.ts';
-import { type GiftWrapOptions, giftWrap, unwrapGiftWrap } from './nip59.ts';
+import { type GiftWrapOptions, giftWrap, SealRefused, unwrapGiftWrap } from './nip59.ts';
 import { captureAsync, Invalid, type ParseResult } from './result.ts';
 import type { Signer } from './signer.ts';
 import { readSignedEvent } from './validate.ts';
@@ -67,10 +67,17 @@ export async function buildSubmission(
 
 /**
  * Opens a submission gift wrap with the signer of the key it is addressed to (the inbox key,
- * spec 6.4). Refuses a wrap not `p`-tagged to exactly that key, without a NIP-40 expiration, failing any NIP-59 check, or whose rumor is not
- * a valid submission. Does not check the submitters list or the expiration against the clock.
+ * spec 6.4). Refuses a wrap not `p`-tagged to exactly that key, without a NIP-40 expiration,
+ * failing any NIP-59 check, or whose rumor is not a valid submission. With `acceptSubmitter`, the
+ * seal's pubkey is checked against it as soon as the gift wrap layer is open, before the seal is
+ * verified or the rumor decrypted, and a refusal comes back as `unauthorized_submitter` (11.4).
+ * Does not check the expiration against the clock.
  */
-export function openSubmission(event: unknown, queue: Signer): Promise<ParseResult<Submission>> {
+export function openSubmission(
+  event: unknown,
+  queue: Signer,
+  options: { acceptSubmitter?: (pubkey: string) => boolean } = {}
+): Promise<ParseResult<Submission>> {
   return captureAsync(async () => {
     const wrap = readSignedEvent(event);
     if (wrap.kind !== KIND_GIFT_WRAP) throw new Invalid('wrong_kind', `kind ${wrap.kind}`, 'kind');
@@ -86,8 +93,15 @@ export function openSubmission(event: unknown, queue: Signer): Promise<ParseResu
     }
     let opened: Awaited<ReturnType<typeof unwrapGiftWrap>>;
     try {
-      opened = await unwrapGiftWrap(wrap, queue);
+      opened = await unwrapGiftWrap(
+        wrap,
+        queue,
+        options.acceptSubmitter === undefined ? {} : { acceptSeal: options.acceptSubmitter }
+      );
     } catch (error) {
+      if (error instanceof SealRefused) {
+        throw new Invalid('unauthorized_submitter', 'the seal is not from a listed submitter');
+      }
       throw new Invalid('unwrap_failed', (error as Error).message);
     }
     const { value, ignoredTags } = readSubmissionValue(opened.rumor);

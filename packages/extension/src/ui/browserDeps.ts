@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { KeyStore } from '../keyStore.ts';
 import { OPTIONAL_HOST_PERMISSIONS, SERVICE_ORIGIN } from '../permissions.ts';
 import type { SetupDeps } from '../setup/deps.ts';
+import { SYNC_MESSAGE } from '../sync/messages.ts';
 
 /** The setup flows' dependencies in the real extension. */
 export function browserDeps(): SetupDeps {
@@ -12,6 +13,7 @@ export function browserDeps(): SetupDeps {
     // Called first in the click handler's flow: Firefox grants it only inside the user's gesture.
     requestServicePermission: () =>
       browser.permissions.request({ origins: [...OPTIONAL_HOST_PERMISSIONS] }),
+    requestSync: () => browser.runtime.sendMessage({ type: SYNC_MESSAGE }),
   };
 }
 

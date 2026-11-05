@@ -41,6 +41,11 @@ export interface SetupDeps {
    * Firefox grants a permission request only inside the user's gesture.
    */
   requestServicePermission: () => Promise<boolean>;
+  /**
+   * Asks the background to sync (spec 11.4) and resolves when it has; the popup calls it on open.
+   * Absent where there is no background, as in tests of the setup flows.
+   */
+  requestSync?: () => Promise<unknown>;
 }
 
 /** A setup step failed in a way the user can act on; `message` is written for them. */
