@@ -511,7 +511,7 @@ Values below illustrate the shape; locator strings for real sites must be verifi
 }
 ```
 
-Locators match ARIA role and accessible name, keyed by `document.documentElement.lang`, with `en` as fallback. `constraints.counter` names a counting strategy implemented in the `nostr`/core packages (`default`: code points; `graphemes`: extended grapheme clusters per Unicode UAX #29, as `Intl.Segmenter` with `granularity: "grapheme"` counts them, for Bluesky's 300-grapheme limit; `twitter-text`: X's weighting). Strategies are a closed set in code; definitions only reference them, and a field naming an unknown strategy is unusable while the rest of the definition loads (7, "Unknown fields").
+Locators match ARIA role and accessible name, keyed by `document.documentElement.lang`, with `en` as fallback: the names for the exact language tag, else for its primary subtag (`de` for `de-AT`), else `en`, tags compared without regard to case. A name matches when it equals the element's accessible name with whitespace collapsed; matching is exact, so a composer whose name embeds the user's name needs its own rule, decided with the definitions that need it. The account `extract` expression is applied to the account element's text, then its accessible name, `title` and `href`, and the first capture group of the first match is the detected account. `constraints.counter` names a counting strategy implemented in the `nostr`/core packages (`default`: code points; `graphemes`: extended grapheme clusters per Unicode UAX #29, as `Intl.Segmenter` with `granularity: "grapheme"` counts them, for Bluesky's 300-grapheme limit; `twitter-text`: X's weighting). Strategies are a closed set in code; definitions only reference them, and a field naming an unknown strategy is unusable while the rest of the definition loads (7, "Unknown fields").
 
 `twitter-text` is a port of twitter-text 3.1.0 with its config v3, which matches X's published counting rules: the text is NFC-normalized, every URL counts 23, code points in U+0000-U+10FF, U+2000-U+200D, U+2010-U+201F and U+2032-U+2037 count 1, every other code point 2, and each emoji sequence 2. The port keeps upstream's URL extraction and passes its conformance suite. It finds emoji with the engine's Unicode properties (any RGI emoji, ZWJ sequences missing their U+FE0F, bare keycaps) instead of upstream's twemoji-parser, whose Emoji 12 data counts newer sequences per code point.
 
@@ -584,6 +584,8 @@ Further rules devices follow at ingestion:
 
 If nothing is armed, the context menu item opens the popup.
 
+The `inserted` tag's method is `extension_popup` or `extension_context_menu`. Detected accounts compare with drafts' accounts without a leading `@` and without regard to case. A destination with no usable definition (no official definition and an override that is not a whole one) has no field: insertion targets the focused field, then asks the user to click into one, and runs `paste`, `insertText`, `clipboard` on a contenteditable or `native`, `insertText`, `clipboard` on an `<input>` or `<textarea>`. The popup can also arm a draft whose destination does not match the page, behind a "drafts for other sites" toggle; the context menu still appears only on the user's destinations. When the insertion succeeds but the wrap cannot be republished (locked, no relay answered, a relay refused), the device disarms anyway, keeps the `inserted` tag in `storage.session` and retries on request; lock discards it.
+
 Draft selection happens entirely in extension origin; no draft other than the inserted one enters the page. Draft text is rendered with `textContent`, never as HTML, since agent-supplied content is untrusted.
 
 ### 11.6 Injection strategies
@@ -595,7 +597,7 @@ Draft selection happens entirely in extension origin; no draft other than the in
 | `native`     | Native value setter on the element prototype, then `input`                         | Plain `<input>` and `<textarea>` under framework state |
 | `clipboard`  | Write to clipboard, focus, prompt the user to press Ctrl/Cmd+V                     | Unblockable (a real paste is trusted); always last     |
 
-Success is judged by reading the element's value or text after injection.
+Success is judged by reading the element's value or text after injection. The comparison ignores whitespace and the zero-width characters rich editors insert, since editors render line breaks as paragraphs, and counts occurrences: the draft must appear once more than before, so a field that already held the same text does not pass a strategy that did nothing. A strategy that changes the field without the draft appearing stops the chain, since the next strategy could insert the draft a second time; the user is asked to check the field. `native` applies only to `<input>` and `<textarea>`. For `clipboard`, the page writes the clipboard when it may; otherwise the popup writes it inside the user's click. The insertion script then shows a notice asking for Ctrl/Cmd+V (it never shows draft text), judges the paste the same way, in the resolved field or any field the user clicks into, and gives up after two minutes. Asking the user to click into the field (10.2) waits the same way.
 
 ### 11.7 Saving a field as a draft
 

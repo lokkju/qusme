@@ -45,6 +45,10 @@ export const LOCAL_PENDING_IMPORT = 'qusme.pendingImport';
 export const LOCAL_SYNC = 'qusme.sync';
 export const SESSION_UNLOCKED = 'qusme.unlocked';
 export const SESSION_DRAFTS = 'qusme.drafts';
+/** The armed draft (spec 11.5), decrypted text included. */
+export const SESSION_ARMED = 'qusme.armed';
+/** Insertions waiting on the user and insertions not yet recorded on the relays (11.5). */
+export const SESSION_INSERTION = 'qusme.insertion';
 
 export interface QueueRecord {
   version: 1;
@@ -194,7 +198,7 @@ export class KeyStore {
     await this.local.remove([LOCAL_PLAIN_KEYS, LOCAL_PENDING_IMPORT]);
     await this.local.set({ [LOCAL_QUEUE]: record });
     await this.local.remove([LOCAL_SYNC]);
-    await this.session.remove([SESSION_UNLOCKED, SESSION_DRAFTS]);
+    await this.session.remove([SESSION_UNLOCKED, SESSION_DRAFTS, SESSION_ARMED, SESSION_INSERTION]);
     await this.#open(record, input.secretKey);
   }
 
@@ -231,7 +235,7 @@ export class KeyStore {
 
   /** Forgets the unlocked keys everywhere; the next use needs the passphrase. */
   async lock(): Promise<void> {
-    await this.session.remove([SESSION_UNLOCKED, SESSION_DRAFTS]);
+    await this.session.remove([SESSION_UNLOCKED, SESSION_DRAFTS, SESSION_ARMED, SESSION_INSERTION]);
     await this.local.remove([LOCAL_PLAIN_KEYS]);
   }
 
@@ -266,7 +270,7 @@ export class KeyStore {
 
   /** Deletes everything this store wrote. */
   async forget(): Promise<void> {
-    await this.session.remove([SESSION_UNLOCKED, SESSION_DRAFTS]);
+    await this.session.remove([SESSION_UNLOCKED, SESSION_DRAFTS, SESSION_ARMED, SESSION_INSERTION]);
     await this.local.remove([
       LOCAL_QUEUE,
       LOCAL_SYNC,

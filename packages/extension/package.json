@@ -25,6 +25,7 @@
     "@qusme/core": "workspace:*",
     "@qusme/store-sql": "workspace:*",
     "@tailwindcss/vite": "4.3.3",
+    "happy-dom": "21.0.4",
     "preact-render-to-string": "6.8.1",
     "tailwindcss": "4.3.3",
     "wxt": "0.21.5"
