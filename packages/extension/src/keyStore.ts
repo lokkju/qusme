@@ -76,7 +76,8 @@ export interface UnlockedQueue {
 
 export type KeyStatus =
   | { state: 'empty' }
-  | { state: 'locked' | 'unlocked'; pubkey: string; stayUnlocked: boolean };
+  | { state: 'locked'; pubkey: string; stayUnlocked: boolean }
+  | { state: 'unlocked'; pubkey: string; stayUnlocked: boolean };
 
 export class WrongPassphrase extends Error {
   constructor() {
@@ -148,7 +149,9 @@ export class KeyStore {
       }
     }
     const unlocked = keys !== undefined && getPublicKey(hexToBytes(keys.queue)) === record.pubkey;
-    return { state: unlocked ? 'unlocked' : 'locked', pubkey: record.pubkey, stayUnlocked };
+    return unlocked
+      ? { state: 'unlocked', pubkey: record.pubkey, stayUnlocked }
+      : { state: 'locked', pubkey: record.pubkey, stayUnlocked };
   }
 
   async #sessionKeys(): Promise<HexKeys | undefined> {

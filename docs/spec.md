@@ -541,6 +541,8 @@ No host permissions for any site the user posts to, and no `tabs` permission. Pa
 
 Either create a new queue (generate the queue key and the inbox key, choose a passphrase, show the recovery code and confirm it was saved, choose and probe storage relays and an inbox relay (9.1), publish 10013, settings, and the recovery backup), or pair with an existing device (section 8.3), or recover from backup (relay URL, npub, recovery code, then a passphrase). Choosing the hosted relay binds the queue pubkey to the user's account before the first publish (9.2).
 
+The extension keeps the queue key's `ncryptsec` and a copy of the settings event in `storage.local`; the inbox key is read from that copy with the queue key at unlock, so at rest it sits behind the passphrase too. The unlocked keys go to `storage.session`, and to `storage.local` only while "stay unlocked" is on; locking deletes both. Create publishes only once every storage relay has passed its probe, and stores the key only once every storage relay has accepted the 10013, the settings and the recovery backup. The setup UI confirms the recovery code by having the user type it back, in either form. A desktop browser has no camera to scan the QR, so the new-device side takes the `nostrpair://` link pasted as text (copied from the QR screen) as a QR session, or a typed code (8.3).
+
 ### 11.4 Sync and ingestion
 
 On popup open (and on an alarm while unlocked), the background connects to the storage relays and requests the user's 31234 drafts, the destinations and settings events, and the rotation marker (6.1). It connects to the inbox relays authenticated as the inbox key (and any retired inbox keys still draining, 6.4) and requests kind 1059 addressed to them.
