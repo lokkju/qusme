@@ -207,6 +207,17 @@ export function createOAuth(options: OAuthOptions) {
     }
   };
 
+  // Where the browser goes after approval: the host (with port) of an http(s) redirect, or the
+  // scheme of a native app's private-use one, so the approval screen can show it (spec 11.8).
+  const redirectHost = (redirectUri: string) => {
+    try {
+      const url = new URL(redirectUri);
+      return url.host === '' ? url.protocol : url.host;
+    } catch {
+      return redirectUri;
+    }
+  };
+
   async function issueTokens(
     grant: { clientId: string; agentKeyId: string; scopes: string },
     t: number
@@ -579,6 +590,7 @@ export function createOAuth(options: OAuthOptions) {
       client_id: row.clientId,
       client_name: client?.clientName ?? clientHost(row.clientId),
       client_host: clientHost(row.clientId),
+      redirect_host: redirectHost(row.redirectUri),
       scopes: row.scopes.split(' '),
       resource: row.resource,
       agent_pubkey: agentPubkey,
