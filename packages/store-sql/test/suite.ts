@@ -521,6 +521,25 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
         expect(next.map((r) => r.giftWrapId)).toEqual(['w2', 'w1']);
       });
 
+      it('pages through receipts that share a second with a gift wrap id cursor', async () => {
+        for (const id of ['a', 'b', 'c', 'd']) await receipt(id, 'k1', NOW);
+        await receipt('z', 'k1', NOW - 1);
+        const first = await h.store.submissionReceipts.listByAgentKey('k1', NOW, { limit: 2 });
+        expect(first.map((r) => r.giftWrapId)).toEqual(['d', 'c']);
+        const next = await h.store.submissionReceipts.listByAgentKey('k1', NOW, {
+          limit: 2,
+          before: first[1]?.createdAt,
+          beforeId: first[1]?.giftWrapId,
+        });
+        expect(next.map((r) => r.giftWrapId)).toEqual(['b', 'a']);
+        const last = await h.store.submissionReceipts.listByAgentKey('k1', NOW, {
+          limit: 2,
+          before: next[1]?.createdAt,
+          beforeId: next[1]?.giftWrapId,
+        });
+        expect(last.map((r) => r.giftWrapId)).toEqual(['z']);
+      });
+
       it('counts submissions since the start of a quota period', async () => {
         await receipt('a', 'k1', NOW - 10);
         await receipt('b', 'k1', NOW);
