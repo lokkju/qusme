@@ -13,6 +13,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import type { NostrEvent } from 'nostr-tools/core';
+import { type AccountRules, displayAccount, normalizeAccount, sameAccount } from './account.ts';
 import {
   type AgentGrant,
   DEFAULT_SUBMISSION_EXPIRATION_DAYS,
@@ -27,6 +28,7 @@ import { powOf } from './nip13.ts';
 import { NIP59_TIMESTAMP_JITTER } from './nip59.ts';
 import type { Signer } from './signer.ts';
 import { fieldValueFromSubmission, openSubmission } from './submission.ts';
+import type { JsonObject } from './validate.ts';
 
 /** Gift wraps opened per sync at most; the rest wait for the next one (spec 11.4). */
 export const INGEST_CAP = 100;
@@ -48,10 +50,16 @@ export function inboxSince(lastSync: number | undefined): number | undefined {
 /**
  * The id of the pending destination a device creates for a submission naming an unknown site and
  * account (spec 7.2, 11.4): 32 hex characters of the SHA-256 of `qus.me/destination:` followed by
- * the JSON array `[site, account]`. Two devices ingesting at once create the same one.
+ * the JSON array `[site, account]`, the account normalized ({@link normalizeAccount}), so `@Handle`
+ * and `handle` get one id. Two devices ingesting at once create the same one.
  */
-export function pendingDestinationId(site: string, account: string): string {
-  const digest = sha256(utf8ToBytes(`qus.me/destination:${JSON.stringify([site, account])}`));
+export function pendingDestinationId(
+  site: string,
+  account: string,
+  definition?: AccountRules
+): string {
+  const key = JSON.stringify([site, normalizeAccount(site, account, definition)]);
+  const digest = sha256(utf8ToBytes(`qus.me/destination:${key}`));
   return bytesToHex(digest).slice(0, 32);
 }
 
@@ -117,6 +125,15 @@ export interface IngestInput {
   now: number;
   /** Defaults to {@link INGEST_CAP}. */
   cap?: number;
+  /**
+   * The effective definition (10.2) for a site with a destination's override, for whether its
+   * accounts are case-sensitive (10.1). Without it, or when it returns undefined, accounts compare
+   * case-insensitively.
+   */
+  definitionFor?: (
+    site: string,
+    override: JsonObject | null | undefined
+  ) => AccountRules | undefined;
 }
 
 export interface IngestedDraft {
@@ -278,7 +295,9 @@ export async function ingestSubmissions(input: IngestInput): Promise<IngestOutco
       continue;
     }
     const granted = grant.destinations.find(
-      (g) => g.site === value.site && g.account === value.account
+      (g) =>
+        g.site === value.site &&
+        sameAccount(g.site, g.account, value.account, input.definitionFor?.(g.site, g.override))
     );
     if (granted === undefined && !grant.allow_new_destinations) {
       discard('destination_not_granted', submitter);
@@ -297,16 +316,20 @@ export async function ingestSubmissions(input: IngestInput): Promise<IngestOutco
 
     // 7. A pending destination for an unknown one.
     let destination = destinations.find(
-      (x) => x.site === value.site && x.account === value.account
+      (x) =>
+        x.site === value.site &&
+        sameAccount(x.site, x.account, value.account, input.definitionFor?.(x.site, x.override))
     );
     if (destination === undefined) {
+      const override = granted?.override ?? null;
+      const account = displayAccount(value.account);
       destination = {
-        id: pendingDestinationId(value.site, value.account),
+        id: pendingDestinationId(value.site, account, input.definitionFor?.(value.site, override)),
         site: value.site,
-        account: value.account,
-        label: `${value.site} / ${value.account}`,
+        account,
+        label: `${value.site} / ${account}`,
         status: 'pending',
-        override: granted?.override ?? null,
+        override,
       };
       destinations.push(destination);
       newDestinations.push(destination);

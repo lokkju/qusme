@@ -5,6 +5,7 @@ import {
   joinPath,
   parseJsonText,
   readArray,
+  readBoolean,
   readExtra,
   readInteger,
   readRecord,
@@ -47,6 +48,11 @@ export interface SiteAccount {
   locator: Locator;
   /** A regular expression whose first capture group is the account. */
   extract: string;
+  /**
+   * Whether the site tells accounts apart by case; absent means false, and accounts compare
+   * case-insensitively (`normalizeAccount`).
+   */
+  caseSensitive?: boolean;
 }
 
 /** A site definition (spec 10.1). Keys are the JSON keys. */
@@ -217,6 +223,12 @@ export function readSiteDefinition(value: unknown, path = ''): SiteDefinition {
       locator: readLocator(account.locator, joinPath(aPath, 'locator')),
       extract,
     };
+    if (account.caseSensitive !== undefined) {
+      definition.account.caseSensitive = readBoolean(
+        account.caseSensitive,
+        joinPath(aPath, 'caseSensitive')
+      );
+    }
   }
   if (record.intents !== undefined) {
     const iPath = joinPath(path, 'intents');

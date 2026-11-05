@@ -285,6 +285,83 @@ describe('ingestion (spec 11.4)', () => {
   });
 });
 
+describe('accounts at ingestion (spec 10.1, 11.4)', () => {
+  const handle: Destination = {
+    ...confirmed,
+    id: 'dest-h',
+    account: 'handle',
+    label: 'X / handle',
+  };
+  const grants = new Map([
+    [agentPubkey, grant({ destinations: [{ site: 'x', account: 'handle', fields: ['text'] }] })],
+  ]);
+  const caseSensitive = () => ({ id: 'x', account: { caseSensitive: true } });
+
+  it('matches "@Handle", "handle" and " handle " to one granted destination', async () => {
+    const wraps = await Promise.all(
+      ['@Handle', 'handle', ' handle '].map((account, i) => submit({ account, content: `${i}` }))
+    );
+    const out = await ingestSubmissions(input(wraps, { grants, destinations: [handle] }));
+    expect(out.discarded).toEqual([]);
+    expect(out.newDestinations).toEqual([]);
+    expect(out.drafts.map((d) => d.value.destination)).toEqual(['dest-h', 'dest-h', 'dest-h']);
+  });
+
+  it('tells case apart where the definition says accounts are case-sensitive', async () => {
+    const out = await ingestSubmissions(
+      input([await submit({ account: '@Handle' }), await submit({ account: '@handle' })], {
+        grants,
+        destinations: [handle],
+        definitionFor: caseSensitive,
+      })
+    );
+    expect(out.discarded.map((d) => d.reason)).toEqual(['destination_not_granted']);
+    expect(out.drafts.map((d) => d.value.destination)).toEqual(['dest-h']);
+  });
+
+  it('creates one pending destination for "@Newbie", "newbie" and " NEWBIE "', async () => {
+    const open = new Map([[agentPubkey, grant({ allow_new_destinations: true })]]);
+    const wraps = await Promise.all(
+      ['@Newbie', 'newbie', ' NEWBIE '].map((account, i) => submit({ account, content: `${i}` }))
+    );
+    const out = await ingestSubmissions(input(wraps, { grants: open }));
+    const id = pendingDestinationId('x', 'newbie');
+    expect(pendingDestinationId('x', ' @Newbie')).toBe(id);
+    // Wraps open in created_at order, which NIP-59 randomizes: the first one opened names it.
+    expect(out.newDestinations).toHaveLength(1);
+    const [pending] = out.newDestinations;
+    expect(pending).toMatchObject({ id, site: 'x', status: 'pending', override: null });
+    expect(['Newbie', 'newbie', 'NEWBIE']).toContain(pending?.account);
+    expect(pending?.label).toBe(`x / ${pending?.account}`);
+    expect(out.drafts.map((d) => d.value.destination)).toEqual([id, id, id]);
+    // A destination published before normalization, with an @ and capitals, still matches.
+    const legacy = { ...confirmed, id: 'dest-legacy', account: '@NewBie' };
+    const again = await ingestSubmissions(
+      input([await submit({ account: 'newbie' })], { grants: open, destinations: [legacy] })
+    );
+    expect(again.newDestinations).toEqual([]);
+    expect(again.drafts[0]?.value.destination).toBe('dest-legacy');
+  });
+
+  it('keeps case-distinct pending destinations apart on a case-sensitive site', async () => {
+    const open = new Map([[agentPubkey, grant({ allow_new_destinations: true })]]);
+    const wraps = await Promise.all(
+      ['@Newbie', 'newbie', '@newbie'].map((account, i) => submit({ account, content: `${i}` }))
+    );
+    const out = await ingestSubmissions(
+      input(wraps, { grants: open, definitionFor: caseSensitive })
+    );
+    const rules = caseSensitive();
+    expect(out.newDestinations.map((d) => [d.account, d.id]).sort()).toEqual([
+      ['Newbie', pendingDestinationId('x', 'Newbie', rules)],
+      ['newbie', pendingDestinationId('x', 'newbie', rules)],
+    ]);
+    expect(pendingDestinationId('x', 'Newbie', rules)).not.toBe(
+      pendingDestinationId('x', 'newbie', rules)
+    );
+  });
+});
+
 describe('quota at ingestion (spec 11.4)', () => {
   const quota2 = new Map([[agentPubkey, grant({ quota: { max_submissions: 2, period: 'day' } })]]);
 
