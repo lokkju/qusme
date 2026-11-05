@@ -47,8 +47,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # Only the Worker and the workspace packages it is built from
+      # (entry-worker, core, store-sql, nostr); the extension and the PWA don't
+      # ship with it and are checked by ci.yml on every PR.
+      - name: Typecheck
+        run: pnpm --filter "@qusme/entry-worker..." run typecheck
+
       - name: Test
-        run: pnpm test
+        run: >-
+          pnpm exec vitest run
+          --project @qusme/entry-worker
+          --project @qusme/core
+          --project @qusme/store-sql
+          --project @qusme/nostr
 
       - name: Apply D1 migrations
         working-directory: packages/entry-worker
