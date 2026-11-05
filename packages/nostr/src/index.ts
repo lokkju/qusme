@@ -216,6 +216,26 @@ export {
   recoveryPassword,
 } from './recoveryCode.ts';
 export {
+  isNewerSiteDefinition,
+  parseRegistryRelayList,
+  parseRegistrySiteDefinition,
+  REGISTRY_FALLBACK_RELAYS,
+  REGISTRY_PUBLISHER,
+  REGISTRY_SNAPSHOT_FORMAT,
+  type RegistryRelay,
+  type RegistryRelayList,
+  type RegistrySiteDefinition,
+  type RegistrySnapshot,
+  type RegistrySnapshotContents,
+  readRegistrySnapshot,
+  verifyRegistrySnapshot,
+} from './registry.ts';
+export {
+  fetchRegistry,
+  type RegistryFetchOptions,
+  type RegistryFetchResult,
+} from './registryFetch.ts';
+export {
   type AuthSigner,
   newestFirst,
   type PublishReport,

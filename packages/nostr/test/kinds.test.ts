@@ -15,6 +15,7 @@ describe('kind constants', () => {
     expect(kinds.KIND_DELETION).toBe(5);
     expect(kinds.KIND_SEAL).toBe(13);
     expect(kinds.KIND_GIFT_WRAP).toBe(1059);
+    expect(kinds.KIND_RELAY_LIST).toBe(10002);
     expect(kinds.KIND_PRIVATE_RELAYS).toBe(10013);
     expect(kinds.KIND_HTTP_AUTH).toBe(27235);
     expect(kinds.KIND_APP_DATA).toBe(30078);
