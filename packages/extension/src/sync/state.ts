@@ -9,7 +9,7 @@
  * `storage.session` `qusme.drafts` ({@link DraftCache}): the decrypted drafts from the last sync,
  * for the popup. Lock deletes it with the keys.
  */
-import type { DiscardReason, FieldValueStatus } from '@qusme/nostr';
+import type { Destination, DiscardReason, FieldValueStatus } from '@qusme/nostr';
 import { LOCAL_SYNC, SESSION_DRAFTS } from '../keyStore.ts';
 import type { StorageArea } from '../storage.ts';
 
@@ -68,6 +68,8 @@ export interface DraftCache {
   queuePubkey: string;
   syncedAt: number;
   drafts: CachedDraft[];
+  /** The destinations (7.2), overrides included, for matching drafts to the page (11.5). */
+  destinations?: Destination[];
 }
 
 const emptyState = (): SyncState => ({ version: 1, handled: {}, cappedStreak: 0 });

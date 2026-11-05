@@ -1,4 +1,6 @@
 import { render } from 'preact';
+import { browserInsertionUiDeps } from '../../src/insertion/browser.ts';
+import { definitionSource } from '../../src/insertion/definitions.ts';
 import { App } from '../../src/ui/app.tsx';
 import { browserDeps, openInTab } from '../../src/ui/browserDeps.ts';
 import './style.css';
@@ -14,6 +16,7 @@ if (root) {
       deps={browserDeps()}
       openInTab={openInTab}
       {...(approveCode !== undefined && { approveCode })}
+      insertion={browserInsertionUiDeps(definitionSource())}
     />,
     root
   );

@@ -1,0 +1,217 @@
+/**
+ * The insertion pipeline wired to the real browser APIs: `scripting.executeScript` under
+ * activeTab, the context menu, and the background's message handlers (spec 11.5).
+ */
+import type { SiteAccount } from '@qusme/nostr';
+import { browser } from 'wxt/browser';
+import { type KeyStore, SESSION_ARMED, SESSION_DRAFTS, SESSION_INSERTION } from '../keyStore.ts';
+import { readDraftCache } from '../sync/state.ts';
+import type { InsertionUiDeps } from '../ui/insert.tsx';
+import { readArmed, readInsertionState } from './armed.ts';
+import type { SiteDefinitionSource } from './definitions.ts';
+import { MENU_CHOOSE, MENU_INSERT, menuItem } from './menu.ts';
+import { INSERT_MESSAGE, RETRY_RECORD_MESSAGE } from './messages.ts';
+import {
+  PAGE_API_GLOBAL,
+  PAGE_SCRIPT_FILE,
+  type PageAccountResult,
+  type PageInsertRequest,
+  type PageOutcome,
+} from './protocol.ts';
+import { InsertionService, type InsertResponse, type PageRunner, readPageDone } from './service.ts';
+
+type Target = { tabId: number; frameId?: number };
+
+const scriptTarget = (target: Target) =>
+  target.frameId === undefined
+    ? { tabId: target.tabId }
+    : { tabId: target.tabId, frameIds: [target.frameId] };
+
+/** Injects the insertion script, which installs its API once per frame. */
+async function injectPageScript(target: Target): Promise<void> {
+  await browser.scripting.executeScript({
+    target: scriptTarget(target),
+    files: [PAGE_SCRIPT_FILE],
+  });
+}
+
+/** The page runner over `scripting.executeScript`. */
+export const scriptingPageRunner: PageRunner = {
+  async insert(target, request) {
+    await injectPageScript(target);
+    const [result] = await browser.scripting.executeScript({
+      target: scriptTarget(target),
+      // Serialized into the page's isolated world: it may use only its arguments and globals.
+      func: (req: PageInsertRequest, name: string) =>
+        (
+          globalThis as unknown as Record<
+            string,
+            { insert(r: PageInsertRequest): Promise<PageOutcome> }
+          >
+        )[name]?.insert(req),
+      args: [request, PAGE_API_GLOBAL],
+    });
+    const outcome = result?.result as PageOutcome | undefined;
+    if (outcome === undefined || outcome === null)
+      throw new Error('the insertion script did not answer');
+    return outcome;
+  },
+};
+
+/** Runs the read-only account detection for each locator in the tab's main frame (step 2). */
+export async function detectAccounts(
+  tabId: number,
+  locators: readonly SiteAccount[]
+): Promise<(string | undefined)[]> {
+  if (locators.length === 0) return [];
+  await injectPageScript({ tabId });
+  const [result] = await browser.scripting.executeScript({
+    target: { tabId },
+    func: (accounts: SiteAccount[], name: string) =>
+      accounts.map(
+        (a) =>
+          (
+            globalThis as unknown as Record<
+              string,
+              { detectAccount(a: SiteAccount): PageAccountResult }
+            >
+          )[name]?.detectAccount(a).account
+      ),
+    args: [[...locators], PAGE_API_GLOBAL],
+  });
+  return (result?.result as (string | undefined)[] | undefined) ?? [];
+}
+
+/** Sets up the context menu, its click handler and the insertion messages in the background. */
+export function installInsertion(
+  store: KeyStore,
+  definitions: SiteDefinitionSource
+): InsertionService {
+  const service = new InsertionService({ store, definitions, page: scriptingPageRunner });
+  const accessKeys = import.meta.env.FIREFOX === true;
+
+  const updateBadge = async () => {
+    const { unrecorded } = await readInsertionState(store.session);
+    await browser.action.setBadgeText({ text: unrecorded.length > 0 ? '!' : '' });
+  };
+
+  let rebuilding = Promise.resolve();
+  const rebuildMenu = () => {
+    rebuilding = rebuilding
+      .then(async () => {
+        const [armed, cache] = await Promise.all([
+          readArmed(store.session),
+          readDraftCache(store.session),
+        ]);
+        const item = menuItem({
+          armed,
+          destinations: cache?.destinations ?? [],
+          definitions,
+          accessKeys,
+        });
+        await browser.contextMenus.removeAll();
+        if (item !== undefined) browser.contextMenus.create(item);
+      })
+      .catch(() => undefined);
+  };
+
+  browser.runtime.onInstalled.addListener(rebuildMenu);
+  browser.runtime.onStartup.addListener(rebuildMenu);
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'session' && (SESSION_ARMED in changes || SESSION_DRAFTS in changes))
+      rebuildMenu();
+  });
+
+  browser.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === MENU_CHOOSE) {
+      // Synchronously, inside the click: Firefox refuses openPopup anywhere else.
+      void browser.action.openPopup().catch(() => undefined);
+      return;
+    }
+    if (info.menuItemId !== MENU_INSERT || tab?.id === undefined) return;
+    const tabId = tab.id;
+    void (async () => {
+      const result = await service.insert({
+        tabId,
+        ...(info.frameId !== undefined && { frameId: info.frameId }),
+        method: 'extension_context_menu',
+      });
+      // Disarmed or locked since the menu was built: let the user choose in the popup.
+      if (result.state === 'not_armed' || result.state === 'locked') {
+        await browser.action.openPopup().catch(() => undefined);
+      }
+      await updateBadge();
+    })();
+  });
+
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (sender.id !== browser.runtime.id) return false;
+    const type = (message as { type?: unknown } | null)?.type;
+    let work: Promise<unknown> | undefined;
+    if (sender.tab === undefined && type === INSERT_MESSAGE) {
+      const tabId = (message as { tabId?: unknown }).tabId;
+      if (typeof tabId !== 'number') return false;
+      work = service.insert({ tabId, method: 'extension_popup' });
+    } else if (sender.tab === undefined && type === RETRY_RECORD_MESSAGE) {
+      work = service.retryUnrecorded();
+    } else if (sender.tab?.id !== undefined) {
+      // The page script reporting an insertion that waited for the user's click or paste.
+      const done = readPageDone(message);
+      if (done === undefined) return false;
+      work = service.pageDone(sender.tab.id, done);
+    }
+    if (work === undefined) return false;
+    work
+      .then(async (result) => {
+        await updateBadge();
+        sendResponse(result);
+      })
+      .catch((error: unknown) =>
+        sendResponse({ state: 'failed', reason: 'injection', message: String(error) })
+      );
+    return true;
+  });
+
+  return service;
+}
+
+/** The popup's insertion panel over the real browser APIs. */
+export function browserInsertionUiDeps(definitions: SiteDefinitionSource): InsertionUiDeps {
+  return {
+    definitions,
+    activeTab: async () => {
+      // tabs.query needs no `tabs` permission; the URL is there because activeTab granted it.
+      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id === undefined || tab.url === undefined) return undefined;
+      if (!/^https?:/.test(tab.url)) return undefined;
+      return { id: tab.id, url: tab.url };
+    },
+    detectAccounts,
+    insert: (tabId) =>
+      browser.runtime.sendMessage({ type: INSERT_MESSAGE, tabId }) as Promise<InsertResponse>,
+    retryRecord: () =>
+      browser.runtime.sendMessage({ type: RETRY_RECORD_MESSAGE }) as Promise<{
+        remaining: number;
+        messages: string[];
+      }>,
+    writeClipboard: async (text) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    onSessionChange: (callback) => {
+      const listener = (changes: Record<string, unknown>, area: string) => {
+        if (area !== 'session') return;
+        if (SESSION_ARMED in changes || SESSION_DRAFTS in changes || SESSION_INSERTION in changes) {
+          callback();
+        }
+      };
+      browser.storage.onChanged.addListener(listener);
+      return () => browser.storage.onChanged.removeListener(listener);
+    },
+    pasteShortcut: /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘V' : 'Ctrl+V',
+  };
+}

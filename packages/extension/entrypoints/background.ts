@@ -1,15 +1,19 @@
 import { browser } from 'wxt/browser';
+import { installInsertion } from '../src/insertion/browser.ts';
+import { definitionSource } from '../src/insertion/definitions.ts';
 import { KeyStore, SESSION_UNLOCKED } from '../src/keyStore.ts';
 import { SyncEngine } from '../src/sync/engine.ts';
 import { SYNC_ALARM, SYNC_MESSAGE, SYNC_PERIOD_MINUTES } from '../src/sync/messages.ts';
 
 /**
  * Sync and ingestion (spec 11.4): on popup open (the popup sends {@link SYNC_MESSAGE}) and on an
- * alarm that exists only while the queue is unlocked. The context menu (11.5) lands here later.
+ * alarm that exists only while the queue is unlocked. Arming and inserting (11.5): the context
+ * menu and the insertion messages, in `src/insertion/browser.ts`.
  */
 export default defineBackground(() => {
   const store = new KeyStore({ local: browser.storage.local, session: browser.storage.session });
   const engine = new SyncEngine({ store });
+  installInsertion(store, definitionSource());
 
   // The alarm follows the lock: created on unlock, cleared on lock, so nothing wakes while locked.
   const followLock = async (): Promise<void> => {

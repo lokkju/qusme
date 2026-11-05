@@ -408,6 +408,10 @@ export async function syncOnce(deps: SyncDeps): Promise<SyncResult> {
         queuePubkey: pubkey,
         syncedAt: now,
         drafts: drafts.filter((d): d is CachedDraft => d !== undefined),
+        destinations: mergeDestinations(
+          view.destinations?.value.content.destinations ?? [],
+          outcome.destinations.filter((d) => outcome.newDestinations.includes(d))
+        ),
       };
       await writeDraftCache(store.session, cache);
     }

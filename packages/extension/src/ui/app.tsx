@@ -7,6 +7,7 @@ import { AgentsScreen, ApproveAgentScreen } from './agents.tsx';
 import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
 import { CreateScreen } from './create.tsx';
 import { Drafts } from './drafts.tsx';
+import { type InsertionUiDeps, InsertPanel } from './insert.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
 import { RecoverScreen } from './recover.tsx';
 
@@ -25,7 +26,12 @@ export function messageOf(error: unknown): string {
   return `Something went wrong: ${(error as Error)?.message ?? String(error)}`;
 }
 
-export function App(props: { deps: SetupDeps; openInTab?: () => void; approveCode?: string }) {
+export function App(props: {
+  deps: SetupDeps;
+  openInTab?: () => void;
+  approveCode?: string;
+  insertion?: InsertionUiDeps;
+}) {
   const { deps } = props;
   const [status, setStatus] = useState<KeyStatus | undefined>();
   const [pending, setPending] = useState<PendingImport | undefined>();
@@ -73,7 +79,15 @@ export function App(props: { deps: SetupDeps; openInTab?: () => void; approveCod
   } else if (status.state === 'locked') {
     body = <Unlock deps={deps} onUnlocked={home} />;
   } else {
-    body = <Unlocked deps={deps} status={status} onRoute={setRoute} onChange={refresh} />;
+    body = (
+      <Unlocked
+        deps={deps}
+        status={status}
+        onRoute={setRoute}
+        onChange={refresh}
+        insertion={props.insertion}
+      />
+    );
   }
 
   return (
@@ -155,6 +169,7 @@ function Unlocked(props: {
   status: Extract<KeyStatus, { state: 'unlocked' }>;
   onRoute: (route: Route) => void;
   onChange: () => void;
+  insertion?: InsertionUiDeps | undefined;
 }) {
   const { deps, status } = props;
   const toggle = async (on: boolean) => {
@@ -164,6 +179,7 @@ function Unlocked(props: {
   return (
     <Screen title="qus.me">
       <p class="mt-2 break-all font-mono text-xs">{npubEncode(status.pubkey)}</p>
+      {props.insertion && <InsertPanel store={deps.store} deps={props.insertion} />}
       <Drafts deps={deps} />
       <div class="mt-4 flex flex-col gap-2">
         <Button onClick={() => props.onRoute('approve-agent')}>Approve an agent</Button>
