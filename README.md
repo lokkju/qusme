@@ -10,7 +10,7 @@ A pnpm workspace, laid out as in section 8.5 of the spec:
 
 | Package | What it is |
 | --- | --- |
-| `packages/core` | The service as a Hono `createApp(deps)` factory, using Web-standard APIs only. `GET /healthz` and a `/mcp` stub (501) so far |
+| `packages/core` | The service as a Hono `createApp(deps)` factory, using Web-standard APIs only: OAuth for MCP clients, the MCP tools at `/mcp`, agent key custody and the pairing rendezvous |
 | `packages/nostr` | Event builders and parsers shared by the service, extension and PWA. NIP-44 encryption, NIP-49 `ncryptsec` and NIP-59 gift wraps so far, behind a `Signer` interface |
 | `packages/store-sql` | Drizzle schema for the service's own state and its SQL migrations, with drivers for D1 (`@qusme/store-sql/d1`) and a SQLite file (`@qusme/store-sql/sqlite`) |
 | `packages/entry-worker` | The Cloudflare Workers entrypoint and `wrangler.jsonc` |
