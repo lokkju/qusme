@@ -20,7 +20,10 @@
   },
   "devDependencies": {
     "@babel/core": "7.29.7",
+    "@modelcontextprotocol/client": "2.4.0",
     "@preact/preset-vite": "2.10.6",
+    "@qusme/core": "workspace:*",
+    "@qusme/store-sql": "workspace:*",
     "@tailwindcss/vite": "4.3.3",
     "preact-render-to-string": "6.8.1",
     "tailwindcss": "4.3.3",
