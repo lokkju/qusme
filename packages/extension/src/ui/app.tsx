@@ -3,13 +3,21 @@ import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { type KeyStatus, type PendingImport, WrongPassphrase } from '../keyStore.ts';
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
+import { AgentsScreen, ApproveAgentScreen } from './agents.tsx';
 import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
 import { CreateScreen } from './create.tsx';
 import { Drafts } from './drafts.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
 import { RecoverScreen } from './recover.tsx';
 
-export type Route = 'home' | 'create' | 'pair' | 'recover' | 'pair-source';
+export type Route =
+  | 'home'
+  | 'create'
+  | 'pair'
+  | 'recover'
+  | 'pair-source'
+  | 'approve-agent'
+  | 'agents';
 
 /** A message for the user from anything a flow threw. */
 export function messageOf(error: unknown): string {
@@ -17,11 +25,12 @@ export function messageOf(error: unknown): string {
   return `Something went wrong: ${(error as Error)?.message ?? String(error)}`;
 }
 
-export function App(props: { deps: SetupDeps; openInTab?: () => void }) {
+export function App(props: { deps: SetupDeps; openInTab?: () => void; approveCode?: string }) {
   const { deps } = props;
   const [status, setStatus] = useState<KeyStatus | undefined>();
   const [pending, setPending] = useState<PendingImport | undefined>();
-  const [route, setRoute] = useState<Route>('home');
+  // A popup opened with an approval code goes to the approval screen once unlocked (spec 11.8).
+  const [route, setRoute] = useState<Route>(props.approveCode ? 'approve-agent' : 'home');
 
   const refresh = useCallback(async () => {
     setStatus(await deps.store.status());
@@ -48,6 +57,17 @@ export function App(props: { deps: SetupDeps; openInTab?: () => void }) {
     body = <RecoverScreen deps={deps} onDone={home} onBack={home} />;
   } else if (route === 'pair-source' && status.state === 'unlocked') {
     body = <PairSourceScreen deps={deps} onDone={home} />;
+  } else if (route === 'approve-agent' && status.state === 'unlocked') {
+    body = (
+      <ApproveAgentScreen
+        deps={deps}
+        {...(props.approveCode !== undefined && { initialCode: props.approveCode })}
+        onDone={home}
+        onBack={home}
+      />
+    );
+  } else if (route === 'agents' && status.state === 'unlocked') {
+    body = <AgentsScreen deps={deps} onBack={home} />;
   } else if (status.state === 'empty') {
     body = <Welcome onRoute={setRoute} />;
   } else if (status.state === 'locked') {
@@ -59,7 +79,7 @@ export function App(props: { deps: SetupDeps; openInTab?: () => void }) {
   return (
     <div class="min-w-[22rem] max-w-md bg-paper p-4 text-ink">
       {body}
-      {props.openInTab && route !== 'home' && (
+      {props.openInTab && route !== 'home' && route !== 'approve-agent' && route !== 'agents' && (
         <p class="mt-4 text-xs">
           <button type="button" class="underline" onClick={props.openInTab}>
             Open in a tab
@@ -146,7 +166,13 @@ function Unlocked(props: {
       <p class="mt-2 break-all font-mono text-xs">{npubEncode(status.pubkey)}</p>
       <Drafts deps={deps} />
       <div class="mt-4 flex flex-col gap-2">
-        <Button onClick={() => props.onRoute('pair-source')}>Pair a new device</Button>
+        <Button onClick={() => props.onRoute('approve-agent')}>Approve an agent</Button>
+        <Button variant="plain" onClick={() => props.onRoute('agents')}>
+          Agents and pending destinations
+        </Button>
+        <Button variant="plain" onClick={() => props.onRoute('pair-source')}>
+          Pair a new device
+        </Button>
         <Button
           variant="plain"
           onClick={async () => {
