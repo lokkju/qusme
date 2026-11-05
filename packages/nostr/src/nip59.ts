@@ -1,8 +1,15 @@
 import { randomBytes } from '@noble/hashes/utils.js';
 import type { EventTemplate, NostrEvent, UnsignedEvent } from 'nostr-tools/core';
 import { validateEvent } from 'nostr-tools/core';
-import { finalizeEvent, generateSecretKey, getEventHash, verifyEvent } from 'nostr-tools/pure';
+import {
+  finalizeEvent,
+  generateSecretKey,
+  getEventHash,
+  getPublicKey,
+  verifyEvent,
+} from 'nostr-tools/pure';
 import { KIND_GIFT_WRAP, KIND_SEAL } from './kinds.ts';
+import { minePow } from './nip13.ts';
 import { nip44Encrypt } from './nip44.ts';
 import type { Signer } from './signer.ts';
 
@@ -29,6 +36,11 @@ export interface GiftWrapOptions extends TimestampOptions {
    * wrap only: NIP-59 requires the seal's tags to be empty.
    */
   expiration?: number;
+  /**
+   * NIP-13 difficulty for the gift wrap's id (spec 7.4 `min_pow`), mined on the wrap only; 0 or
+   * absent for none.
+   */
+  pow?: number;
 }
 
 export interface Unwrapped {
@@ -87,7 +99,7 @@ export async function createSeal(
 
 /**
  * Gift-wraps a seal (kind 1059) with a fresh ephemeral key: `p`-tagged to the recipient, with a
- * randomized `created_at` and an optional NIP-40 `expiration`.
+ * randomized `created_at`, an optional NIP-40 `expiration` and optional NIP-13 work on its id.
  */
 export function createGiftWrap(
   seal: NostrEvent,
@@ -102,15 +114,21 @@ export function createGiftWrap(
     tags.push(['expiration', String(options.expiration)]);
   }
   const ephemeralKey = generateSecretKey();
-  return finalizeEvent(
-    {
+  try {
+    let template: EventTemplate = {
       kind: KIND_GIFT_WRAP,
       tags,
       content: nip44Encrypt(ephemeralKey, recipientPubkey, JSON.stringify(seal)),
       created_at: randomizedTimestamp(options),
-    },
-    ephemeralKey
-  );
+    };
+    if (options.pow !== undefined && options.pow > 0) {
+      const mined = minePow({ ...template, pubkey: getPublicKey(ephemeralKey) }, options.pow);
+      template = { ...template, tags: mined.tags };
+    }
+    return finalizeEvent(template, ephemeralKey);
+  } finally {
+    ephemeralKey.fill(0);
+  }
 }
 
 /** Rumor, seal and gift wrap in one call, authored and sealed by `signer`. */

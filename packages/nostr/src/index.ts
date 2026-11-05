@@ -12,10 +12,12 @@ export {
   DEFAULT_SUBMISSION_EXPIRATION_DAYS,
   type GrantDestination,
   type GrantQuota,
+  MAX_MIN_POW,
   MAX_SUBMISSION_EXPIRATION_DAYS,
   parseAgentGrant,
   QUOTA_PERIODS,
   type QuotaPeriod,
+  quotaPeriodEnd,
   quotaPeriodStart,
   readAgentGrant,
 } from './agentGrant.ts';
@@ -92,6 +94,7 @@ export {
   submissionRumor,
 } from './fieldValue.ts';
 export * from './kinds.ts';
+export { minePow, powOf } from './nip13.ts';
 export {
   nip44ConversationKey,
   nip44Decrypt,
@@ -203,6 +206,7 @@ export {
   type SiteField,
   type UnusableField,
 } from './siteDef.ts';
+export { mergeSiteOverride } from './siteMerge.ts';
 export {
   buildSubmission,
   fieldValueFromSubmission,

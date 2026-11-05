@@ -7,6 +7,7 @@ import {
   KIND_AGENT_GRANT,
   nip44Encrypt,
   parseAgentGrant,
+  quotaPeriodEnd,
   quotaPeriodStart,
 } from '../src/index.ts';
 import {
@@ -17,6 +18,7 @@ import {
   expectOk,
   NOW,
   other,
+  otherPubkey,
   queue,
   queueKey,
   queuePubkey,
@@ -26,6 +28,7 @@ import {
 
 const input: AgentGrantInput = {
   inbox: ['wss://relay.example/'],
+  inbox_pubkey: otherPubkey,
   destinations: [{ site: 'x', account: 'lokkju', fields: ['text'] }],
   quota: { max_submissions: 50, period: 'day' },
 };
@@ -50,7 +53,11 @@ describe('agent grant (spec 7.4)', () => {
     expect(verifyEvent({ ...event })).toBe(true);
     const key = v2.utils.getConversationKey(agentKey, queuePubkey);
     const full = {
-      ...input,
+      inbox: input.inbox,
+      inbox_pubkey: otherPubkey,
+      min_pow: 0,
+      destinations: input.destinations,
+      quota: input.quota,
       allow_new_destinations: false,
       submission_expiration_days: 30,
       expires_at: null,
@@ -85,6 +92,24 @@ describe('agent grant (spec 7.4)', () => {
     expect(grant.allow_new_destinations).toBe(false);
     expect(grant.submission_expiration_days).toBe(30);
     expect(grant.expires_at).toBeNull();
+    expect(grant.min_pow).toBe(0);
+  });
+
+  it('keeps min_pow and a destination override, readable by the agent', async () => {
+    const override = { match: ['https://mastodon.social/*'], name: null };
+    const event = await buildAgentGrant(queue, agentPubkey, {
+      ...input,
+      min_pow: 16,
+      destinations: [
+        { site: 'mastodon', account: 'a@mastodon.social', fields: ['text'], override },
+        { site: 'x', account: 'lokkju', fields: ['text'], override: null },
+      ],
+    });
+    const { grant } = expectOk(await parseAgentGrant(event, agent));
+    expect(grant.min_pow).toBe(16);
+    expect(grant.destinations[0]?.override).toEqual(override);
+    expect(grant.destinations[1]?.override).toBeNull();
+    expect(grant.inbox_pubkey).toBe(otherPubkey);
   });
 
   it('refuses to build or parse submission_expiration_days above 90', async () => {
@@ -124,6 +149,11 @@ describe('agent grant (spec 7.4)', () => {
       { ...input, quota: { max_submissions: 5, period: 'year' } },
       { ...input, allow_new_destinations: 'yes' },
       { ...input, expires_at: 'never' },
+      { ...input, inbox_pubkey: undefined },
+      { ...input, inbox_pubkey: 'A'.repeat(64) },
+      { ...input, min_pow: -1 },
+      { ...input, min_pow: 257 },
+      { ...input, destinations: [{ ...input.destinations[0], override: [1] }] },
       { inbox: input.inbox, destinations: input.destinations },
     ];
     for (const content of cases) {
@@ -153,5 +183,15 @@ describe('quota periods (UTC calendar, spec 7.4)', () => {
     expect(quotaPeriodStart('week', sunday)).toBe(Date.UTC(2026, 9, 26) / 1000);
     const monday = Date.UTC(2026, 10, 2) / 1000;
     expect(quotaPeriodStart('week', monday)).toBe(monday);
+  });
+
+  it('ends each period where the next one starts, months of any length', () => {
+    expect(quotaPeriodEnd('day', t)).toBe(Date.UTC(2026, 9, 29) / 1000);
+    expect(quotaPeriodEnd('week', t)).toBe(Date.UTC(2026, 10, 2) / 1000);
+    expect(quotaPeriodEnd('month', t)).toBe(Date.UTC(2026, 10, 1) / 1000);
+    expect(quotaPeriodEnd('month', Date.UTC(2026, 11, 31, 23) / 1000)).toBe(
+      Date.UTC(2027, 0, 1) / 1000
+    );
+    expect(quotaPeriodEnd('month', Date.UTC(2028, 1, 10) / 1000)).toBe(Date.UTC(2028, 2, 1) / 1000);
   });
 });
