@@ -4,8 +4,10 @@ name: image
 # BuildKit) and, on main or by hand, pushes it to zot as
 # registry.lab.lokkju.com/builds/qusme, tagged with the full and the short
 # commit SHA. lokkju/infra's `build_repos` provides the REGISTRY_HOST,
-# REGISTRY_USER and REGISTRY_PASSWORD secrets and lokkju/infra deploys the
-# image (lokkju/infra#660). Never ghcr.io.
+# REGISTRY_USER and REGISTRY_PASSWORD secrets. Never ghcr.io.
+#
+# The homelab no longer runs this image: app.qus.me is the Worker (deploy.yml).
+# The image stays for self-hosting the Node entrypoint.
 #
 # Pull requests build without pushing, so a broken Dockerfile fails the PR.
 

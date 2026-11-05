@@ -49,36 +49,33 @@ A schema change is an edit to `packages/store-sql/src/schema.ts` followed by `pn
 
 ## Deploying
 
-The service is served at `https://app.qus.me`, with MCP at `/mcp`. It runs on the homelab first and on Cloudflare Workers later; the hostname is the same either way, so moving between them is a DNS change in lokkju/infra.
+The service is served at `https://app.qus.me`, with MCP at `/mcp`, from Cloudflare Workers. The Node entrypoint and its image are for self-hosting and local development.
 
-### Homelab (now)
+### Workers
 
-`packages/entry-node` runs on the homelab's k3s cluster behind the Cloudflare tunnel at app.qus.me, deployed by [lokkju/infra](https://github.com/lokkju/infra) ([lokkju/infra#660](https://github.com/lokkju/infra/issues/660)). This repo builds the image:
+The Worker is the `qusme` script on Cloudflare. The Pulumi stack in [lokkju/infra](https://github.com/lokkju/infra) owns the script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET`, and the deploy token and account id this repo deploys with (the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Actions secrets). This repo owns the code and the migrations.
 
-- `.github/workflows/image.yml` builds `packages/entry-node/Dockerfile` on the `homelab-build` runner and, on every push to `main` (or by hand), pushes it to zot as `registry.lab.lokkju.com/builds/qusme`, tagged with the full and the short commit SHA. The job summary has the digest. Pull requests that touch the image's packages build it without pushing.
-- lokkju/infra owns the registry credentials this repo pushes with (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD`, from its `build_repos`), the runner, the deployment, its `QUSME_AGENT_KEY_SECRET`, the SQLite volume and the tunnel route. Images go to zot only, never to ghcr.io.
+`.github/workflows/deploy.yml` ships the code on every merge to `main` that touches the Worker or anything it builds from (`packages/core`, `packages/nostr`, `packages/store-sql`, `packages/entry-worker`, `registry/`, the lockfile and workspace files, the pinned tools and the workflow itself), and by hand (`workflow_dispatch`). It applies pending D1 migrations, then runs `wrangler deploy`, which replaces the script's code and keeps its secrets. One deploy runs at a time; a newer one waits. CI runs `wrangler deploy --dry-run` on every PR.
 
-To build it locally: `docker build -f packages/entry-node/Dockerfile --build-arg QUSME_VERSION=$(git rev-parse --short HEAD) .`, then `docker run -e QUSME_AGENT_KEY_SECRET=... -p 8787:8787 <image>` serves `/healthz` on :8787.
+`wrangler.jsonc` declares no routes or custom domains and sets `workers_dev` to `false`, because Pulumi attaches app.qus.me. A change to the domain, the database, a binding or a secret is a change in lokkju/infra first.
+
+`/healthz` reports the deployed commit. Releases of the service will be CalVer (`vYYYY.MM.DD[.N]`) once release automation exists.
 
 ### Rotating the agent key secret
 
 `QUSME_AGENT_KEY_SECRET` encrypts every agent key at rest (spec 6.2), and each key records the version of the secret it is under. Losing the secret loses every agent key, so the old one stays configured until every key has moved. To rotate from version N to N+1:
 
 1. Set `QUSME_AGENT_KEY_SECRET_PREVIOUS` to the current secret, `QUSME_AGENT_KEY_SECRET` to a new one, and `QUSME_AGENT_KEY_VERSION` to N+1 (unset means 1, so the first rotation sets it to 2). New keys are encrypted under N+1 at once, and keys still under N keep working.
-2. Re-encrypt. On Node, `pnpm -C packages/entry-node rotate-agent-keys` (in the image, `node packages/entry-node/src/rotateAgentKeys.ts`) does it once with the server's environment and prints the count and the ids of any key it could not move; the server also runs a pass every five minutes while `QUSME_AGENT_KEY_SECRET_PREVIOUS` is set. On Workers the five-minute cron runs a pass under the same condition.
+2. Re-encrypt. On Workers the five-minute cron runs a pass while `QUSME_AGENT_KEY_SECRET_PREVIOUS` is set. On Node, `pnpm -C packages/entry-node rotate-agent-keys` (in the image, `node packages/entry-node/src/rotateAgentKeys.ts`) does it once with the server's environment and prints the count and the ids of any key it could not move; the server also runs a pass every five minutes under the same condition.
 3. When a pass reports nothing left to move and no failures, remove `QUSME_AGENT_KEY_SECRET_PREVIOUS`. Revoked keys have no ciphertext and are never re-encrypted.
 
-Only one previous version is held, so finish a rotation before starting the next. The secrets are lokkju/infra's to set: SOPS for the homelab deployment, Pulumi's Worker secrets on Workers (each new variable is a change there first).
+Only one previous version is held, so finish a rotation before starting the next. On Workers the secrets are Pulumi's Worker secrets in lokkju/infra, and each new variable is a change there first. A self-hosted Node server takes them from its environment.
 
-### Workers (later)
+### Self-hosting (Node)
 
-The Worker is the `qusme` script on Cloudflare. The Pulumi stack in lokkju/infra owns the script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET`, and the Actions secrets this repo deploys with (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`). This repo owns the code.
+`packages/entry-node` serves the same app with a SQLite file in place of D1. `.github/workflows/image.yml` builds `packages/entry-node/Dockerfile` on the `homelab-build` runner and, on every push to `main` (or by hand), pushes it to zot as `registry.lab.lokkju.com/builds/qusme`, tagged with the full and the short commit SHA; the job summary has the digest. Pull requests that touch the image's packages build it without pushing. lokkju/infra provides the registry credentials (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD`, from its `build_repos`). The homelab no longer runs the image. Images go to zot only, never to ghcr.io.
 
-`.github/workflows/deploy.yml` runs only by hand (`workflow_dispatch`): it applies pending D1 migrations, then runs `wrangler deploy`, which replaces the script's code and keeps its secrets. Nothing deploys the Worker automatically. CI still runs `wrangler deploy --dry-run` on every PR so the Workers entrypoint keeps building.
-
-For that reason `wrangler.jsonc` declares no routes or custom domains and sets `workers_dev` to `false`. A change to the domain, the database or a secret is a change in lokkju/infra.
-
-`/healthz` reports the deployed commit. Releases of the service will be CalVer (`vYYYY.MM.DD[.N]`) once release automation exists.
+To build it locally: `docker build -f packages/entry-node/Dockerfile --build-arg QUSME_VERSION=$(git rev-parse --short HEAD) .`, then `docker run -e QUSME_AGENT_KEY_SECRET=... -p 8787:8787 <image>` serves `/healthz` on :8787.
 
 ## License
 

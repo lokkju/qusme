@@ -34,11 +34,11 @@ Workspace packages export TypeScript source directly (`"exports": "./src/index.t
 
 ## Deploy model
 
-The service runs on the homelab first: lokkju/infra deploys the entry-node image behind the Cloudflare tunnel at app.qus.me ([lokkju/infra#660](https://github.com/lokkju/infra/issues/660)). Workers come later, on the same hostname, so the move is a DNS change. `deploy.yml` (Workers) is `workflow_dispatch` only; never give it a `push` trigger again without that move being decided.
+Workers first: app.qus.me is the `qusme` Worker. `deploy.yml` ships the code on every push to `main` that touches the Worker's packages, `registry/`, the lockfile and workspace files, `.mise/config.toml` or the workflow itself (and by hand): D1 migrations, then `wrangler deploy`, one run at a time. A new package the Worker imports goes into its `paths` list too. The Node entrypoint and the image `image.yml` builds are for self-hosting and local development; the homelab no longer runs them.
 
 ## What lokkju/infra owns and what this repo owns
 
-lokkju/infra owns the registry credentials (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD` from `build_repos`), the `homelab-build` runner and the homelab deployment of the image. Its Pulumi stack owns the `qusme` Worker script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET` and the deploy credentials. This repo owns the code and the migrations.
+lokkju/infra's Pulumi stack owns the `qusme` Worker script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET` and the deploy token (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`). lokkju/infra also owns the registry credentials (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD` from `build_repos`) and the runners. This repo owns the code and the migrations, and its deploy workflow ships them on merge to `main`.
 
 - Never declare `routes`, `route`, custom domains or a `workers_dev` route for app.qus.me in `wrangler.jsonc`. Keep `workers_dev: false`.
 - Never set or rotate secrets with `wrangler secret`; that is a lokkju/infra change.
