@@ -27,7 +27,7 @@ async function setup() {
   return { local, session, store, secretKey, inboxKey, hex: bytesToHex(secretKey) };
 }
 
-describe('key store (spec 6.1)', () => {
+describe('key store (spec 6.1)', { timeout: 30_000 }, () => {
   it('starts empty', async () => {
     const store = new KeyStore({
       local: new MemoryStorageArea(),

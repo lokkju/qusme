@@ -8,7 +8,12 @@ export const ORIGIN = 'https://app.qus.me';
 export const STORAGE = ['wss://storage-a.example', 'wss://storage-b.example'];
 export const INBOX = ['wss://inbox.example'];
 export const PASSPHRASE = 'plum anchor violet seventeen';
-/** scrypt cost in tests: 64 MiB per operation instead of 256. */
+/**
+ * scrypt cost in tests: 64 MiB per operation instead of 256, and NIP-49's floor, so no lower. A
+ * create, recover or pairing test still runs several of these, which takes more than vitest's 5 s
+ * default on a busy CI runner; the suites that do (key store, create, recover, pairing, agents) set
+ * a 30 s timeout. packages/nostr's nip49 test is the one that runs `log_n` 18.
+ */
 export const TEST_LOG_N = 16;
 
 export function network(storage: FakeRelayOptions = {}): FakeRelayNetwork {

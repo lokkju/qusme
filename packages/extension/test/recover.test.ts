@@ -10,7 +10,7 @@ import { createdDevice, device, network, STORAGE } from './helpers.ts';
 
 const NEW_PASSPHRASE = 'harbor lantern copper ninety';
 
-describe('recover flow (spec 6.1, 11.3)', () => {
+describe('recover flow (spec 6.1, 11.3)', { timeout: 30_000 }, () => {
   it('recovers from the relay URL, npub and the recovery words', async () => {
     const net = network();
     const a = await createdDevice(net);
