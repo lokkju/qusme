@@ -190,7 +190,7 @@ A user who prefers to keep the queue key in a NIP-46 bunker or NIP-07 extension 
 
 Gift wraps from agents `p`-tag the inbox key's pubkey, not the queue pubkey (7.5). The first device generates the inbox key with the queue key and keeps its secret in the settings event (7.2), so every device holds it. Each agent grant carries the inbox pubkey (7.4), encrypted to the agent, so nothing on a storage relay links the inbox to the queue: a stranger who learns the queue pubkey cannot address a gift wrap to it, and the storage relays do not show submission timing for the queue pubkey. On the inbox relay, devices authenticate as the inbox key (NIP-42 allows several AUTH pubkeys on one connection) to read and delete its gift wraps.
 
-The inbox key rotates without the queue key. If an agent's grant leaks the inbox pubkey or the inbox is flooded, a device generates a new inbox key, writes it to the settings, and republishes every grant with the new `inbox_pubkey`. The old key moves to the settings' `retired_inbox_keys` with the time it was retired, and devices keep draining gift wraps addressed to it, under the same limits as current ones (11.4), until the longest `submission_expiration_days` among the grants at that time has passed, then drop it. A queue key rotation (6.1) also rotates the inbox key.
+The inbox key rotates without the queue key. If an agent's grant leaks the inbox pubkey or the inbox is flooded, a device generates a new inbox key, writes it to the settings, and republishes every grant with the new `inbox_pubkey`. The old key moves to the settings' `retired_inbox_keys` with the time it was retired, and devices keep draining gift wraps addressed to it, under the same limits as current ones (11.4), until the longest `submission_expiration_days` among the grants at that time has passed, then drop it. The grants at retirement are not recorded, so devices use the current grants (30 days when there are none) and remove the key from the settings when they next republish them. A queue key rotation (6.1) also rotates the inbox key.
 
 ## 7. Events
 
@@ -253,7 +253,7 @@ Addressable kind 30078, `d` = `qus.me/destinations`, content NIP-44-encrypted to
 }
 ```
 
-`status` is `confirmed` or `pending` (created by an agent submission naming an unknown destination). `override` is a partial site definition merged over the official one (10.2). Settings use `d` = `qus.me/settings`, encrypted the same way:
+`status` is `confirmed` or `pending` (created by an agent submission naming an unknown destination). A pending destination's `id` is the first 32 lowercase hex characters of the SHA-256 of the UTF-8 string `qus.me/destination:` followed by the JSON array `[site, account]`, so two devices ingesting at once create the same one, and its `label` is `<site> / <account>`. `override` is a partial site definition merged over the official one (10.2). Settings use `d` = `qus.me/settings`, encrypted the same way:
 
 ```json
 {
@@ -537,7 +537,7 @@ WXT, Chrome MV3 and Firefox MV3, one codebase, `browser` namespace throughout. S
 
 ### 11.2 Permissions
 
-Required: `activeTab`, `scripting`, `contextMenus`, `storage`.
+Required: `activeTab`, `scripting`, `contextMenus`, `storage`, `alarms`. `alarms` runs sync while the queue is unlocked (11.4); a service worker's timers do not survive it being stopped, and the permission shows the user no warning.
 
 Optional, requested at setup: host permission for the qus.me service origin. Relay websockets need no host permission.
 
@@ -564,6 +564,14 @@ Ingestion of submissions, in this order, so a wrap is discarded at the cheapest 
 - Query with a lookback of at least two days past the last sync, since NIP-59 randomizes gift wrap `created_at` into the past.
 - After the draft wrap is published, request deletion of the ingested gift wrap with a NIP-09 request signed by the inbox key. NIP-17 permits a recipient to do this, and [nostr-protocol/nips#2350](https://github.com/nostr-protocol/nips/pull/2350) proposes adding it to NIP-09; the text of NIP-59 does not grant it. In the 2026-10-27 probe three of five relays ignored the request, so in practice the NIP-40 expiration bounds how long a wrap stays, and a device that fetches an ingested wrap again skips it by its derived `d`.
 - Enforce the grant's quota (7.4) at ingestion as well as at the service; over-quota submissions are discarded and counted. A submission counts in the period containing its rumor's `created_at`, the one timestamp NIP-59 does not randomize. Counts live in the settings event's `quota_counts` (7.2) so devices agree: per agent, the current `period_start` and the gift wrap ids `accepted` and `discarded` in that period. Before republishing settings, a device fetches the latest settings and merges by union of the id lists, keeping the later `period_start` and clearing the lists when the period advances. Two devices ingesting at once can together accept more than the quota; the service's count is the exact one, and the device check is a backstop against a compromised service.
+
+Further rules devices follow at ingestion:
+
+- After unwrapping, the grant's other rules apply as the service applies them (8.4), as a backstop: a submitter with no readable grant, a rumor `created_at` at or after the grant's `expires_at`, a destination not in the grant when `allow_new_destinations` is false, or a field the grant does not list for its destination is discarded. A rumor `created_at` more than 10 minutes in the future is discarded, so it cannot advance the quota period.
+- A rumor whose quota period starts before the recorded `period_start` counts in the recorded period, so a backdated rumor cannot escape the quota. A wrap id already in `accepted` or `discarded` keeps that decision.
+- The query window moves (the "last sync" of the lookback) only after a sync that read every inbox relay, left nothing over the cap and published every draft; otherwise the next sync repeats the same window, so deferred wraps are not lost.
+- A draft wrap counts as published once every reachable storage relay accepted it; only then is its gift wrap deleted. Wraps already ingested and discarded junk are deleted too, except a listed submitter's wrap discarded for want of a grant, which may arrive mid-approval and is retried on the next sync. A device also remembers the ids of wraps it handled, ids only, so junk is not reopened while it stays in the lookback.
+- Decrypted drafts are kept only in `storage.session` (extension) or memory (PWA), and lock deletes them with the keys. Junk is counted by reason and never shown.
 
 ### 11.5 Arming and inserting
 
