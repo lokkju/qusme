@@ -3,7 +3,13 @@ import { OPTIONAL_HOST_PERMISSIONS, PERMISSIONS, SERVICE_ORIGIN } from '../src/p
 import config from '../wxt.config.ts';
 
 it('asks for exactly the permissions in spec 11.2', () => {
-  expect([...PERMISSIONS].sort()).toEqual(['activeTab', 'contextMenus', 'scripting', 'storage']);
+  expect([...PERMISSIONS].sort()).toEqual([
+    'activeTab',
+    'alarms',
+    'contextMenus',
+    'scripting',
+    'storage',
+  ]);
 });
 
 it('makes the service origin the only optional host permission', () => {
