@@ -5,6 +5,7 @@ import { type KeyStatus, type PendingImport, WrongPassphrase } from '../keyStore
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
 import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
 import { CreateScreen } from './create.tsx';
+import { Drafts } from './drafts.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
 import { RecoverScreen } from './recover.tsx';
 
@@ -143,6 +144,7 @@ function Unlocked(props: {
   return (
     <Screen title="qus.me">
       <p class="mt-2 break-all font-mono text-xs">{npubEncode(status.pubkey)}</p>
+      <Drafts deps={deps} />
       <div class="mt-4 flex flex-col gap-2">
         <Button onClick={() => props.onRoute('pair-source')}>Pair a new device</Button>
         <Button
