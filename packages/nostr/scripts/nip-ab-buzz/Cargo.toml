@@ -1,0 +1,17 @@
+# Generates test/vectors/nip-ab-buzz.vectors.json from block/buzz's NIP-AB implementation, and
+# checks events written by packages/nostr against it. Not part of the build or CI; run by hand:
+#   CARGO_TARGET_DIR=/tmp/nip-ab-buzz cargo run --manifest-path scripts/nip-ab-buzz/Cargo.toml -- generate > test/vectors/nip-ab-buzz.vectors.json
+#   CARGO_TARGET_DIR=/tmp/nip-ab-buzz cargo run --manifest-path scripts/nip-ab-buzz/Cargo.toml -- check <events.json>
+[package]
+name = "nip-ab-buzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+buzz-core = { git = "https://github.com/block/buzz", rev = "8f83c6320994be69f486ba42bf69cea6d8bb9df8" }
+nostr = { version = "0.44", features = ["nip44", "nip49"] }
+serde_json = "1"
+hex = "0.4"
+
+[workspace]

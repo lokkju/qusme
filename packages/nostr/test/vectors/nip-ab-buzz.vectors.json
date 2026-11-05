@@ -1,0 +1,359 @@
+{
+  "buzz_rev": "8f83c6320994be69f486ba42bf69cea6d8bb9df8",
+  "derivations": {
+    "ecdh_shared": "9b4b6d6990713d89d6d9982e506ee1bbcde6f05c54d9d2978696e8a7274d4408",
+    "sas_code": "863346",
+    "sas_input": "e8b03a329f3a0ac37fe7fbe929171e14b72812be67e33c5d6e193543c41798d3",
+    "session_id": "fb357d0f8e8d5a5ba3b2a91cb18c119e1567b07ffa38cdebb73e68df78f5a380",
+    "transcript_hash": "d662818ff8911fc60a2d025f8b8b4756107104e85888dd202d28db5ca2cf28d3"
+  },
+  "ncryptsec": "ncryptsec1qgg9947rlpvqu76pj5ecreduf9jxhselq2nae2kghhvd5g7dgjtcxfqtd67p9m0w57lspw8gsq6yphnm8623nsl8xn9j4jdzz84zm3frztj3z7s35vpzmqf6ksu8r89qk5z2zxfmu5gv8th8wclt0h4p",
+  "qr_cases": [
+    {
+      "ok": true,
+      "relays": [
+        "wss://relay.example.com"
+      ],
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "ok": true,
+      "relays": [
+        "wss://relay.example.com"
+      ],
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Frelay.example.com"
+    },
+    {
+      "ok": true,
+      "relays": [
+        "wss://relay.example.com"
+      ],
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?relay=wss%3A%2F%2Frelay.example.com&secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&v=1&mode=recover&x"
+    },
+    {
+      "ok": true,
+      "relays": [
+        "wss://relay.example.com"
+      ],
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss://relay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: unsupported protocol version 2, expected 1",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Frelay.example.com&v=2"
+    },
+    {
+      "error": "invalid QR URI: at least one 'relay' query parameter is required",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&v=1"
+    },
+    {
+      "error": "invalid QR URI: missing 'secret' query parameter",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?relay=wss%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: session_secret must not be all zeros",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=0000000000000000000000000000000000000000000000000000000000000000&relay=wss%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: pubkey must be 64 lowercase hex chars, got \"199E64CA60662CB2D6E91D16CB065BE51AD74A6EE5F8C5B0FDC53D246611ED9A\"",
+      "ok": false,
+      "uri": "nostrpair://199E64CA60662CB2D6E91D16CB065BE51AD74A6EE5F8C5B0FDC53D246611ED9A?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: secret must be 64 lowercase hex chars, got \"A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2E3F4A5B6C7D8E9F0A1B2\"",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2E3F4A5B6C7D8E9F0A1B2&relay=wss%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: pubkey must be 64 lowercase hex chars, got \"199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed\"",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: secret must be 64 lowercase hex chars, got \"a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1\"",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1&relay=wss%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: relay URL must use wss:// or ws:// scheme, got \"https\"",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=https%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: invalid relay URL \"relay.example.com\": relative URL without a base",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=relay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: missing query string (expected ?secret=…&relay=…)",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a"
+    },
+    {
+      "error": "invalid QR URI: URI must start with nostrpair://",
+      "ok": false,
+      "uri": "nostr://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "ok": true,
+      "relays": [
+        "wss://relay.example.com"
+      ],
+      "uri": "nostrpair://ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Frelay.example.com&v=1"
+    },
+    {
+      "error": "invalid QR URI: URI exceeds 2048-character limit (2193 chars)",
+      "ok": false,
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Frelay.example.com&v=1&pad=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "session_secret": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+  "source_privkey": "7f4c11a9c9d1e3b5a7f2e4d6c8b0a2f4e6d8c0b2a4f6e8d0c2b4a6f8e0d2c4b5",
+  "source_pubkey": "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a",
+  "target_privkey": "3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a5b",
+  "target_pubkey": "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4",
+  "to_source": {
+    "abort_sas_mismatch": {
+      "event": {
+        "content": "AimlntapQDyCZjYl4T2YDdkYRf8xT2BzX1bHwsiZgwKWXH2fzJY3iWTRrWYTEkvlUWTk9/X7s7SoVSEdTcQ8yn6tT8ldG46ABQ6hQ+/VMRX9WzZmOm7yDXAcHDR4srzmAWQnkEwC9bJNvZkGPG6O5uU+ShYELgm0lu3M0g8uKYjcB+I=",
+        "created_at": 1761400000,
+        "id": "e892df4cc04ac0bf82874781867272f8952367164835a37e3d0c117006d97b01",
+        "kind": 24134,
+        "pubkey": "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4",
+        "sig": "2506765c2fcfa898837169282cddd214a8713d2e63e2795e7ce45734db2bf2ef443970ea451bc5a4c34cf3e0d07b3de1d1c3302339b60e18a50b7ca30d2e635c",
+        "tags": [
+          [
+            "p",
+            "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"abort\",\"reason\":\"sas_mismatch\"}"
+    },
+    "abort_user_denied": {
+      "event": {
+        "content": "AkXFMaLbndz0yN5BBrXIQsTPhHNKra6RIxPnlFJ/AkefS3A3MuP37i1nXXU8YK69W93CwTKAwEo5rld0GVk4DIC8WEIHU/+erVgZwjsrY39ihRTy5JfnXlNsoRGi6s2MltnjpVYrhWvUbY8isJL5jot+sz7csS0GkHRxu3bd363t6G0=",
+        "created_at": 1761400000,
+        "id": "2c85e5319e17dd122e3f55a7284a0b9f66e91987e4c2d7444b2fda6bfaa17ceb",
+        "kind": 24134,
+        "pubkey": "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4",
+        "sig": "31246606868f37b5b489b8110bf620a1e40b84c02262f39266a76551799d1b197c460013bac53b7b79d5bad87e7a4c649d1af15b88ec1ac0f92e133fe5b3677b",
+        "tags": [
+          [
+            "p",
+            "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"abort\",\"reason\":\"user_denied\"}"
+    },
+    "complete": {
+      "event": {
+        "content": "Akhw6hIXXrjcexJQxIwAkWpCwbSalwQysocoFh0Q/1Cd9/HlSlcFdfROSiDUER1Kb6g6w0I6eG/NRGTU04dcifwKdszhFDeN2m+LbX0EhzccuHRspSEbyQRiFxwhanAbH0CnT+D9KFzFYuhoy7WzD5r8f/F5A7KWxGMCMH0KEnfbMM8=",
+        "created_at": 1761400000,
+        "id": "01fc3a7762786c1fdae9eb2872dc14475b96be3c7831e84c5b7a6d8fc6524134",
+        "kind": 24134,
+        "pubkey": "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4",
+        "sig": "ef8caaf845f7fa6e828a0c4930d9ae4042bf93b30e5e1172272954f8a8905dbfc825f86cd07e74df8c433d4a02cb89c12ff615dea1dd45d888952c288d2d2aba",
+        "tags": [
+          [
+            "p",
+            "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"complete\",\"success\":true}"
+    },
+    "complete_failed": {
+      "event": {
+        "content": "AonwGS9z9FxOVgJOX2x/nN6joAxYTeNc97FcxKidUNhkZ7EjI7/BvQ7AAz7r/hlb9TmVErTpxk/VPheXyoL2gb1dERAp5HdovtZY1yxstcvjTaBWRiOdx//nTB9FW9liIJHxtiPZE3AAEORo2dtq3UkYQT2QRr4hOKg4g6xaikIxN3E=",
+        "created_at": 1761400000,
+        "id": "e161a5717bf86b500d842bfde8dcbbe62eb1b343f1eac610371b51aeb3bc6786",
+        "kind": 24134,
+        "pubkey": "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4",
+        "sig": "cb9f9d1fb437e808da8ec1a4ec42874754ebcad668424d036fa679454943871c0004e173b86487d4277cd44800730f1cae20ce3d7e733ed755fd6def78f04629",
+        "tags": [
+          [
+            "p",
+            "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"complete\",\"success\":false}"
+    },
+    "offer": {
+      "event": {
+        "content": "AkfTZE862u0Q0ikMPKcNRGSl3cE7IHHccDGw3lNSb0NlF7Ma3Xg1RlX30CWJYdB8iJzFWdABjTiEDATaeRWdLouOCdNf4iEb9vBNS/OsJ2TLsqBIrahQqS1XMqm/PJsPKvOux9VCVDsVFdDGFB7gMb/UXdKLkWmNzPWWZdc3quTv36ockKqXRosBZ/tqUSBAEAJ6/CX7WOCGX276emYW3WtBlFBTyQG4BXwUhOmPpf482/86p60SkiRsFRVSoDCgWQEr",
+        "created_at": 1761400000,
+        "id": "445e22272ba5c39f39c3d25b0fec0002a216035272e1f3e71605eabd58b9c3ea",
+        "kind": 24134,
+        "pubkey": "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4",
+        "sig": "ff37a3889e84a80ba58599b05340bf92c309ed656f99d38261466e45525915d3ee6bc8f7065753734331af9537077f4014915d25dfad4d51acee609f5d510693",
+        "tags": [
+          [
+            "p",
+            "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"offer\",\"session_id\":\"fb357d0f8e8d5a5ba3b2a91cb18c119e1567b07ffa38cdebb73e68df78f5a380\",\"version\":1}"
+    },
+    "offer_bad_session": {
+      "event": {
+        "content": "ArvZIr7W6G3o0j7D8ZDsvdBeAa9Ui7NandY9iy2lau7OvEbia9O9pLWeeeiTXbQBWW8QBIieIwp2EHmoQfUCwCHwodj8Go3Arb+lKMlWTzLVTD+k6TVu0xGqOlICjzh1v4xD7Ttt+ujWbspOVuBp1/eaKX9RXQtfGfLRibcZP32ixf3Wo5PlPtOpMZ68SZyWgXMxjxSnvnE4JpSMeMz0dpZ4DLzBy6RLc9eiQSe5OGQoGaadXmrCJgAh0EYG2OxMIOQH",
+        "created_at": 1761400000,
+        "id": "304fbb160444b6a76fb809ec8c1eec2ce6cc60630ed32b7b2c12c0ae9e55f640",
+        "kind": 24134,
+        "pubkey": "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4",
+        "sig": "cb79bd7b3b1df5070a632cc4b369f0f2853ef2634a89581f48864f9418155921a6a813650110e0194b8c157aad4cdac0f62dc884af09d653935415f1ff8594c9",
+        "tags": [
+          [
+            "p",
+            "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"offer\",\"session_id\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"version\":1}"
+    },
+    "offer_desktop_code": {
+      "event": {
+        "content": "AizpDmHgAW+nCG1aRypc0S12fW9I2+E+EQNh1mb/12VjDidi45Pl5+jx/Y/ACQKddeKiBYNXVjWWtndTDpXEikjfkCTHSmXn72hVuxzgdVvdGASIWUeaQx+TQC6XodfhKeWHGAWjW1pbY2JnpYlKxtiYRbUXH2ifxscoUScq5ZigP4LyTxxwKgidEfnYBN7GHGZ+FmNMhOmRVmNTnOY2TSTh/Mk6wOPklEuZF5BD9s3rfZemNPiHRdV6CGVjX2IdTXAqIwRMfD6lXzaDkiTu6Nselyn1fvy7tbW5bpG9u9AkyKU=",
+        "created_at": 1761400000,
+        "id": "41e11f8a9fd0e8283a22c7d889850bfc1b55806a01febdd38178cb84eadce842",
+        "kind": 24134,
+        "pubkey": "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4",
+        "sig": "f7bd13fe49f0a0c50e9125ddd929ac0cd2e72cd1eebdd853bf567dd3f386dda538e75272bb0fa52b850fef061c98c8bb6fe64929c05bc4a69ec0025edc175bb9",
+        "tags": [
+          [
+            "p",
+            "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"offer\",\"session_id\":\"fb357d0f8e8d5a5ba3b2a91cb18c119e1567b07ffa38cdebb73e68df78f5a380\",\"version\":1,\"confirmation\":\"desktop-code-v1\"}"
+    }
+  },
+  "to_target": {
+    "abort_timeout": {
+      "event": {
+        "content": "AsdsvgQ8gROyt/yo99sb0R8nNjgzE6rUklHTW91sTBer3NZWelo2OQ0cI6IpUuFuzBp6oED12Oi9tsGMUrE1qhJW3WAbclxs71HNJ/yDjDQaxO4N33djoJns1co7E7qPmmjGsk2GaCavnvkKdsjm6cj4gsQvQgFfx9q22iFyERpINJ8=",
+        "created_at": 1761400000,
+        "id": "0771c912c56a0aeab929fed2560b50e2f61602eca0b27b2f5500f1f533dd08a7",
+        "kind": 24134,
+        "pubkey": "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a",
+        "sig": "056e071ce693557535f57b18e020737beed6175ecc98c04a77fe3aa9ebe5e7db358cf6ecc72cafdb7e2be26c502d24fd0c682b2f4fac96979c42aa5bef9ebf36",
+        "tags": [
+          [
+            "p",
+            "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"abort\",\"reason\":\"timeout\"}"
+    },
+    "payload": {
+      "event": {
+        "content": "AhOsG/SlPM72Pa3H9Basnh3FQrcJ0RmQdL4tcZkxsF6GuFWOz7QjLCCBoNNOta0fY+qc39DrCcHpfIkYO7lTk9SbskqK3xCmjKIwbH8Y8AP5y6fOVNpHVjepPzz0sG9PBEiGgTDyndVjH+jLRVs1zKHXU4mA4IRGMBkC+fDutk32qoya+ss1IeFV9WaYtZg0jwVctWQjbj7NVNSFmntUwwrWoa3WuWenjCs9gj0kj81PL3LQNXfYD5hR/SGAO+OX5EGIZ7X6kQ6rbiiSofa25D1sGKRY5vepLeZMsX19MlbFn7gq4tiLKcQ+eup6ED2lkPU/Zv7ZQgxSJE0Bh6b3bisKLtuIxn5+iA+y554RpyY1zJTYe66oqROh0yLoWdrwLECG",
+        "created_at": 1761400000,
+        "id": "ebfcaaa738fbd066e78577fb46c41acc95720069b81d11f67e301c9b9221e03a",
+        "kind": 24134,
+        "pubkey": "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a",
+        "sig": "283ed0f0124b47a83c4735925e64a6b8bc1c6d60dd068d4dd32823be43aed4817325ecc4bbd8808f3e8cd1b65b9758253710203c2943e905dbb1b1b51d94f7b2",
+        "tags": [
+          [
+            "p",
+            "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"payload\",\"payload_type\":\"nsec\",\"payload\":\"ncryptsec1qgg9947rlpvqu76pj5ecreduf9jxhselq2nae2kghhvd5g7dgjtcxfqtd67p9m0w57lspw8gsq6yphnm8623nsl8xn9j4jdzz84zm3frztj3z7s35vpzmqf6ksu8r89qk5z2zxfmu5gv8th8wclt0h4p\"}"
+    },
+    "payload_custom": {
+      "event": {
+        "content": "Av0CyvOZP/HnkNz+uo4NpS0aH+iskjzMfjUEHSSx59Rrevnlj+jFoH2qr2UT1aNVYUjnzyQXjji4C8pcHZHpZIBJSwNreqpziCMF05mCB1ccJK360pORsPgY5JPj0JQBumV1097FvQI7e1MULegk1PoBc7FcPLkwOk+emY4LK6ZZZ1SiHyuDurlwxuDTL1lkSsmveNIG9DCPvK4Qs0R6YAw84IFBdSaQnUiK85tUmt+k34ZqmzUcMPGW4H5iA7S9xlst",
+        "created_at": 1761400000,
+        "id": "425ecb3cf6ffbbdf0d7caa86a1effa00398edbaa48e413a986ca62a37af9a281",
+        "kind": 24134,
+        "pubkey": "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a",
+        "sig": "c4251d77aa400f6fe740e0a81c6761a8fa30915ffde460abcc7d6106f81deed03d63950292690309659310b163e6522d14d3ccb4ab6bcde8efca53974169449f",
+        "tags": [
+          [
+            "p",
+            "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"payload\",\"payload_type\":\"custom\",\"payload\":\"{\\\"app\\\":\\\"com.example\\\",\\\"version\\\":1,\\\"data\\\":\\\"x\\\"}\"}"
+    },
+    "payload_nsec": {
+      "event": {
+        "content": "AgMqAqYDMuWKbKhYiSP/ZmZwg+rwZ6NEyr7cBAQ+YdYvqMgkmq6HFk6UAGVNJo03pMT9r5A/fuZVQOBN/sB2fJ2pFrF/TFfMA437/hEDDrb9ek30mXc5xFUq38v3xC2q6cExVB3gsyo5x/raBP2wkFxMCZTPPsWF8FbAwAMee3O+6zRfFZdXNkM7Ig+xV7F2n5pkDPZuNmuZ/y4jcuVMd5AHVyo3/x1TxT8lyQlpsisKuf7nGNQ/YOYNdY8jDv7e/nK5",
+        "created_at": 1761400000,
+        "id": "7d31d94ba04d88304375c60afb4a6c2641a8bccd50e01485a05c7c116938adc3",
+        "kind": 24134,
+        "pubkey": "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a",
+        "sig": "e9115e5f4327b3f83e9093a3517269cdf67593aa8bfdd8fe657b8d2beee2e14fffd55c9cf171b7014ece089a0821a04fba78bc40f0f6e0ce9bad69f199864baa",
+        "tags": [
+          [
+            "p",
+            "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"payload\",\"payload_type\":\"nsec\",\"payload\":\"nsec1x5q52sf4q9z5zdgpg4qn2q298lhmqg38u3y72l856w3uupfhs6ps7q0j4y\"}"
+    },
+    "sas_confirm": {
+      "event": {
+        "content": "ArvogZHjEfKgxoq4ozQRmbSYSwjD/x5X+7aae81XInENLasjw2p7weerE/vSiob7ymzRAathL/NpDQJ+J/cwN4dei+1FCAYyITh8J2hJuG2HDRfHMIdzUFzf4OZVOBlGTKJXhgi/8+I3JOlDd/0zGcPH1uoFZ7oyeZgAOqWd9Q2arp/4kmlOOfGflrewhFE8Ja8k8b6Bb4bVrhreaD319Q1Qd1iQqRdkcJrTH19n1D4hPB3lZL5OGfCSWPozx/bPY8RV",
+        "created_at": 1761400000,
+        "id": "6fcbe0e13cd842b65f02878eb3cd5dd3c8737c6249b8bfb61567832f31746d4a",
+        "kind": 24134,
+        "pubkey": "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a",
+        "sig": "1e67c473595dfc43931ef76bde0fb1657f56c5c6a59d9250b27dd4f0a9cf24cf533db443409a04280e12f32b692c60b0951614ac21ab60079b180320c3a9f633",
+        "tags": [
+          [
+            "p",
+            "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"sas-confirm\",\"transcript_hash\":\"d662818ff8911fc60a2d025f8b8b4756107104e85888dd202d28db5ca2cf28d3\"}"
+    },
+    "sas_confirm_bad": {
+      "event": {
+        "content": "Au8+d8scPS7jmr2lXq/khCsetOYtz3B/qWLgJNilTUp7PQS91OMBLQnI0S0O7iR9W3VamivvMTog4noRk484jfOe2Yyvnppi/32hdK37TU/fiRcjX9KoFetBzhxVeyfe73tMfEVhpskp515pBXRa0CEM7UmUhYkxTbCOneUpcCFJiThhEnFY2kOXSn6eRLx/BEg6/qOcagIhWvz3o8oOaxuz9mWMa/nzV/iA3lCbTlfc2cTFRKG2PuKOr1WRwEiBOzuL",
+        "created_at": 1761400000,
+        "id": "b451b02a6ba165ac5ef16611d40fa6bff22587f7aa6278b7c3a1f5e1ee18385e",
+        "kind": 24134,
+        "pubkey": "199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a",
+        "sig": "cc3c3bd0210fe84c224ce9d8cb471358535abfe629eeb7b24bc4c061c94060464bde5f3eb1d4874068b1cda81a64f28d82aecd4bfdb343f0efcd299b6e172064",
+        "tags": [
+          [
+            "p",
+            "89a9fa762105d0aee2b19678246fe7b823aabbc4f4bf691a1ce8a70fcd36d6e4"
+          ]
+        ]
+      },
+      "plaintext": "{\"type\":\"sas-confirm\",\"transcript_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\"}"
+    }
+  },
+  "uris": [
+    {
+      "relays": [
+        "wss://relay.example.com"
+      ],
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Frelay%2Eexample%2Ecom&v=1"
+    },
+    {
+      "relays": [
+        "wss://nos.lol",
+        "wss://relay.ditto.pub/",
+        "ws://localhost:7777/path?x=1&y=2#frag"
+      ],
+      "uri": "nostrpair://199e64ca60662cb2d6e91d16cb065be51ad74a6ee5f8c5b0fdc53d246611ed9a?secret=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2&relay=wss%3A%2F%2Fnos%2Elol&relay=wss%3A%2F%2Frelay%2Editto%2Epub%2F&relay=ws%3A%2F%2Flocalhost%3A7777%2Fpath%3Fx%3D1%26y%3D2%23frag&v=1"
+    }
+  ]
+}

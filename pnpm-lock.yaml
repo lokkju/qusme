@@ -242,6 +242,9 @@ importers:
 
   packages/nostr:
     dependencies:
+      '@noble/curves':
+        specifier: 2.0.1
+        version: 2.0.1
       '@noble/hashes':
         specifier: 2.0.1
         version: 2.0.1

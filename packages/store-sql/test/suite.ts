@@ -562,6 +562,39 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
         expect(await h.store.pairingSessions.get('0123ABCD', NOW)).toBeUndefined();
       });
 
+      it('creates only over a free or expired code, and counts live sessions per queue', async () => {
+        const row = {
+          code: '0123ABCD',
+          queuePubkey: pk(100),
+          uri: 'nostrpair://a',
+          createdAt: NOW,
+          expiresAt: NOW + 120,
+        };
+        expect((await h.store.pairingSessions.createIfFree(row, NOW))?.uri).toBe('nostrpair://a');
+        expect(
+          await h.store.pairingSessions.createIfFree({ ...row, uri: 'nostrpair://b' }, NOW + 119)
+        ).toBeUndefined();
+        expect(await h.store.pairingSessions.countLive(pk(100), NOW)).toBe(1);
+        expect(await h.store.pairingSessions.countLive(pk(101), NOW)).toBe(0);
+        await session('ZZZZZZZZ');
+        expect(await h.store.pairingSessions.countLive(pk(100), NOW)).toBe(2);
+        expect(await h.store.pairingSessions.countLive(pk(100), NOW + 120)).toBe(0);
+        const replaced = await h.store.pairingSessions.createIfFree(
+          {
+            ...row,
+            queuePubkey: pk(101),
+            uri: 'nostrpair://c',
+            createdAt: NOW + 120,
+            expiresAt: NOW + 240,
+          },
+          NOW + 120
+        );
+        expect(replaced).toMatchObject({ queuePubkey: pk(101), uri: 'nostrpair://c', attempts: 0 });
+        expect((await h.store.pairingSessions.get('0123ABCD', NOW + 121))?.uri).toBe(
+          'nostrpair://c'
+        );
+      });
+
       it('is invisible and untakeable once expired', async () => {
         await session('0123ABCD');
         expect(await h.store.pairingSessions.get('0123ABCD', NOW + 119)).toBeDefined();

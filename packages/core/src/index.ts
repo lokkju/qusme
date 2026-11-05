@@ -22,3 +22,11 @@ export {
   parsePublicOrigin,
   signedUrl,
 } from './nip98.ts';
+export {
+  PAIRING_CODE_TTL_SECONDS,
+  PAIRING_LOOKUP_WINDOW_SECONDS,
+  PAIRING_LOOKUPS_PER_WINDOW,
+  PAIRING_MAX_LIVE_PER_QUEUE,
+  type PairingRoutesOptions,
+  pairingRoutes,
+} from './pairing.ts';

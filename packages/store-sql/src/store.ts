@@ -459,6 +459,37 @@ export function createStore(db: QusmeDb) {
       const [out] = await db.insert(pairingSessions).values(row).returning();
       return must(out);
     },
+    /**
+     * Inserts the session unless a live one holds the code; an expired row not yet swept is
+     * replaced. Undefined when the code is taken, so the caller draws another.
+     */
+    async createIfFree(row: NewPairingSession, now: number): Promise<PairingSession | undefined> {
+      const [out] = await db
+        .insert(pairingSessions)
+        .values(row)
+        .onConflictDoUpdate({
+          target: pairingSessions.code,
+          set: {
+            queuePubkey: row.queuePubkey,
+            uri: row.uri,
+            attempts: row.attempts ?? 0,
+            createdAt: row.createdAt,
+            expiresAt: row.expiresAt,
+          },
+          setWhere: lte(pairingSessions.expiresAt, now),
+        })
+        .returning();
+      return out;
+    },
+    /** Live sessions a queue key has open, for the per-queue cap. */
+    async countLive(queuePubkey: string, now: number): Promise<number> {
+      const rows = await db
+        .select({ code: pairingSessions.code })
+        .from(pairingSessions)
+        .where(and(eq(pairingSessions.queuePubkey, queuePubkey), pairingLive(now)))
+        .all();
+      return rows.length;
+    },
     async get(code: string, now: number): Promise<PairingSession | undefined> {
       return db
         .select()
