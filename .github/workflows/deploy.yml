@@ -1,13 +1,26 @@
 name: deploy
 
-# Deploys the Worker (packages/entry-worker) to the `qusme` script, by hand
-# only. The service runs on the homelab for now (image.yml, lokkju/infra#660);
-# this workflow stays so moving back to Workers is a DNS change and a run of
-# it. lokkju/infra's Pulumi stack owns the script's custom domain (app.qus.me),
-# the D1 database and the Worker's secrets; this workflow applies pending D1
-# migrations and then uploads the code. Deploys keep the secrets Pulumi set.
+# Deploys the Worker (packages/entry-worker) to the `qusme` script, which serves
+# app.qus.me. Runs on every push to main that touches the Worker's code, its
+# migrations or its build inputs, and by hand. lokkju/infra's Pulumi stack owns
+# the script's custom domain (app.qus.me), the D1 database, the deploy token and
+# the Worker's secrets; this workflow applies pending D1 migrations and then
+# uploads the code. Deploys keep the secrets Pulumi set.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - packages/core/**
+      - packages/nostr/**
+      - packages/store-sql/**
+      - packages/entry-worker/**
+      - registry/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .mise/config.toml
+      - .github/workflows/deploy.yml
   workflow_dispatch:
 
 permissions:
