@@ -1,9 +1,12 @@
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import {
+  buildAgentGrant,
   buildHttpAuth,
   buildSubmittersList,
   createLocalSigner,
   httpAuthHeader,
   type NostrEvent,
+  openSubmission,
   type Signer,
 } from '@qusme/nostr';
 import type { QusmeDb, Store } from '@qusme/store-sql';
@@ -15,11 +18,13 @@ import {
   createAgentKeyRing,
   createApp,
   createOAuth,
+  createWebSocketRelayPublisher,
   type McpAuthEnv,
   type RelayQuery,
   type RelayReader,
 } from '../../src/index.ts';
 import { s256 } from '../../src/oauth/secrets.ts';
+import { fakeInboxRelay } from '../mcp/fakes.ts';
 
 /** A fresh, migrated, empty store on one driver. */
 export interface Harness {
@@ -236,10 +241,17 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
       return { ...a, ...body };
     }
 
+    /** A 2025-era `tools/list` on /mcp, which needs nothing but a valid token. */
     const mcp = (accessToken?: string) =>
       app.request('/mcp', {
         method: 'POST',
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        headers: {
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          'MCP-Protocol-Version': '2025-11-25',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
       });
 
     /** What the bearer middleware resolves a token to, through a probe route on the same store. */
@@ -383,8 +395,8 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
       expect(dump).not.toContain(access);
       expect(dump).not.toContain(refresh);
 
-      // /mcp: past the bearer check to the 501, bound to this queue through the agent key.
-      expect((await mcp(access)).status).toBe(501);
+      // /mcp: past the bearer check to the tools, bound to this queue through the agent key.
+      expect((await mcp(access)).status).toBe(200);
       expect(await resolve(access)).toEqual({
         agentKeyId: key?.id,
         agentPubkey: fetched.agent_pubkey,
@@ -403,7 +415,7 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
       expect(refreshed.status).toBe(200);
       const next = (await refreshed.json()) as { access_token: string; refresh_token: string };
       expect(next.refresh_token).not.toBe(refresh);
-      expect((await mcp(next.access_token)).status).toBe(501);
+      expect((await mcp(next.access_token)).status).toBe(200);
 
       // The device lists and revokes the binding; every token stops working.
       const list = await device('GET', '/device/bindings');
@@ -630,7 +642,7 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
       });
       expect(res.status).toBe(400);
       expect((await mcp(t.refresh_token)).status).toBe(401);
-      expect((await mcp(t.access_token)).status).toBe(501);
+      expect((await mcp(t.access_token)).status).toBe(200);
     });
 
     it('expires access tokens', async () => {
@@ -650,9 +662,85 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
       expect((await revoke('qat_unknown')).status).toBe(200);
       // Another client's request changes nothing.
       expect((await revoke(t.access_token, 'https://other.example/c.json')).status).toBe(200);
-      expect((await mcp(t.access_token)).status).toBe(501);
+      expect((await mcp(t.access_token)).status).toBe(200);
       expect((await revoke(t.refresh_token)).status).toBe(200);
       expect((await mcp(t.access_token)).status).toBe(401);
+    });
+
+    it('submits a draft end to end: token, /mcp create_draft, a wrap on the inbox relay', async () => {
+      const relay = fakeInboxRelay({ requireAuth: true });
+      app = createApp({
+        version: 'test',
+        db: h.db,
+        agentKeys: ring,
+        publicOrigin: ORIGIN,
+        oauth: overrides(),
+        mcp: { relayPublisher: createWebSocketRelayPublisher({ WebSocket: relay.WebSocket }) },
+      });
+      const t = await tokens();
+      // What the device publishes with the approval: the grant, encrypted to the agent.
+      const inboxKey = createLocalSigner(generateSecretKey());
+      const inboxPubkey = await inboxKey.getPublicKey();
+      net.publish(
+        await buildAgentGrant(
+          queue,
+          t.agentPubkey,
+          {
+            inbox: ['wss://inbox.example/'],
+            inbox_pubkey: inboxPubkey,
+            destinations: [{ site: 'x', account: 'lokkju', fields: ['text'] }],
+            quota: { max_submissions: 10, period: 'day' },
+          },
+          { createdAt: clock }
+        )
+      );
+
+      const client = new Client({ name: 'flow-agent', version: '1.0.0' });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(RESOURCE), {
+          fetch: async (url, init) => app.request(String(url), init),
+          requestInit: { headers: { Authorization: `Bearer ${t.access_token}` } },
+        })
+      );
+      const res = (await client.callTool({
+        name: 'create_draft',
+        arguments: { site: 'x', account: 'lokkju', field: 'text', value: 'hello, queue' },
+      })) as { isError?: boolean; structuredContent?: Record<string, unknown> };
+      expect(res.isError).toBeFalsy();
+      expect(res.structuredContent).toMatchObject({
+        created_at: clock,
+        expires_at: clock + 30 * 86_400,
+        relays: ['wss://inbox.example/'],
+      });
+
+      // The inbox relay holds exactly the wrap the receipt names, addressed to the inbox key.
+      expect(relay.stored).toHaveLength(1);
+      const wrap = relay.stored[0];
+      expect(wrap?.id).toBe(res.structuredContent?.gift_wrap_id);
+      expect(wrap?.tags.filter((tag) => tag[0] === 'p')).toEqual([['p', inboxPubkey]]);
+      // It authenticated there as a key of its own, not as the agent.
+      expect(relay.connections[0]?.authed).toHaveLength(1);
+      expect(relay.connections[0]?.authed[0]).not.toBe(t.agentPubkey);
+
+      // The device opens it with the inbox key: the exact rumor, sealed by the agent key.
+      const opened = await openSubmission(wrap, inboxKey);
+      if (!opened.ok) throw new Error(opened.error.message);
+      expect(opened.value.submitter).toBe(t.agentPubkey);
+      expect(opened.value.value).toEqual({
+        createdAt: clock,
+        site: 'x',
+        account: 'lokkju',
+        field: 'text',
+        content: 'hello, queue',
+        validation: { counter: 'default', length: 12, ok: true },
+        reserved: [],
+      });
+      expect(opened.value.ignoredTags).toEqual([]);
+
+      const listed = (await client.callTool({ name: 'list_submissions', arguments: {} })) as {
+        structuredContent?: { submissions: { gift_wrap_id: string }[] };
+      };
+      expect(listed.structuredContent?.submissions.map((r) => r.gift_wrap_id)).toEqual([wrap?.id]);
     });
 
     it('refuses token requests that are not public-client form posts', async () => {
