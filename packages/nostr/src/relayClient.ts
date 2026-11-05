@@ -69,7 +69,8 @@ const isAuthRequired = (message: string): boolean => message.startsWith('auth-re
 type Message = [string, ...unknown[]];
 
 const defaultSocket: SocketFactory = (url) => {
-  const Platform = (globalThis as { WebSocket?: new (url: string) => SocketLike }).WebSocket;
+  const Platform = (globalThis as unknown as { WebSocket?: new (url: string) => SocketLike })
+    .WebSocket;
   if (Platform === undefined) throw new Error('no WebSocket in this environment');
   return new Platform(url);
 };
@@ -309,7 +310,8 @@ export class RelayConnection {
 
   /**
    * A live subscription. `onEvent` gets every event, stored and new; `onClosed` the relay's
-   * `CLOSED` message or the connection's end. Returns a function that ends it.
+   * `CLOSED` message or the connection's end. A `CLOSED` with `auth-required` is retried once
+   * after AUTH when the connection has `autoAuth`. Returns a function that ends it.
    */
   subscribe(
     filters: Filter[],
@@ -317,6 +319,7 @@ export class RelayConnection {
   ): () => void {
     const id = `s${++this.#serial}`;
     let open = true;
+    let retried = false;
     const listener = (m: Message): void => {
       if (m[0] === '__closed') {
         stop();
@@ -326,9 +329,24 @@ export class RelayConnection {
       } else if (m[0] === 'EVENT' && isEventShape(m[2])) {
         handlers.onEvent(m[2]);
       } else if (m[0] === 'CLOSED') {
+        const reason = String(m[2] ?? '');
+        if (isAuthRequired(reason) && this.#autoAuth !== undefined && !retried) {
+          retried = true;
+          this.authenticate(this.#autoAuth).then(
+            () => {
+              if (open) this.#trySend(['REQ', id, ...filters]);
+            },
+            (error: unknown) => {
+              this.#listeners.delete(listener);
+              open = false;
+              handlers.onClosed?.((error as Error).message);
+            }
+          );
+          return;
+        }
         this.#listeners.delete(listener);
         open = false;
-        handlers.onClosed?.(String(m[2] ?? ''));
+        handlers.onClosed?.(reason);
       }
     };
     const stop = (): void => {

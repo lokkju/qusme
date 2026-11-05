@@ -17,6 +17,13 @@ import { other, otherPubkey, queue, queueKey, queuePubkey } from './helpers.ts';
 const now = (): number => Math.floor(Date.now() / 1000);
 const appData = (d: string, created_at = now()) =>
   finalizeEvent({ kind: KIND_APP_DATA, created_at, tags: [['d', d]], content: d }, queueKey);
+async function until(predicate: () => boolean, ms = 3000): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > ms) throw new Error('timed out waiting');
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
 const sign = (t: Parameters<typeof queue.signEvent>[0]) => queue.signEvent(t);
 
 describe('relay client', () => {
@@ -115,7 +122,7 @@ describe('relay client', () => {
     });
     const event = appData('live');
     await writer.publish(event);
-    await new Promise((r) => setTimeout(r, 10));
+    await until(() => seen.length > 0);
     expect(seen).toEqual([event.id]);
     stop();
     await writer.publish(appData('after'));
@@ -124,6 +131,37 @@ describe('relay client', () => {
     net.get('wss://a.example').disconnectAll();
     expect(await reader.closed).toBe('connection closed');
     expect(closedWith).toBeUndefined();
+  });
+
+  it('resubscribes after AUTH when a subscription is refused with auth-required', async () => {
+    const net = new FakeRelayNetwork();
+    net.add('wss://auth.example', { authRequired: true });
+    const reader = await RelayConnection.open('wss://auth.example', {
+      socket: net.socket,
+      autoAuth: sign,
+    });
+    const writer = await RelayConnection.open('wss://auth.example', {
+      socket: net.socket,
+      autoAuth: sign,
+    });
+    const seen: string[] = [];
+    reader.subscribe([{ kinds: [KIND_APP_DATA] }], { onEvent: (e) => seen.push(e.id) });
+    await until(() => reader.authenticated.has(queuePubkey));
+    // The REQ is sent again after AUTH; give the relay a moment to register it.
+    await until(() => net.get('wss://auth.example').requests.some((r) => r.authed.length > 0));
+    const event = appData('live');
+    await writer.publish(event);
+    await until(() => seen.length > 0);
+    expect(seen).toEqual([event.id]);
+
+    const plain = await RelayConnection.open('wss://auth.example', { socket: net.socket });
+    const reasons: string[] = [];
+    plain.subscribe([{ kinds: [KIND_APP_DATA] }], {
+      onEvent: () => undefined,
+      onClosed: (r) => reasons.push(r),
+    });
+    await until(() => reasons.length > 0);
+    expect(reasons[0]).toMatch(/auth-required/);
   });
 
   it('times out a relay that never answers', async () => {
