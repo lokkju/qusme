@@ -29,16 +29,44 @@ import {
 import type { FakeRelayNetwork } from '@qusme/nostr/testing';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { describe, expect, it } from 'vitest';
-import { LOCAL_SYNC, SESSION_DRAFTS } from '../src/keyStore.ts';
+import {
+  KeyStore,
+  LOCAL_QUEUE,
+  LOCAL_SYNC,
+  type QueueRecord,
+  SESSION_DRAFTS,
+  SESSION_UNLOCKED,
+} from '../src/keyStore.ts';
+import { MemoryStorageArea } from '../src/storage.ts';
 import { SyncEngine, type SyncResult, syncOnce } from '../src/sync/engine.ts';
 import { readDraftCache, readSyncState, writeSyncState } from '../src/sync/state.ts';
-import { createdDevice, device, INBOX, network, PASSPHRASE, STORAGE } from './helpers.ts';
+import { device, INBOX, network, STORAGE } from './helpers.ts';
 
 const DAY = 24 * 60 * 60;
 const clock = () => Math.floor(Date.now() / 1000);
 const dOf = (e: NostrEvent) => e.tags.find((t) => t[0] === 'd')?.[1];
 
-type Created = Awaited<ReturnType<typeof createdDevice>>;
+/**
+ * An unlocked extension install holding `secretKey`, written straight into its storage areas so
+ * these tests spend no time in scrypt (the setup flows have their own tests). The `ncryptsec`
+ * is never opened here.
+ */
+async function unlockedDevice(secretKey: Uint8Array, inboxKey: Uint8Array, settings: NostrEvent) {
+  const local = new MemoryStorageArea();
+  const session = new MemoryStorageArea();
+  const record: QueueRecord = {
+    version: 1,
+    pubkey: getPublicKey(secretKey),
+    ncryptsec: 'ncryptsec1unused',
+    storageRelays: STORAGE,
+    settings,
+  };
+  await local.set({ [LOCAL_QUEUE]: record });
+  await session.set({
+    [SESSION_UNLOCKED]: { queue: bytesToHex(secretKey), inbox: bytesToHex(inboxKey) },
+  });
+  return { store: new KeyStore({ local, session }), local, session, secretKey, inboxKey };
+}
 
 async function publishTo(net: FakeRelayNetwork, urls: string[], event: NostrEvent) {
   const connections = await Promise.all(
@@ -55,9 +83,17 @@ async function setup(
 ) {
   const net = network();
   if (options.recipientDeletion) net.get(INBOX[0] as string).options.recipientDeletion = true;
-  const a = await createdDevice(net);
-  const queue = createLocalSigner(a.secretKey);
-  const inboxPubkey = getPublicKey(a.inboxKey);
+  const secretKey = generateSecretKey();
+  const inboxKey = generateSecretKey();
+  const queue = createLocalSigner(secretKey);
+  const inboxPubkey = getPublicKey(inboxKey);
+  const settings = await buildSettings(queue, {
+    inbox_key: bytesToHex(inboxKey),
+    inbox_relays: INBOX,
+    quota_counts: {},
+  });
+  await publishTo(net, STORAGE, settings);
+  const a = await unlockedDevice(secretKey, inboxKey, settings);
   const agentKey = generateSecretKey();
   const agent = createLocalSigner(agentKey);
   const agentPubkey = getPublicKey(agentKey);
@@ -107,23 +143,13 @@ async function setup(
     await publishTo(net, INBOX, wrap);
     return wrap;
   };
-  const deps = (d: Pick<Created, 'store'>, extra: { cap?: number } = {}) => ({
+  const deps = (d: { store: KeyStore }, extra: { cap?: number } = {}) => ({
     store: d.store,
     socket: net.socket,
     relayTimeoutMs: 500,
     ...extra,
   });
-  let b: ReturnType<typeof device> | undefined;
-  if (options.second) {
-    b = device(net);
-    const settings = (await a.store.record())?.settings;
-    await b.store.save({
-      secretKey: a.secretKey,
-      passphrase: PASSPHRASE,
-      storageRelays: STORAGE,
-      ...(settings && { settings }),
-    });
-  }
+  const b = options.second ? await unlockedDevice(secretKey, inboxKey, settings) : undefined;
   return { net, a, b, queue, inboxPubkey, agent, agentPubkey, submit, deps };
 }
 
