@@ -2,7 +2,7 @@
 /**
  * The home screen's draft list driven in happy-dom: one click inserts a row's draft without
  * arming it, a failure leaves nothing armed, expanding shows the whole text and offers arming for
- * the context menu.
+ * the context menu, and the home screen shows no npub until Settings and about asks for it.
  */
 import { render } from 'preact';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import { readArmed } from '../src/insertion/armed.ts';
 import { definitionSource } from '../src/insertion/definitions.ts';
 import type { InsertResponse } from '../src/insertion/service.ts';
 import { type CachedDraft, writeDraftCache } from '../src/sync/state.ts';
+import { App } from '../src/ui/app.tsx';
 import { type InsertionUiDeps, InsertPanel } from '../src/ui/insert.tsx';
 import { createdDevice, network, until } from './helpers.ts';
 
@@ -118,5 +119,15 @@ describe('draft list in the popup', { timeout: 30_000 }, () => {
     buttons('Disarm')[0]?.click();
     await until(() => !root.textContent?.includes('Armed for right-click:'));
     expect(await readArmed(a.store.session)).toBeUndefined();
+  });
+
+  it('keeps the npub off the home screen until Settings and about shows it', async () => {
+    const { a, deps } = await setup({ state: 'not_found' });
+    mount(<App deps={a.deps} insertion={deps} />);
+    await until(() => root.textContent?.includes('For this page') === true);
+    expect(root.textContent).not.toContain('npub1');
+    expect(root.textContent).not.toContain(a.npub);
+    buttons('Show Queue ID')[0]?.click();
+    await until(() => root.textContent?.includes(a.npub) === true);
   });
 });
