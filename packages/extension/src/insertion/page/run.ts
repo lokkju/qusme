@@ -88,11 +88,16 @@ export function detectAccount(doc: Document, account: SiteAccount): PageAccountR
   return {};
 }
 
-/** The chain for a target when the destination has no definition: by what kind of element it is. */
+/**
+ * The chain for a target when the destination has no definition: by what kind of element it is.
+ * `insertText` goes first on both, because `execCommand` makes the browser fire trusted
+ * `beforeinput` and `input` events, while `paste` and `native` dispatch events with `isTrusted`
+ * false, which a page can detect and ignore (spec 11.6). A site definition orders its own chain.
+ */
 export function defaultChain(target: EditableTarget): InjectionStrategy[] {
   return isTextControl(target)
-    ? ['native', 'insertText', 'clipboard']
-    : ['paste', 'insertText', 'clipboard'];
+    ? ['insertText', 'native', 'clipboard']
+    : ['insertText', 'paste', 'clipboard'];
 }
 
 const shortcut = (doc: Document): string =>
