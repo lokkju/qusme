@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { expect, it } from 'vitest';
 import { migrationStatements } from '../../../store-sql/test/harness.ts';
-import { createAgentKeyCustody, createAgentKeyRing } from '../../src/index.ts';
+import { createAgentKeyCustody, createAgentKeyRing, RATE_CLASSES } from '../../src/index.ts';
 
 const SECRET = btoa('w'.repeat(32));
 const CLIENT_ID = 'https://client.example/oauth/client-metadata.json';
@@ -35,6 +35,13 @@ it('serves MCP tools under the Workers runtime', { timeout: 60_000 }, async () =
           modules: [{ type: 'ESModule', path: 'index.mjs', contents: script }],
           d1Databases: { DB: 'workerd-mcp' },
           bindings: { QUSME_AGENT_KEY_SECRET: SECRET, QUSME_PUBLIC_ORIGIN: 'https://app.qus.me' },
+          // workerd's own Rate Limiting bindings, as wrangler.jsonc declares them.
+          ratelimits: Object.fromEntries(
+            Object.values(RATE_CLASSES).map((c, i) => [
+              c.binding,
+              { namespace_id: String(7701 + i), simple: { limit: c.limit, period: c.period } },
+            ])
+          ),
         },
       ],
     })
