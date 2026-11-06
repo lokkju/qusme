@@ -62,7 +62,11 @@ export function buildApp(config: NodeConfig, log: (line: string) => void = conso
     db,
     agentKeys: config.agentKeys,
     publicOrigin: config.publicOrigin,
-    mcp: { registry },
+    mcp: {
+      registry,
+      // Pubkeys only (spec 8.4): a tool went ahead on the grant without the submitters list.
+      notice: (n) => log(`${n.event} agent=${n.agentPubkey} queue=${n.queuePubkey}`),
+    },
   });
   const sweep = () => store.sweepExpired(Math.floor(Date.now() / 1000));
   const rotateAgentKeys = () => createAgentKeyCustody(store, config.agentKeys).rotate();

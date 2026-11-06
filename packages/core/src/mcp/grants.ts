@@ -1,10 +1,18 @@
 /**
  * The agent's grant (spec 7.4), read from the queue's storage relays as the agent key and
- * decrypted with it. The newest valid grant signed by the bound queue wins. A found grant is kept
- * for a short while per agent key, binding and relays, so a burst of tool calls reads the relays
- * once; a missing one is not kept, so a device that has just published can be retried at once.
+ * decrypted with it, and the queue's current submitters list (7.3), read the same way. The newest
+ * valid event signed by the bound queue wins. A found event is kept for a short while per agent
+ * key, binding and relays, so a burst of tool calls reads the relays once; a missing one is not
+ * kept, so a device that has just published can be retried at once.
  */
-import { AGENT_GRANT_KINDS, type AgentGrant, parseAgentGrant, type Signer } from '@qusme/nostr';
+import {
+  AGENT_GRANT_KINDS,
+  type AgentGrant,
+  parseAgentGrant,
+  parseSubmittersPublic,
+  type Signer,
+  SUBMITTERS_KINDS,
+} from '@qusme/nostr';
 import type { RelayReader } from '../oauth/relayReader.ts';
 import type { AgentAuth } from '../oauth/server.ts';
 
@@ -30,10 +38,36 @@ export interface GrantCache {
   clear(): void;
 }
 
-export function createGrantCache(options: GrantCacheOptions): GrantCache {
+/** A per-agent cache of something read from the storage relays; only found values are kept. */
+function agentCache<T>(
+  options: GrantCacheOptions,
+  read: (agent: AgentAuth, signer: Signer) => Promise<T | undefined>
+) {
   const maxEntries = options.maxEntries ?? 1_000;
-  const cache = new Map<string, { until: number; found: FoundGrant }>();
+  const cache = new Map<string, { until: number; found: T }>();
+  return {
+    async get(agent: AgentAuth, signer: Signer, now: number): Promise<T | undefined> {
+      const key = [agent.agentKeyId, agent.queuePubkey, ...agent.storageRelays].join(' ');
+      const hit = cache.get(key);
+      if (hit !== undefined && hit.until > now) return hit.found;
+      cache.delete(key);
+      const found = await read(agent, signer);
+      if (found !== undefined && options.ttlSeconds > 0) {
+        if (cache.size >= maxEntries) {
+          const oldest = cache.keys().next();
+          if (!oldest.done) cache.delete(oldest.value);
+        }
+        cache.set(key, { until: now + options.ttlSeconds, found });
+      }
+      return found;
+    },
+    clear() {
+      cache.clear();
+    },
+  };
+}
 
+export function createGrantCache(options: GrantCacheOptions): GrantCache {
   async function read(agent: AgentAuth, signer: Signer): Promise<FoundGrant | undefined> {
     const events = await options.relayReader.query({
       relays: agent.storageRelays,
@@ -64,24 +98,61 @@ export function createGrantCache(options: GrantCacheOptions): GrantCache {
     return best;
   }
 
-  return {
-    async get(agent, signer, now) {
-      const key = [agent.agentKeyId, agent.queuePubkey, ...agent.storageRelays].join(' ');
-      const hit = cache.get(key);
-      if (hit !== undefined && hit.until > now) return hit.found;
-      cache.delete(key);
-      const found = await read(agent, signer);
-      if (found !== undefined && options.ttlSeconds > 0) {
-        if (cache.size >= maxEntries) {
-          const oldest = cache.keys().next();
-          if (!oldest.done) cache.delete(oldest.value);
-        }
-        cache.set(key, { until: now + options.ttlSeconds, found });
+  return agentCache(options, read);
+}
+
+/** The queue's current submitters list as the service reads it: the public `p` tags. */
+export interface FoundSubmitters {
+  /** The list event's id. */
+  eventId: string;
+  createdAt: number;
+  /** Agent pubkeys the list names. */
+  submitters: string[];
+}
+
+export interface SubmittersCache {
+  /**
+   * The newest submitters list signed by the bound queue on its storage relays, or undefined if
+   * none was found (no list, or no relay answered).
+   */
+  get(agent: AgentAuth, signer: Signer, now: number): Promise<FoundSubmitters | undefined>;
+  /** Forgets every cached list. */
+  clear(): void;
+}
+
+/**
+ * The submitters list (7.3) is the authority on authorization: a grant left behind on a relay that
+ * ignored its deletion does not make an agent the list dropped a submitter again (8.4). Cached as
+ * grants are, per agent key, since a relay meeting the qus.me relay profile answers each agent
+ * according to whether the list names it (9.2).
+ */
+export function createSubmittersCache(options: GrantCacheOptions): SubmittersCache {
+  async function read(agent: AgentAuth, signer: Signer): Promise<FoundSubmitters | undefined> {
+    let events: unknown[];
+    try {
+      events = await options.relayReader.query({
+        relays: agent.storageRelays,
+        filter: { kinds: [...SUBMITTERS_KINDS], authors: [agent.queuePubkey], limit: 1 },
+        auth: signer,
+      });
+    } catch {
+      return undefined;
+    }
+    let best: FoundSubmitters | undefined;
+    for (const event of events) {
+      const parsed = parseSubmittersPublic(event, { queuePubkey: agent.queuePubkey });
+      if (!parsed.ok) continue;
+      const list = parsed.value;
+      if (
+        best === undefined ||
+        list.createdAt > best.createdAt ||
+        (list.createdAt === best.createdAt && list.id < best.eventId)
+      ) {
+        best = { eventId: list.id, createdAt: list.createdAt, submitters: list.submitters };
       }
-      return found;
-    },
-    clear() {
-      cache.clear();
-    },
-  };
+    }
+    return best;
+  }
+
+  return agentCache(options, read);
 }

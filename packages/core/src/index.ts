@@ -36,6 +36,7 @@ export {
   DEFAULT_GRANT_CACHE_SECONDS,
   DEFAULT_MAX_POW,
   type Mcp,
+  type McpNotice,
   type McpOptions,
   type McpOverrides,
   type McpToolErrorCode,

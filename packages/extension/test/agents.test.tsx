@@ -29,13 +29,14 @@ import {
   RelayConnection,
   verifyHttpAuth,
 } from '@qusme/nostr';
-import type { FakeRelayNetwork } from '@qusme/nostr/testing';
+import type { FakeRelayNetwork, FakeRelayOptions } from '@qusme/nostr/testing';
 import { openSqlite } from '@qusme/store-sql/sqlite';
 import type { Filter } from 'nostr-tools/filter';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { renderToString } from 'preact-render-to-string';
 import { describe, expect, it } from 'vitest';
 import {
+  APPROVAL_PERMISSION_MESSAGE,
   type ApprovalChoices,
   approveAgent,
   defaultChoices,
@@ -44,14 +45,15 @@ import {
 } from '../src/agents/approve.ts';
 import { parseApprovalCode } from '../src/agents/code.ts';
 import { confirmPendingDestination, rejectPendingDestination } from '../src/agents/destinations.ts';
+import { readPendingRevocations } from '../src/agents/pendingRevocations.ts';
 import type { AgentDeps } from '../src/agents/queue.ts';
-import { revokeAgent } from '../src/agents/revoke.ts';
+import { type RevokeResult, revokeAgent } from '../src/agents/revoke.ts';
 import { type AuthorizationRequest, fetchAuthorization } from '../src/agents/service.ts';
 import { loadAgents } from '../src/agents/view.ts';
 import { KeyStore, LOCAL_QUEUE, type QueueRecord, SESSION_UNLOCKED } from '../src/keyStore.ts';
 import { MemoryStorageArea } from '../src/storage.ts';
 import { syncOnce } from '../src/sync/engine.ts';
-import { AgentsList, GrantForm, RequestSummary } from '../src/ui/agents.tsx';
+import { AgentsList, GrantForm, RequestSummary, revokeMessage } from '../src/ui/agents.tsx';
 import { INBOX, network, ORIGIN, STORAGE } from './helpers.ts';
 
 const CLIENT_ID = 'https://client.example/oauth/client-metadata.json';
@@ -168,8 +170,8 @@ function serviceRelays(net: FakeRelayNetwork, state: { lag: number }) {
  * A queue (settings with the inbox key, two confirmed destinations) on the fake relays, an
  * unlocked extension install holding it, and the service app.
  */
-async function harness() {
-  const net = network();
+async function harness(options: { storage?: FakeRelayOptions } = {}) {
+  const net = network(options.storage);
   const secretKey = generateSecretKey();
   const inboxKey = generateSecretKey();
   const queue = createLocalSigner(secretKey);
@@ -233,6 +235,8 @@ async function harness() {
     onRelays: { submitters: string[][]; grants: number };
   }[] = [];
   let permissionRequests = 0;
+  /** `down` makes every service request fail as offline; `permission` is the user's answer. */
+  const service = { down: false, permission: true };
   const deps: AgentDeps = {
     store,
     socket: net.socket,
@@ -241,9 +245,10 @@ async function harness() {
     approvalRetryMs: [5, 5, 5],
     requestServicePermission: async () => {
       permissionRequests += 1;
-      return true;
+      return service.permission;
     },
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (service.down) throw new TypeError('Failed to fetch');
       const url = String(input);
       const method = init?.method ?? 'GET';
       const body = typeof init?.body === 'string' ? init.body : undefined;
@@ -353,6 +358,8 @@ async function harness() {
     inboxKey,
     calls,
     relayState,
+    service,
+    local,
     permissions: () => permissionRequests,
     startAuthorization,
     pageStatus,
@@ -574,6 +581,23 @@ describe('agent approval against the service', { timeout: 30_000 }, () => {
     ]);
   });
 
+  it('asks for the service permission at approval and publishes nothing without it', async () => {
+    const h = await harness();
+    const start = await h.startAuthorization();
+    const request = await fetchAuthorization(h.queue, start.code, h.deps);
+    const before = h.permissions();
+    h.service.permission = false;
+    await expect(approveAgent(request, defaultChoices(request), h.deps)).rejects.toThrow(
+      APPROVAL_PERMISSION_MESSAGE
+    );
+    expect(h.permissions()).toBe(before + 1);
+    expect(newestOn(h.net, STORAGE[0] as string, KIND_SUBMITTERS, h.queuePubkey)).toBeUndefined();
+    expect(h.calls.some((c) => c.path.endsWith('/approve'))).toBe(false);
+    h.service.permission = true;
+    expect(await approveAgent(request, defaultChoices(request), h.deps)).toEqual({ attempts: 1 });
+    expect(h.permissions()).toBe(before + 2);
+  });
+
   it('denies: nothing is published and the client is refused', async () => {
     const h = await harness();
     const start = await h.startAuthorization();
@@ -643,6 +667,7 @@ describe('agents list and revocation', { timeout: 30_000 }, () => {
 
     const result = await revokeAgent(one.request.agentPubkey, h.deps);
     expect(result).toEqual({ listUpdated: true, refusals: [], service: 'revoked' });
+    expect(await readPendingRevocations(h.store)).toEqual([]);
     // The DELETE came after every storage relay had the list without the agent.
     const del = h.calls.find((c) => c.method === 'DELETE');
     expect(del).toMatchObject({
@@ -670,36 +695,131 @@ describe('agents list and revocation', { timeout: 30_000 }, () => {
     expect(after.agents.map((a) => a.label)).toEqual(['Second']);
   });
 
-  it('revokes at the relays even when the service is not told', async () => {
-    const h = await harness();
-    const one = await h.approved();
+  it('keeps a revocation pending without the permission, and the service refuses the agent anyway', async () => {
+    // Storage relays that ignore NIP-09, as most ordinary relays do: the grant stays readable.
+    const h = await harness({ storage: { honorDeletion: false } });
+    const one = await h.approved((c) => ({ ...c, label: 'Mine' }));
     const agent = await h.connectAgent(one.page);
-    expect((await agent.call('list_destinations')).isError).toBeFalsy();
+    const draft = (value: string) => ({ site: 'x', account: 'lokkju', field: 'text', value });
+    expect((await agent.call('create_draft', draft('before'))).isError).toBeFalsy();
+    const inboxBefore = h.net.get(INBOX[0] as string).events.length;
 
-    const result = await revokeAgent(one.request.agentPubkey, h.deps, { tellService: false });
-    expect(result.service).toBe('skipped');
+    const result = await revokeAgent(one.request.agentPubkey, h.deps, { serviceAllowed: false });
+    expect(result).toMatchObject({ listUpdated: true, refusals: [], service: 'pending' });
+    expect(result.serviceError).toMatch(/permission/);
     expect(h.calls.some((c) => c.method === 'DELETE')).toBe(false);
-    // The service still holds the key and token, but the grant is gone from the relays.
-    const refused = await agent.call('create_draft', {
-      site: 'x',
-      account: 'lokkju',
-      field: 'text',
-      value: 'after revocation',
-    });
-    expect(refused.structuredContent?.error).toBe('grant_not_found');
+    expect(
+      newestOn(
+        h.net,
+        STORAGE[0] as string,
+        KIND_AGENT_GRANT,
+        h.queuePubkey,
+        one.request.agentPubkey
+      )
+    ).toBeDefined();
+    expect(await readPendingRevocations(h.store, h.queuePubkey)).toEqual([
+      expect.objectContaining({ agentPubkey: one.request.agentPubkey, label: 'Mine' }),
+    ]);
 
-    // The agents list shows it as bound but no longer listed.
+    // The token still works, but the service reads the submitters list and refuses.
+    const refused = await agent.call('create_draft', draft('after revocation'));
+    expect(refused.isError).toBe(true);
+    expect(refused.structuredContent?.error).toBe('grant_revoked');
+    expect(String(refused.structuredContent?.message)).toMatch(/revoked/);
+    expect(h.net.get(INBOX[0] as string).events.length).toBe(inboxBefore);
+
+    // The agents list shows it as revoked here and still being finished with the service.
     const view = await loadAgents(h.deps, { withService: true });
     expect(view.agents).toEqual([
-      expect.objectContaining({ agentPubkey: one.request.agentPubkey, listed: false }),
+      expect.objectContaining({
+        agentPubkey: one.request.agentPubkey,
+        label: 'Mine',
+        listed: false,
+        pendingRevocation: expect.objectContaining({
+          lastError: expect.stringMatching(/permission/),
+        }),
+      }),
     ]);
-    // Revoking again tells the service; the list is already without it.
-    expect(await revokeAgent(one.request.agentPubkey, h.deps)).toEqual({
+
+    // The next sync finishes it; the token stops working and the record goes.
+    const synced = await syncOnce({
+      store: h.store,
+      socket: h.net.socket,
+      relayTimeoutMs: 500,
+      serviceOrigin: ORIGIN,
+      fetch: h.deps.fetch,
+    });
+    expect(synced.state).toBe('synced');
+    expect(h.calls.filter((c) => c.method === 'DELETE')).toHaveLength(1);
+    expect(await readPendingRevocations(h.store)).toEqual([]);
+    await expect(agent.call('list_destinations')).rejects.toThrow();
+    expect((await loadAgents(h.deps, { withService: true })).agents).toEqual([]);
+    await agent.client.close();
+  });
+
+  it('persists a revocation the service could not be told about and retries it on each sync', async () => {
+    const h = await harness();
+    const one = await h.approved((c) => ({ ...c, label: 'Mine' }));
+    h.service.down = true;
+    const result = await revokeAgent(one.request.agentPubkey, h.deps);
+    expect(result).toMatchObject({
+      listUpdated: true,
+      service: 'pending',
+      serviceError: 'Could not reach the qus.me service.',
+    });
+    // In storage.local, so a new popup or a restarted background finds it.
+    const reopened = new KeyStore({ local: h.local, session: new MemoryStorageArea() });
+    expect(await readPendingRevocations(reopened)).toEqual([
+      {
+        queuePubkey: h.queuePubkey,
+        agentPubkey: one.request.agentPubkey,
+        label: 'Mine',
+        since: expect.any(Number),
+        lastError: 'Could not reach the qus.me service.',
+      },
+    ]);
+    // Offline, the agents list still shows it, from the record alone.
+    const offline = await loadAgents(h.deps, { withService: true });
+    expect(offline.bindingsError).toBeDefined();
+    expect(
+      offline.agents.map((a) => [a.label, a.listed, a.pendingRevocation !== undefined])
+    ).toEqual([['Mine', false, true]]);
+
+    const sync = () =>
+      syncOnce({
+        store: h.store,
+        socket: h.net.socket,
+        relayTimeoutMs: 500,
+        serviceOrigin: ORIGIN,
+        fetch: h.deps.fetch,
+      });
+    await sync();
+    expect(await readPendingRevocations(h.store)).toHaveLength(1);
+    h.service.down = false;
+    await sync();
+    expect(await readPendingRevocations(h.store)).toEqual([]);
+    expect(h.calls.filter((c) => c.method === 'DELETE')).toEqual([
+      expect.objectContaining({
+        path: `/device/bindings/${one.request.agentPubkey}`,
+        authPubkey: h.queuePubkey,
+      }),
+    ]);
+  });
+
+  it('drops a pending record once the service answers without the binding', async () => {
+    const h = await harness();
+    const one = await h.approved();
+    await revokeAgent(one.request.agentPubkey, h.deps, { serviceAllowed: false });
+    // Another device finished it with the service.
+    expect(await revokeAgent(one.request.agentPubkey, h.deps)).toMatchObject({
       listUpdated: false,
-      refusals: [],
       service: 'revoked',
     });
-    await agent.client.close();
+    expect(await readPendingRevocations(h.store)).toEqual([]);
+    await revokeAgent(one.request.agentPubkey, h.deps, { serviceAllowed: false });
+    expect(await readPendingRevocations(h.store)).toHaveLength(1);
+    expect((await loadAgents(h.deps, { withService: true })).agents).toEqual([]);
+    expect(await readPendingRevocations(h.store)).toEqual([]);
   });
 });
 
@@ -833,6 +953,7 @@ describe('agent screens', () => {
       <AgentsList
         busy={false}
         onRevoke={() => {}}
+        onRetry={() => {}}
         onConfirm={() => {}}
         onReject={() => {}}
         view={{
@@ -860,5 +981,45 @@ describe('agent screens', () => {
     expect(html).toContain('calls itself &lt;u>Spoof&lt;/u>');
     expect(html).toContain('&lt;em>x / new&lt;/em>');
     expect(html).toContain('Reject and dismiss its drafts');
+  });
+
+  it('shows a revocation still being finished with qus.me, with Retry and no Revoke', () => {
+    const html = renderToString(
+      <AgentsList
+        busy={false}
+        onRevoke={() => {}}
+        onRetry={() => {}}
+        onConfirm={() => {}}
+        onReject={() => {}}
+        view={{
+          agents: [
+            {
+              agentPubkey: 'c'.repeat(64),
+              label: '<b>Mine</b>',
+              listed: false,
+              pendingRevocation: { since: 0, lastError: 'Could not reach the qus.me service.' },
+            },
+          ],
+          pending: [],
+        }}
+      />
+    );
+    expect(html).toContain('Revoked on your devices; finishing with qus.me…');
+    expect(html).toContain('may still look like it works');
+    expect(html).toContain('Last try: Could not reach the qus.me service.');
+    expect(html).toContain('>Retry<');
+    expect(html).not.toContain('Revoke…');
+    expect(html).toContain('&lt;b>Mine&lt;/b>');
+  });
+
+  it('says plainly what a revocation did', () => {
+    const done: RevokeResult = { listUpdated: true, refusals: [], service: 'revoked' };
+    expect(revokeMessage('Claude', done)).toBe(
+      'Claude can no longer send drafts. Remove it from its client too.'
+    );
+    const pending = revokeMessage('Claude', { ...done, service: 'pending' });
+    expect(pending).toMatch(/^Revoked on your devices; finishing with qus\.me…/);
+    expect(pending).toContain('Claude may still look like it works');
+    expect(pending).toContain('next sync, or press Retry');
   });
 });

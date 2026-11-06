@@ -138,10 +138,17 @@ export function grantFor(
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export const APPROVAL_PERMISSION_MESSAGE =
+  'qus.me needs permission to reach app.qus.me to approve an agent, and to finish revoking it later.';
+
 /**
- * Approves: publishes the submitters list with the agent added and the agent's grant to every
- * storage relay, then posts the approval naming those relays, retrying a 409 while the relays
- * catch up. Resolves with the number of approval attempts.
+ * Approves: asks for the service host permission, publishes the submitters list with the agent
+ * added and the agent's grant to every storage relay, then posts the approval naming those
+ * relays, retrying a 409 while the relays catch up. Resolves with the number of approval attempts.
+ *
+ * The permission is asked first (the look-up asked for it too, but the user may have removed it
+ * since), inside the user's gesture, and an approval without it stops before publishing anything:
+ * revoking the agent later needs the same permission to reach the service (11.8).
  */
 export async function approveAgent(
   request: AuthorizationRequest,
@@ -150,6 +157,10 @@ export async function approveAgent(
 ): Promise<{ attempts: number }> {
   const label = choices.label.trim();
   if (label === '') throw new SetupError('Give the agent a label.');
+  // First thing awaited in the gesture: Firefox grants the permission only inside it.
+  if (!(await deps.requestServicePermission())) {
+    throw new SetupError(APPROVAL_PERMISSION_MESSAGE);
+  }
   const prepared = await withQueue(deps, async (session) => {
     const snapshot = await readQueue(session);
     const grant = grantFor(

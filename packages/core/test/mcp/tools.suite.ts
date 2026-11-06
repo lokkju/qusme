@@ -2,7 +2,9 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import {
   type AgentGrantInput,
   buildAgentGrant,
+  buildSubmittersList,
   createLocalSigner,
+  KIND_SUBMITTERS,
   openSubmission,
   powOf,
   type Signer,
@@ -14,6 +16,7 @@ import {
   createAgentKeyCustody,
   createAgentKeyRing,
   createApp,
+  type McpNotice,
   type McpOverrides,
 } from '../../src/index.ts';
 import { fakeStorage, recordingPublisher } from './fakes.ts';
@@ -294,7 +297,7 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
       const res = await call(client, 'list_destinations');
       expect(res.structuredContent?.quota).toMatchObject({ max_submissions: 3, period: 'day' });
       expect(res.structuredContent?.allow_new_destinations).toBe(false);
-      const last = storage.queries.at(-1);
+      const last = storage.queries.findLast((q) => q.query.filter['#d'] !== undefined);
       expect(last?.authPubkey).toBe(agent.key.pubkey);
       expect(last?.query.relays).toEqual(STORAGE);
       expect(last?.query.filter).toMatchObject({
@@ -788,25 +791,125 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
       expect(bad.structuredContent?.error).toBe('invalid_cursor');
     });
 
+    /** Storage reads of one kind of event so far. */
+    const reads = (kind: 'grant' | 'submitters') =>
+      storage.queries.filter((q) =>
+        kind === 'submitters'
+          ? q.query.filter.kinds?.includes(KIND_SUBMITTERS)
+          : q.query.filter['#d'] !== undefined
+      ).length;
+
     it('caches a found grant briefly and never a missing one', async () => {
       const cached = makeApp({ grantCacheSeconds: 30 });
       const agent = await bindAgent();
       const client = await connect(agent.token, cached);
-      const before = storage.queries.length;
+      const grantReads = () => reads('grant');
+      const before = grantReads();
       expect((await call(client, 'list_destinations')).structuredContent?.error).toBe(
         'grant_not_found'
       );
       expect((await call(client, 'list_destinations')).structuredContent?.error).toBe(
         'grant_not_found'
       );
-      expect(storage.queries.length).toBe(before + 2);
+      expect(grantReads()).toBe(before + 2);
       await grant(agent.key.pubkey);
       expect((await call(client, 'list_destinations')).isError).toBeFalsy();
       expect((await call(client, 'list_submissions')).isError).toBeFalsy();
-      expect(storage.queries.length).toBe(before + 3);
+      expect(grantReads()).toBe(before + 3);
       clock += 31;
       expect((await call(client, 'list_destinations')).isError).toBeFalsy();
-      expect(storage.queries.length).toBe(before + 4);
+      expect(grantReads()).toBe(before + 4);
+    });
+
+    /** Publishes a submitters list naming `agents`, signed by the queue key. */
+    async function listSubmitters(agents: string[], at = clock) {
+      const labels = Object.fromEntries(
+        agents.map((a) => [a, { label: 'Example Agent', authorized_at: at }])
+      );
+      storage.publish(await buildSubmittersList(queue, labels, { createdAt: at }), STORAGE);
+    }
+
+    it('refuses with grant_revoked once the submitters list drops the agent, grant or not', async () => {
+      const agent = await bindAgent();
+      await grant(agent.key.pubkey);
+      await listSubmitters([agent.key.pubkey], clock - 20);
+      const client = await connect(agent.token);
+      expect((await call(client, 'create_draft', draft('before'))).isError).toBeFalsy();
+      expect(inbox.published).toHaveLength(1);
+
+      // Revoked on a device: a newer list without the agent. The relays ignored the grant's
+      // deletion, so the grant is still there.
+      await listSubmitters([], clock - 10);
+      for (const [name, args] of [
+        ['create_draft', draft('after')],
+        ['list_destinations', {}],
+        ['get_definition', { site: 'x', account: 'lokkju' }],
+        ['list_submissions', {}],
+      ] as const) {
+        const res = await call(client, name, args);
+        expect(res.isError).toBe(true);
+        expect(res.structuredContent?.error).toBe('grant_revoked');
+        expect(res.structuredContent?.message).toMatch(/revoked/);
+        expect(res.structuredContent?.message).toMatch(/authorized again/);
+      }
+      expect(inbox.published).toHaveLength(1);
+      expect(await h.store.submissionReceipts.countSince(agent.key.id, 0)).toBe(1);
+      // Read as the agent key, from the bound queue's storage relays.
+      const last = storage.queries.filter((q) => q.query.filter.kinds?.includes(KIND_SUBMITTERS));
+      expect(last.at(-1)?.authPubkey).toBe(agent.key.pubkey);
+      expect(last.at(-1)?.query.filter).toMatchObject({ authors: [queuePubkey] });
+      expect(last.at(-1)?.query.relays).toEqual(STORAGE);
+    });
+
+    it('ignores a submitters list not signed by the bound queue', async () => {
+      const agent = await bindAgent();
+      await grant(agent.key.pubkey);
+      await listSubmitters([agent.key.pubkey], clock - 20);
+      const stranger = createLocalSigner(generateSecretKey());
+      storage.publish(await buildSubmittersList(stranger, {}, { createdAt: clock }), STORAGE);
+      const client = await connect(agent.token);
+      expect((await call(client, 'create_draft', draft('hi'))).isError).toBeFalsy();
+    });
+
+    it('goes ahead on the grant when no submitters list is found, and says so', async () => {
+      const notices: McpNotice[] = [];
+      const noticing = makeApp({ notice: (n) => notices.push(n) });
+      const agent = await bindAgent();
+      const client = await connect(agent.token, noticing);
+      // Neither the list nor the grant: grant_not_found, as before, and nothing to report.
+      expect((await call(client, 'create_draft', draft('hi'))).structuredContent?.error).toBe(
+        'grant_not_found'
+      );
+      expect(notices).toEqual([]);
+      await grant(agent.key.pubkey);
+      expect((await call(client, 'create_draft', draft('hi'))).isError).toBeFalsy();
+      expect(notices).toEqual([
+        {
+          event: 'submitters_list_unavailable',
+          agentPubkey: agent.key.pubkey,
+          queuePubkey,
+        },
+      ]);
+    });
+
+    it('caches the submitters list briefly, so a revocation lands within the cache time', async () => {
+      const cached = makeApp({ grantCacheSeconds: 30 });
+      const agent = await bindAgent();
+      await grant(agent.key.pubkey);
+      await listSubmitters([agent.key.pubkey], clock - 20);
+      const client = await connect(agent.token, cached);
+      expect((await call(client, 'create_draft', draft('one'))).isError).toBeFalsy();
+      const before = reads('submitters');
+      await listSubmitters([], clock - 10);
+      // Within the cache time the list read before the revocation still answers.
+      clock += 10;
+      expect((await call(client, 'list_destinations')).isError).toBeFalsy();
+      expect(reads('submitters')).toBe(before);
+      clock += 21;
+      const res = await call(client, 'create_draft', draft('two'));
+      expect(res.structuredContent?.error).toBe('grant_revoked');
+      expect(reads('submitters')).toBe(before + 1);
+      expect(inbox.published).toHaveLength(1);
     });
 
     it('answers a 2025-era client over the stateless fallback', async () => {

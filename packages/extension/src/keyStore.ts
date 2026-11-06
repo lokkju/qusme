@@ -16,6 +16,8 @@
  * - `qusme.sync`: the sync engine's own state (`src/sync/state.ts`): the last inbox sync, the ids
  *   of gift wraps already handled, the cap streak and counts from the last sync. Ids and counts
  *   only, never decrypted content.
+ * - `qusme.pendingRevocations`: agents revoked on this device that the service has not confirmed
+ *   revoking yet (`src/agents/pendingRevocations.ts`): pubkeys, labels and the last error.
  *
  * `storage.session` (memory only, cleared when the browser closes, readable only by extension
  * pages and the service worker):
@@ -43,6 +45,7 @@ export const LOCAL_STAY_UNLOCKED = 'qusme.stayUnlocked';
 export const LOCAL_PLAIN_KEYS = 'qusme.plainKeys';
 export const LOCAL_PENDING_IMPORT = 'qusme.pendingImport';
 export const LOCAL_SYNC = 'qusme.sync';
+export const LOCAL_PENDING_REVOCATIONS = 'qusme.pendingRevocations';
 export const SESSION_UNLOCKED = 'qusme.unlocked';
 export const SESSION_DRAFTS = 'qusme.drafts';
 /** The armed draft (spec 11.5), decrypted text included. */
@@ -277,6 +280,7 @@ export class KeyStore {
       LOCAL_STAY_UNLOCKED,
       LOCAL_PLAIN_KEYS,
       LOCAL_PENDING_IMPORT,
+      LOCAL_PENDING_REVOCATIONS,
     ]);
   }
 }

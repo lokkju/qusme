@@ -1,33 +1,30 @@
 /**
- * Revoking an agent (spec 8.2, "Revocation"): remove it from the submitters list on every storage
- * relay, which devices and a relay meeting the qus.me relay profile enforce at once, ask the
- * relays to delete its grant, and then tell the service to destroy the key and its tokens.
+ * Revoking an agent (spec 8.2, "Revocation", 11.8): remove it from the submitters list on every
+ * storage relay, which devices, the service and a relay meeting the qus.me relay profile enforce,
+ * ask the relays to delete its grant, and then tell the service to destroy the key and its tokens.
+ * The service step is part of the revocation: until it is done the revocation stays pending in
+ * `storage.local` (`pendingRevocations.ts`) and each sync retries it.
  */
 import {
   buildDeletionRequest,
   buildSubmittersList,
-  createLocalSigner,
   KIND_AGENT_GRANT,
   type SubmitterLabel,
 } from '@qusme/nostr';
 import { SetupError } from '../setup/deps.ts';
-import {
-  type AgentDeps,
-  after,
-  LOCKED_MESSAGE,
-  publishAll,
-  readQueue,
-  withQueue,
-} from './queue.ts';
-import { deleteBinding } from './service.ts';
+import { addPendingRevocation, finishRevocation } from './pendingRevocations.ts';
+import { type AgentDeps, after, publishAll, readQueue, withQueue } from './queue.ts';
 
 export interface RevokeResult {
   /** Whether a new submitters list without the agent went out (false if it was not listed). */
   listUpdated: boolean;
   /** Storage relays that refused the new list. */
   refusals: string[];
-  /** What the service said, or `skipped` when it was not asked. */
-  service: 'revoked' | 'not_bound' | 'failed' | 'skipped';
+  /**
+   * What the service said, or `pending` when it could not be told (offline, no permission): the
+   * revocation is then recorded as pending and retried on each sync.
+   */
+  service: 'revoked' | 'not_bound' | 'pending';
   /** Why the service could not be told, written for the user. */
   serviceError?: string;
 }
@@ -36,21 +33,26 @@ export interface RevokeResult {
 export const grantAddress = (queuePubkey: string, agentPubkey: string): string =>
   `${KIND_AGENT_GRANT}:${queuePubkey}:${agentPubkey}`;
 
+export const NO_SERVICE_PERMISSION =
+  'qus.me does not have permission to reach app.qus.me. Press Retry and allow it.';
+
 /**
  * Removes the agent from the submitters list and requests deletion of its grant on every storage
- * relay, then, with `tellService` (the default), revokes it at the service. The list goes first:
- * it is the authority (7.3), and it takes effect whether or not the service cooperates. Throws
- * only if no storage relay accepted the new list.
+ * relay, then revokes it at the service. The list goes first: it is the authority (7.3), and it
+ * takes effect whether or not the service cooperates. The revocation is recorded as pending once
+ * the list is out and cleared when the service confirms; `serviceAllowed: false` (the user
+ * declined the host permission) skips the request, which would fail, and leaves it pending.
+ * Throws only if no storage relay accepted the new list.
  */
 export async function revokeAgent(
   agentPubkey: string,
   deps: AgentDeps,
-  options: { tellService?: boolean } = {}
+  options: { serviceAllowed?: boolean } = {}
 ): Promise<RevokeResult> {
   const result = await withQueue(deps, async (session): Promise<RevokeResult> => {
     const snapshot = await readQueue(session);
     const list = snapshot.submitters;
-    const out: RevokeResult = { listUpdated: false, refusals: [], service: 'skipped' };
+    const out: RevokeResult = { listUpdated: false, refusals: [], service: 'pending' };
     if (list?.submitters.includes(agentPubkey)) {
       const labels: Record<string, SubmitterLabel> = { ...list.labels };
       delete labels[agentPubkey];
@@ -67,6 +69,15 @@ export async function revokeAgent(
       }
       out.listUpdated = true;
     }
+    // Before anything else can fail: the popup may close at any moment from here on.
+    const label = list?.labels[agentPubkey]?.label;
+    await addPendingRevocation(deps.store, {
+      queuePubkey: session.pubkey,
+      agentPubkey,
+      since: session.now,
+      ...(label !== undefined && { label }),
+      ...(options.serviceAllowed === false && { lastError: NO_SERVICE_PERMISSION }),
+    });
     const grant = snapshot.grants.get(agentPubkey);
     if (grant !== undefined) {
       // Best effort: the list already revoked the agent, and an ordinary relay may keep the grant.
@@ -79,15 +90,14 @@ export async function revokeAgent(
     }
     return out;
   });
-  if (options.tellService ?? true) {
-    const unlocked = await deps.store.unlocked();
-    if (unlocked === undefined) throw new SetupError(LOCKED_MESSAGE);
-    try {
-      result.service = await deleteBinding(createLocalSigner(unlocked.queueKey), agentPubkey, deps);
-    } catch (error) {
-      result.service = 'failed';
-      result.serviceError = (error as Error).message;
-    }
+  if (options.serviceAllowed === false) {
+    result.serviceError = NO_SERVICE_PERMISSION;
+    return result;
+  }
+  try {
+    result.service = await finishRevocation(agentPubkey, deps);
+  } catch (error) {
+    result.serviceError = (error as Error).message;
   }
   return result;
 }

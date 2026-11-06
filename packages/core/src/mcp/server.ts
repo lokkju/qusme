@@ -10,7 +10,8 @@
  * - `list_submissions`: those receipts.
  *
  * Every tool but `list_registry` needs a current grant (7.4), read from the queue's storage
- * relays as the agent key. Failures are tool results with `isError` and structured content naming
+ * relays as the agent key, and an agent the queue's current submitters list (7.3) still names: a
+ * list that dropped the agent revokes it even where a relay kept the grant. Failures are tool results with `isError` and structured content naming
  * the error, so a client can tell a constraint violation from an exhausted quota. The submitted
  * value is held only for the length of the call: it is never stored, logged or put in an error.
  */
@@ -39,7 +40,13 @@ import type { AgentKeyRing } from '../agentKeyRing.ts';
 import { type AgentKeyCustody, createAgentKeyCustody } from '../agentKeys.ts';
 import { checkStorageRelays, type RelayReader } from '../oauth/relayReader.ts';
 import type { McpAuthEnv } from '../oauth/server.ts';
-import { createGrantCache, type FoundGrant, type GrantCache } from './grants.ts';
+import {
+  createGrantCache,
+  createSubmittersCache,
+  type FoundGrant,
+  type GrantCache,
+  type SubmittersCache,
+} from './grants.ts';
 import {
   effectiveDefinition,
   loadRegistry,
@@ -69,8 +76,14 @@ export interface McpOverrides {
   relayPublisher?: RelayPublisher;
   /** Unix seconds. */
   now?: () => number;
-  /** Seconds a grant is reused; 0 reads the relays on every call. */
+  /** Seconds a grant or submitters list is reused; 0 reads the relays on every call. */
   grantCacheSeconds?: number;
+  /**
+   * Told when a tool went ahead without the submitters list because no storage relay returned one
+   * (8.4). The MCP modules log nothing themselves; an entrypoint logs what this passes, which is
+   * pubkeys only.
+   */
+  notice?: (notice: McpNotice) => void;
   /** Highest grant `min_pow` the service mines; a grant asking more is refused. */
   maxPow?: number;
 }
@@ -82,8 +95,16 @@ export interface McpOptions extends McpOverrides {
   version: string;
 }
 
+/** Something an operator may want to see; carries no key material and no submitted value. */
+export interface McpNotice {
+  event: 'submitters_list_unavailable';
+  agentPubkey: string;
+  queuePubkey: string;
+}
+
 /** Error codes in a failed tool result's structured content. */
 export type McpToolErrorCode =
+  | 'grant_revoked'
   | 'grant_not_found'
   | 'grant_expired'
   | 'grant_unusable'
@@ -210,23 +231,37 @@ export function createMcp(options: McpOptions) {
   const custody: AgentKeyCustody = createAgentKeyCustody(store, options.agentKeys);
   const registry: Registry = loadRegistry(options.registry);
   const publisher = options.relayPublisher ?? createWebSocketRelayPublisher();
-  const grants: GrantCache = createGrantCache({
+  const cacheOptions = {
     relayReader: options.relayReader,
     ttlSeconds: options.grantCacheSeconds ?? DEFAULT_GRANT_CACHE_SECONDS,
-  });
+  };
+  const grants: GrantCache = createGrantCache(cacheOptions);
+  const submitters: SubmittersCache = createSubmittersCache(cacheOptions);
   const maxPow = options.maxPow ?? DEFAULT_MAX_POW;
   const clock = options.now ?? (() => Math.floor(Date.now() / 1000));
 
-  /** The current grant or a ToolError; read as the agent key (7.4). */
+  /**
+   * The current grant or a ToolError; read as the agent key (7.4). The submitters list is read
+   * alongside it: when one is found and no longer names the agent, the user revoked it, whatever
+   * grant a relay still holds. When none is found the grant alone decides, as before the check.
+   */
   async function currentGrant(session: Session): Promise<FoundGrant> {
     const { agent, now } = session;
     let found: FoundGrant | undefined;
+    let list: Awaited<ReturnType<SubmittersCache['get']>>;
     try {
-      found = await custody.withAgentKey(agent.agentKeyId, (signer) =>
-        grants.get(agent, signer, now)
+      [found, list] = await custody.withAgentKey(agent.agentKeyId, (signer) =>
+        Promise.all([grants.get(agent, signer, now), submitters.get(agent, signer, now)])
       );
     } catch {
       throw new ToolError('grant_not_found', 'the agent grant could not be read');
+    }
+    if (list !== undefined && !list.submitters.includes(agent.agentPubkey)) {
+      throw new ToolError(
+        'grant_revoked',
+        "The user revoked this agent's access to their qus.me drafts. Nothing was submitted. " +
+          'Tell the user; this agent must be authorized again in qus.me before it can draft.'
+      );
     }
     if (found === undefined) {
       throw new ToolError(
@@ -237,6 +272,14 @@ export function createMcp(options: McpOptions) {
     const { expires_at } = found.grant;
     if (expires_at !== null && expires_at <= now) {
       throw new ToolError('grant_expired', 'the agent grant has expired', { expires_at });
+    }
+    // Going ahead on the grant alone: worth an operator's attention if it keeps happening.
+    if (list === undefined) {
+      options.notice?.({
+        event: 'submitters_list_unavailable',
+        agentPubkey: agent.agentPubkey,
+        queuePubkey: agent.queuePubkey,
+      });
     }
     return found;
   }
@@ -629,7 +672,7 @@ export function createMcp(options: McpOptions) {
     return handler.fetch(c.req.raw);
   }
 
-  return { handle, grants, registry };
+  return { handle, grants, submitters, registry };
 }
 
 export type Mcp = ReturnType<typeof createMcp>;
