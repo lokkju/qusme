@@ -4,6 +4,7 @@ import {
   createAgentKeyCustody,
   createApp,
   createBindingRateLimiter,
+  createMemoryRateLimiter,
   DEFAULT_LIMITS,
   limitFromEnv,
   type RateLimitBinding,
@@ -27,14 +28,17 @@ export interface Env {
   QUSME_AGENT_KEY_SECRET_PREVIOUS?: string;
   /** The service-wide daily create_draft ceiling; a plain var in wrangler.jsonc. */
   QUSME_DAILY_DRAFT_CEILING?: string;
-  /** The Workers Rate Limiting bindings in wrangler.jsonc, one per rate class (RATE_CLASSES). */
-  RL_IP_AUTHORIZE: RateLimitBinding;
-  RL_IP_POLL: RateLimitBinding;
-  RL_IP_TOKEN: RateLimitBinding;
-  RL_IP_PAIR: RateLimitBinding;
-  RL_MCP_AGENT_FREE: RateLimitBinding;
-  RL_MCP_QUEUE_FREE: RateLimitBinding;
-  RL_DEVICE_QUEUE_FREE: RateLimitBinding;
+  /**
+   * The Workers Rate Limiting bindings in wrangler.jsonc, one per rate class (RATE_CLASSES).
+   * Optional: a class whose binding is missing or unusable is counted in memory in this isolate.
+   */
+  RL_IP_AUTHORIZE?: RateLimitBinding;
+  RL_IP_POLL?: RateLimitBinding;
+  RL_IP_TOKEN?: RateLimitBinding;
+  RL_IP_PAIR?: RateLimitBinding;
+  RL_MCP_AGENT_FREE?: RateLimitBinding;
+  RL_MCP_QUEUE_FREE?: RateLimitBinding;
+  RL_DEVICE_QUEUE_FREE?: RateLimitBinding;
 }
 
 /** Set at build time through wrangler's `define` (the commit, in deploy.yml). */
@@ -44,6 +48,17 @@ declare const __QUSME_VERSION__: string;
 // verification is dropped with a log line.
 const registry = bundledRegistry(snapshot, { log: (line) => console.warn(line) });
 
+// Rate limits for classes whose binding is missing or unusable (an account or deploy without
+// Workers Rate Limiting): counted in memory for the life of this isolate, with one warning per
+// binding per isolate. The hard caps in D1 stay fail-closed either way.
+const fallbackLimiter = createMemoryRateLimiter();
+const warnedBindings = new Set<string>();
+const bindingUnavailable = (binding: string) => {
+  if (warnedBindings.has(binding)) return;
+  warnedBindings.add(binding);
+  console.warn(`ratelimit_binding_unavailable name=${binding}`);
+};
+
 export default {
   fetch(request, env, ctx) {
     const app = createApp({
@@ -51,10 +66,13 @@ export default {
       db: openD1(env.DB),
       agentKeys: agentKeyRingFromEnv({ ...env }),
       publicOrigin: env.QUSME_PUBLIC_ORIGIN,
-      // Throws when a binding is missing or the ceiling is not a whole number, so a misconfigured
-      // deploy refuses requests instead of running without limits.
+      // A ceiling that is not a whole number throws, so a misconfigured deploy refuses requests
+      // instead of running without its cost bound.
       limits: {
-        rateLimiter: createBindingRateLimiter({ ...env }),
+        rateLimiter: createBindingRateLimiter(
+          { ...env },
+          { fallback: fallbackLimiter, onUnavailable: bindingUnavailable }
+        ),
         config: {
           draftsPerDayCeiling: limitFromEnv(
             env.QUSME_DAILY_DRAFT_CEILING,

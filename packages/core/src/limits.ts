@@ -163,36 +163,58 @@ export interface RateLimitBinding {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
+/** How {@link createBindingRateLimiter} falls back when a binding is missing or unusable. */
+export interface BindingRateLimiterOptions {
+  /** Rate classes; {@link RATE_CLASSES} by default. */
+  classes?: Record<string, RateClass>;
+  /**
+   * Counts a class whose binding is missing or unusable. In memory by default; the Workers
+   * entrypoint passes one per isolate, so its counts outlive a request.
+   */
+  fallback?: RateLimiter;
+  /** Told the binding name, once per limiter, when a class falls back. Carries nothing else. */
+  onUnavailable?: (binding: string) => void;
+}
+
 /**
- * The Workers Rate Limiting bindings, one per rate class, found in `env` by binding name. Throws
- * at construction if one is missing, so a deploy without them fails every request instead of
- * running unlimited. The binding does not say when its window ends, so Retry-After is the class's
+ * The Workers Rate Limiting bindings, one per rate class, found in `env` by binding name. Each
+ * class settles on first use: a binding that is missing, has no `limit` function or answers
+ * without a boolean `success` is unavailable, and that class is counted by the fallback limiter
+ * from then on, so an account or deploy without the binding still serves every request with
+ * in-memory limits. The binding does not say when its window ends, so Retry-After is the class's
  * whole period. A binding call that throws is let through: the hard caps still bound cost, and an
  * outage of the limiter should not take the service down with it.
  */
 export function createBindingRateLimiter(
   env: Record<string, unknown>,
-  classes: Record<string, RateClass> = RATE_CLASSES
+  options: BindingRateLimiterOptions = {}
 ): RateLimiter {
-  const bindings = new Map<string, { binding: RateLimitBinding; period: number }>();
-  for (const [name, rule] of Object.entries(classes)) {
-    const binding = env[rule.binding] as RateLimitBinding | undefined;
-    if (typeof binding?.limit !== 'function') {
-      throw new Error(`rate limiting binding ${rule.binding} is missing`);
+  const classes = options.classes ?? RATE_CLASSES;
+  const fallback = options.fallback ?? createMemoryRateLimiter({ classes });
+  const unavailable = new Set<string>();
+  const fallBack = (rateClass: RateClassName, key: string, binding: string) => {
+    if (!unavailable.has(binding)) {
+      unavailable.add(binding);
+      options.onUnavailable?.(binding);
     }
-    bindings.set(name, { binding, period: rule.period });
-  }
+    return fallback.limit(rateClass, key);
+  };
   return {
     async limit(rateClass, key) {
-      const entry = bindings.get(rateClass);
-      if (entry === undefined) throw new Error(`unknown rate class ${rateClass}`);
-      let success: boolean;
+      const rule = classes[rateClass];
+      if (rule === undefined) throw new Error(`unknown rate class ${rateClass}`);
+      if (unavailable.has(rule.binding)) return fallback.limit(rateClass, key);
+      const binding = env[rule.binding] as Partial<RateLimitBinding> | null | undefined;
+      if (typeof binding?.limit !== 'function') return fallBack(rateClass, key, rule.binding);
+      let result: unknown;
       try {
-        ({ success } = await entry.binding.limit({ key }));
+        result = await binding.limit({ key });
       } catch {
         return { ok: true };
       }
-      return success ? { ok: true } : { ok: false, retryAfter: entry.period };
+      const success = (result as { success?: unknown } | null | undefined)?.success;
+      if (typeof success !== 'boolean') return fallBack(rateClass, key, rule.binding);
+      return success ? { ok: true } : { ok: false, retryAfter: rule.period };
     },
   };
 }

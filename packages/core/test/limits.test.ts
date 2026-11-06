@@ -54,10 +54,32 @@ describe('the Workers binding rate limiter', () => {
       ])
     );
 
-  it('needs a binding for every class', () => {
-    const env = bindings(() => true);
+  it('falls back to the in-memory limiter for a missing or unusable binding, telling once', async () => {
+    const env: Record<string, unknown> = bindings(() => true);
     delete env.RL_IP_TOKEN;
-    expect(() => createBindingRateLimiter(env)).toThrow('RL_IP_TOKEN is missing');
+    env.RL_IP_POLL = {};
+    env.RL_IP_PAIR = { limit: async () => ({ ok: 'yes' }) };
+    const told: string[] = [];
+    const limiter = createBindingRateLimiter(env, { onUnavailable: (b) => told.push(b) });
+    for (const cls of ['ip_token', 'ip_poll', 'ip_pair'] as const) {
+      const { limit } = RATE_CLASSES[cls];
+      for (let i = 0; i < limit; i++) expect(await limiter.limit(cls, 'a')).toEqual({ ok: true });
+      expect((await limiter.limit(cls, 'a')).ok).toBe(false);
+    }
+    expect(told).toEqual(['RL_IP_TOKEN', 'RL_IP_POLL', 'RL_IP_PAIR']);
+    // A working binding is still used for its own class.
+    expect(await limiter.limit('mcp_agent_free', 'a')).toEqual({ ok: true });
+    expect(told).toHaveLength(3);
+  });
+
+  it('uses a shared fallback when given one', async () => {
+    const shared = createMemoryRateLimiter();
+    for (let i = 0; i < RATE_CLASSES.ip_pair.limit; i++) {
+      await createBindingRateLimiter({}, { fallback: shared }).limit('ip_pair', 'a');
+    }
+    expect(
+      (await createBindingRateLimiter({}, { fallback: shared }).limit('ip_pair', 'a')).ok
+    ).toBe(false);
   });
 
   it('answers the class period as Retry-After when the binding refuses', async () => {
@@ -76,9 +98,18 @@ describe('the Workers binding rate limiter', () => {
     expect(seen).toEqual(['RL_IP_TOKEN:198.51.100.1', 'RL_IP_POLL:198.51.100.1']);
   });
 
-  it('lets a request through when the binding itself fails', async () => {
-    const limiter = createBindingRateLimiter(bindings(() => new Error('down')));
-    expect(await limiter.limit('mcp_agent_free', 'x')).toEqual({ ok: true });
+  it('lets a request through when the binding itself fails, without falling back', async () => {
+    const told: string[] = [];
+    const limiter = createBindingRateLimiter(
+      bindings(() => new Error('down')),
+      {
+        onUnavailable: (b) => told.push(b),
+      }
+    );
+    for (let i = 0; i <= RATE_CLASSES.mcp_agent_free.limit; i++) {
+      expect(await limiter.limit('mcp_agent_free', 'x')).toEqual({ ok: true });
+    }
+    expect(told).toEqual([]);
   });
 });
 

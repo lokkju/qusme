@@ -16,6 +16,7 @@ export {
 } from './agentKeys.ts';
 export { type AppDeps, createApp } from './app.ts';
 export {
+  type BindingRateLimiterOptions,
   BODY_LIMITS,
   bodyLimitFor,
   createBindingRateLimiter,
