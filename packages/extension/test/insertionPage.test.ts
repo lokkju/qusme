@@ -414,13 +414,25 @@ describe('strategies (11.6)', () => {
     expect(native(xComposer(), 'x')).toBe(false);
   });
 
-  it('picks a default chain by element when the destination has no definition', () => {
+  it('picks a default chain by element when the destination has no definition, trusted input first', () => {
+    // execCommand's beforeinput and input are trusted; a synthetic paste or input event is not.
     expect(defaultChain(document.createElement('textarea'))).toEqual([
-      'native',
       'insertText',
+      'native',
       'clipboard',
     ]);
-    expect(defaultChain(xComposer())).toEqual(['paste', 'insertText', 'clipboard']);
+    expect(defaultChain(xComposer())).toEqual(['insertText', 'paste', 'clipboard']);
+  });
+
+  it('inserts with insertText before dispatching a synthetic paste when there is no definition', async () => {
+    installExecCommand();
+    const composer = xComposer();
+    const pastes: boolean[] = [];
+    composer.addEventListener('paste', (event) => pastes.push(event.isTrusted));
+    composer.focus();
+    const outcome = await createPageApi(harness().env).insert(request({ value: 'Trusted path' }));
+    expect(outcome).toMatchObject({ state: 'inserted', strategy: 'insertText' });
+    expect(pastes).toEqual([]);
   });
 });
 

@@ -27,7 +27,8 @@ import {
   matchesPattern,
 } from '../src/insertion/matching.ts';
 import { MENU_CHOOSE, MENU_INSERT, menuItem } from '../src/insertion/menu.ts';
-import type { PageInsertRequest, PageOutcome } from '../src/insertion/protocol.ts';
+import { PickerService, pickerText, readPickMessage } from '../src/insertion/picker.ts';
+import type { PageInsertRequest, PageOutcome, PickerView } from '../src/insertion/protocol.ts';
 import { InsertionService, readPageDone } from '../src/insertion/service.ts';
 import {
   KeyStore,
@@ -668,5 +669,160 @@ describe('insertion service (11.5 steps 5, 6)', () => {
     if (wrap.draft.type !== 'field_value') throw new Error('not a field value');
     expect(wrap.draft.value.status).toBe('archived:inserted');
     expect(wrap.draft.value.inserted.at(-1)?.method).toBe('extension_context_menu');
+  });
+});
+
+describe('keyboard picker (11.5)', () => {
+  async function pickerSetup(options: { detected?: string } = {}) {
+    const t = await setup();
+    await writeDraftCache(t.session, {
+      queuePubkey: 'unused',
+      syncedAt: 1,
+      drafts: [
+        draft({}),
+        draft({ d: 'd2', account: 'qusme', destination: 'dest-x2', content: 'Other account' }),
+        draft({
+          d: 'd3',
+          site: 'mastodon',
+          account: 'lokkju@mastodon.social',
+          destination: 'dest-masto',
+          content: 'For Mastodon',
+          updatedAt: 5,
+          source: { wrapId: 'w', submitter: 'abcdef0123456789', label: 'Claude' },
+        }),
+        draft({ d: 'd4', status: 'archived:inserted', content: 'Already posted' }),
+      ],
+      destinations: DESTINATIONS,
+    });
+    const opened: PickerView[] = [];
+    const detections: number[] = [];
+    const picker = new PickerService({
+      store: t.store,
+      definitions: source,
+      insertion: t.service,
+      token: () => 'pick-token',
+      page: {
+        detectAccounts: async (tabId, locators) => {
+          detections.push(tabId);
+          return locators.map(() => options.detected);
+        },
+        open: async (_tabId, view) => {
+          opened.push(view);
+        },
+      },
+    });
+    return { ...t, picker, opened, detections };
+  }
+
+  it('lists this page’s drafts for the detected account first, then the rest, as text only', async () => {
+    const t = await pickerSetup({ detected: '@lokkju' });
+    expect(await t.picker.open({ id: 7, url: 'https://x.com/home' })).toBe('ready');
+    expect(t.detections).toEqual([7]);
+    expect(t.opened).toEqual([
+      {
+        token: 'pick-token',
+        state: 'ready',
+        here: [{ d: 'd1', text: 'Hello from the queue', meta: 'X · text' }],
+        others: [
+          {
+            d: 'd3',
+            text: 'For Mastodon',
+            meta: 'Mastodon as lokkju@mastodon.social · text · from Claude',
+          },
+        ],
+        context: 'X as lokkju',
+      },
+    ]);
+  });
+
+  it('labels each account when detection finds none', async () => {
+    const t = await pickerSetup();
+    await t.picker.open({ id: 7, url: 'https://x.com/home' });
+    expect(t.opened[0]?.here.map((i) => [i.d, i.meta])).toEqual([
+      ['d1', 'X as lokkju · text'],
+      ['d2', 'X as qusme · text'],
+    ]);
+    expect(t.opened[0]?.context).toBe('');
+  });
+
+  it('inserts the picked draft through the pipeline with method extension_shortcut', async () => {
+    const t = await pickerSetup({ detected: 'lokkju' });
+    await arm(t.session, draft({ d: 'd2', account: 'qusme', destination: 'dest-x2' }), 1);
+    await t.picker.open({ id: 7, url: 'https://x.com/home' });
+    const result = await t.picker.pick(7, 0, {
+      type: 'qusme.picker.pick',
+      token: 'pick-token',
+      d: 'd1',
+    });
+    expect(result).toEqual({ state: 'inserted', strategy: 'paste', recorded: true });
+    expect(t.requests).toEqual([
+      expect.objectContaining({
+        value: 'Hello from the queue',
+        method: 'extension_shortcut',
+        clipboardFallback: false,
+      }),
+    ]);
+    const wrap = await t.latest();
+    if (wrap.draft.type !== 'field_value') throw new Error('not a field value');
+    expect(wrap.draft.value.status).toBe('archived:inserted');
+    expect(wrap.draft.value.inserted.at(-1)).toMatchObject({
+      method: 'extension_shortcut',
+      strategy: 'paste',
+    });
+    // The draft armed in the popup stays armed; the picker never armed its own.
+    expect((await readArmed(t.session))?.d).toBe('d2');
+  });
+
+  it('refuses a stale token, another tab, an unlisted or gone draft, and a replayed pick', async () => {
+    const t = await pickerSetup({ detected: 'lokkju' });
+    await t.picker.open({ id: 7, url: 'https://x.com/home' });
+    const pick = (d: string, token = 'pick-token') =>
+      ({ type: 'qusme.picker.pick', token, d }) as const;
+    expect(await t.picker.pick(7, 0, pick('d1', 'old'))).toEqual({ state: 'expired' });
+    expect(await t.picker.pick(8, 0, pick('d1'))).toEqual({ state: 'expired' });
+    expect(await t.picker.pick(7, 0, pick('d4'))).toEqual({ state: 'expired' });
+    expect(t.requests).toEqual([]);
+
+    const cache = await readDraftCache(t.session);
+    if (cache === undefined) throw new Error('no cache');
+    await writeDraftCache(t.session, {
+      ...cache,
+      drafts: cache.drafts.filter((d) => d.d !== 'd1'),
+    });
+    expect(await t.picker.pick(7, 0, pick('d1'))).toEqual({ state: 'not_found' });
+    expect(await t.picker.pick(7, 0, pick('d1'))).toEqual({ state: 'expired' });
+    expect(t.requests).toEqual([]);
+  });
+
+  it('opens in the locked state without reading drafts, and says when there is no queue', async () => {
+    const t = await pickerSetup();
+    await t.store.lock();
+    expect(await t.picker.open({ id: 7, url: 'https://x.com/home' })).toBe('locked');
+    expect(t.opened[0]).toEqual({
+      token: 'pick-token',
+      state: 'locked',
+      here: [],
+      others: [],
+      context: '',
+    });
+    expect(t.detections).toEqual([]);
+
+    const empty = new PickerService({
+      ...t.picker.deps,
+      store: new KeyStore({ local: new MemoryStorageArea(), session: new MemoryStorageArea() }),
+    });
+    expect((await empty.view({ id: 7, url: 'https://x.com/home' })).state).toBe('setup');
+  });
+
+  it('reads only well-formed pick messages and cuts long drafts', () => {
+    expect(readPickMessage({ type: 'qusme.picker.pick', token: 't', d: 'd1' })).toEqual({
+      type: 'qusme.picker.pick',
+      token: 't',
+      d: 'd1',
+    });
+    expect(readPickMessage({ type: 'qusme.picker.pick', token: 't' })).toBeUndefined();
+    expect(readPickMessage('qusme.picker.pick')).toBeUndefined();
+    expect(pickerText('a  b\tc')).toBe('a b c');
+    expect([...pickerText('x'.repeat(400))]).toHaveLength(281);
   });
 });

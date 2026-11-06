@@ -40,6 +40,8 @@ export interface InsertionUiDeps {
   onSessionChange?(callback: () => void): () => void;
   /** Ctrl+V or ⌘V, for the paste prompt. */
   pasteShortcut?: string;
+  /** The picker command's current binding (Alt+Q unless rebound); empty when it has none. */
+  pickerShortcut?(): Promise<string>;
 }
 
 /** What the user should read after an insert, written for them. */
@@ -87,6 +89,8 @@ interface ViewProps {
   busy: boolean;
   /** Detected accounts on registry sites with no destination yet (spec 7.2). */
   offers?: DestinationOffer[];
+  /** The picker shortcut for the hint; empty when unbound, undefined when not known. */
+  pickerShortcut?: string | undefined;
   onAddOffer?(offer: DestinationOffer): void;
   onArm(entry: PageDraft): void;
   onDisarm(): void;
@@ -132,6 +136,13 @@ export function InsertView(props: ViewProps) {
       <h2 id="insert-title" class="font-semibold text-sm">
         On this page
       </h2>
+      {props.pickerShortcut !== undefined && (
+        <p class="mt-1 text-ink/70 text-xs">
+          {props.pickerShortcut === ''
+            ? "Give qus.me a keyboard shortcut in your browser's extension shortcuts to pick drafts from any text field."
+            : `Press ${props.pickerShortcut} in any text field to pick a draft there.`}
+        </p>
+      )}
       {props.url === undefined ? (
         <p class="mt-1 text-ink/70 text-xs">This tab can't take drafts.</p>
       ) : (
@@ -261,6 +272,7 @@ export function InsertPanel(props: {
   const [unrecorded, setUnrecorded] = useState(0);
   const [busy, setBusy] = useState(false);
   const [offers, setOffers] = useState<DestinationOffer[]>([]);
+  const [pickerShortcut, setPickerShortcut] = useState<string | undefined>();
   // The tab and the detected accounts are read once per popup open.
   const tabRef = useRef<Promise<{ id: number; url: string } | undefined> | undefined>(undefined);
   const detectedRef = useRef<
@@ -334,6 +346,12 @@ export function InsertPanel(props: {
     void load();
     return deps.onSessionChange?.(() => void load());
   }, [load, deps]);
+  useEffect(() => {
+    void deps
+      .pickerShortcut?.()
+      .then(setPickerShortcut)
+      .catch(() => undefined);
+  }, [deps]);
 
   const onArm = async (entry: PageDraft) => {
     setStatus(undefined);
@@ -407,6 +425,7 @@ export function InsertPanel(props: {
       unrecorded={unrecorded}
       busy={busy}
       offers={offers}
+      pickerShortcut={pickerShortcut}
       onAddOffer={(o) => void onAddOffer(o)}
       onArm={(e) => void onArm(e)}
       onDisarm={() => void onDisarm()}
