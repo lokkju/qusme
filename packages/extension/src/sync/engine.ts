@@ -55,8 +55,10 @@ import {
   type WrapRef,
 } from '@qusme/nostr';
 import type { Filter } from 'nostr-tools/filter';
+import { finishPendingRevocations } from '../agents/pendingRevocations.ts';
 import { effectiveDefinition, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import type { KeyStore } from '../keyStore.ts';
+import { SERVICE_ORIGIN } from '../permissions.ts';
 import {
   type CachedDraft,
   type DraftCache,
@@ -79,6 +81,10 @@ export interface SyncDeps {
   cap?: number;
   /** Site definitions, for whether a site's accounts are case-sensitive (10.1) at ingestion. */
   definitions?: SiteDefinitionSource;
+  /** The qus.me service, for finishing pending revocations (11.8); app.qus.me by default. */
+  serviceOrigin?: string;
+  /** The platform `fetch` by default. */
+  fetch?: typeof fetch;
 }
 
 export type SyncResult =
@@ -223,9 +229,23 @@ const after = (now: number, previous: number | undefined): number =>
   previous === undefined ? now : Math.max(now, previous + 1);
 
 /**
- * Runs one sync. Never throws for relay trouble; problems come back in the summary's `errors`.
+ * Runs one sync, then retries any revocation the service has not confirmed (11.8), which needs
+ * the unlocked queue key too. Never throws for relay or service trouble; relay problems come back
+ * in the summary's `errors`, and a revocation that still fails stays pending for the next sync.
  */
 export async function syncOnce(deps: SyncDeps): Promise<SyncResult> {
+  const result = await syncQueue(deps);
+  if (result.state === 'synced') {
+    await finishPendingRevocations({
+      store: deps.store,
+      serviceOrigin: deps.serviceOrigin ?? SERVICE_ORIGIN,
+      fetch: deps.fetch ?? ((input, init) => fetch(input, init)),
+    }).catch(() => undefined);
+  }
+  return result;
+}
+
+async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
   const { store } = deps;
   const unlocked = await store.unlocked();
   if (unlocked === undefined) {

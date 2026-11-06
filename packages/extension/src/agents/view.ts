@@ -5,6 +5,11 @@
  */
 import { type AgentGrant, createLocalSigner, type Destination } from '@qusme/nostr';
 import { SetupError } from '../setup/deps.ts';
+import {
+  type PendingRevocation,
+  readPendingRevocations,
+  removePendingRevocation,
+} from './pendingRevocations.ts';
 import { type AgentDeps, LOCKED_MESSAGE, readQueue, withQueue } from './queue.ts';
 import { type Binding, listBindings } from './service.ts';
 
@@ -18,6 +23,11 @@ export interface AgentRow {
   /** The service's binding; absent when the service was not asked or no longer holds it. */
   binding?: Binding;
   grant?: AgentGrant;
+  /**
+   * Revoked on this device, but the service has not confirmed it yet (11.8): shown as "finishing
+   * with qus.me" with a Retry.
+   */
+  pendingRevocation?: Pick<PendingRevocation, 'since' | 'lastError'>;
 }
 
 export interface AgentsView {
@@ -67,6 +77,32 @@ export async function loadAgents(
   for (const binding of bindings) {
     if (view.agents.some((a) => a.agentPubkey === binding.agentPubkey)) continue;
     view.agents.push({ agentPubkey: binding.agentPubkey, listed: false, binding });
+  }
+  const queuePubkey = (await deps.store.record())?.pubkey;
+  const pending =
+    queuePubkey === undefined ? [] : await readPendingRevocations(deps.store, queuePubkey);
+  const serviceListed = options.withService && view.bindingsError === undefined;
+  for (const item of pending) {
+    const row = view.agents.find((a) => a.agentPubkey === item.agentPubkey);
+    if (row?.listed) continue;
+    if (serviceListed && row === undefined && queuePubkey !== undefined) {
+      // The service answered and no longer holds it: the revocation finished another way.
+      await removePendingRevocation(deps.store, queuePubkey, item.agentPubkey);
+      continue;
+    }
+    const state: AgentRow['pendingRevocation'] = { since: item.since };
+    if (item.lastError !== undefined) state.lastError = item.lastError;
+    if (row !== undefined) {
+      row.pendingRevocation = state;
+      if (row.label === undefined && item.label !== undefined) row.label = item.label;
+    } else {
+      view.agents.push({
+        agentPubkey: item.agentPubkey,
+        listed: false,
+        ...(item.label !== undefined && { label: item.label }),
+        pendingRevocation: state,
+      });
+    }
   }
   return view;
 }

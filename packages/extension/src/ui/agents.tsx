@@ -17,7 +17,8 @@ import {
 } from '../agents/approve.ts';
 import { parseApprovalCode } from '../agents/code.ts';
 import { confirmPendingDestination, rejectPendingDestination } from '../agents/destinations.ts';
-import { revokeAgent } from '../agents/revoke.ts';
+import { finishRevocation } from '../agents/pendingRevocations.ts';
+import { NO_SERVICE_PERMISSION, type RevokeResult, revokeAgent } from '../agents/revoke.ts';
 import { type AuthorizationRequest, fetchAuthorization } from '../agents/service.ts';
 import {
   type AgentRow,
@@ -381,19 +382,65 @@ export function ApproveAgentScreen(props: {
   );
 }
 
-/** One agent: its label, the client behind it, what it may do, and the revoke control. */
+/** What the agents screen says after a revocation. */
+export function revokeMessage(name: string, result: RevokeResult): string {
+  const refused =
+    result.refusals.length > 0 ? ` Some storage relays refused: ${result.refusals.join('; ')}` : '';
+  if (result.service === 'pending') {
+    return (
+      `Revoked on your devices; finishing with qus.me… Until qus.me is told, ${name} may still ` +
+      'look like it works in its client, though your devices refuse its drafts. qus.me will try ' +
+      `again on the next sync, or press Retry.${refused}`
+    );
+  }
+  return `${name} can no longer send drafts. Remove it from its client too.${refused}`;
+}
+
+const agentName = (agent: AgentRow) =>
+  agent.label ?? agent.binding?.clientName ?? 'Unlabeled agent';
+
+/**
+ * One agent: its label, the client behind it, what it may do, and the revoke control; or, for a
+ * revocation the service has not confirmed, that state and Retry.
+ */
 export function AgentItem(props: {
   agent: AgentRow;
   busy: boolean;
   onRevoke: (agent: AgentRow) => void;
+  onRetry: (agent: AgentRow) => void;
 }) {
   const { agent } = props;
   const [confirming, setConfirming] = useState(false);
+  if (agent.pendingRevocation !== undefined) {
+    return (
+      <li class="rounded border border-danger/40 p-2">
+        <p class="font-medium text-sm">{agentName(agent)}</p>
+        {agent.binding !== undefined && (
+          <p class="font-mono font-semibold text-xs">{agent.binding.clientHost}</p>
+        )}
+        <p class="text-danger text-sm" role="status">
+          Revoked on your devices; finishing with qus.me…
+        </p>
+        <p class="text-ink/70 text-xs">
+          Until qus.me is told, the agent may still look like it works in its client, though your
+          devices refuse its drafts. qus.me tries again on each sync.
+        </p>
+        {agent.pendingRevocation.lastError !== undefined && (
+          <p class="text-ink/70 text-xs">Last try: {agent.pendingRevocation.lastError}</p>
+        )}
+        <Button
+          class="mt-2 px-2 py-1 text-sm"
+          disabled={props.busy}
+          onClick={() => props.onRetry(agent)}
+        >
+          Retry
+        </Button>
+      </li>
+    );
+  }
   return (
     <li class="rounded border border-ink/20 p-2">
-      <p class="font-medium text-sm">
-        {agent.label ?? agent.binding?.clientName ?? 'Unlabeled agent'}
-      </p>
+      <p class="font-medium text-sm">{agentName(agent)}</p>
       {agent.binding !== undefined && (
         <p class="text-xs">
           <span class="font-mono font-semibold">{agent.binding.clientHost}</span>
@@ -484,6 +531,7 @@ export function AgentsList(props: {
   view: AgentsView;
   busy: boolean;
   onRevoke: (agent: AgentRow) => void;
+  onRetry: (agent: AgentRow) => void;
   onConfirm: (d: Destination) => void;
   onReject: (d: Destination) => void;
 }) {
@@ -522,6 +570,7 @@ export function AgentsList(props: {
                 agent={a}
                 busy={props.busy}
                 onRevoke={props.onRevoke}
+                onRetry={props.onRetry}
               />
             ))}
           </ul>
@@ -575,20 +624,14 @@ export function AgentsScreen(props: { deps: SetupDeps; onBack: () => void }) {
     run(async () => {
       // Asked first, inside the click: Firefox grants the permission only during the gesture.
       const allowed = await deps.requestServicePermission();
-      const result = await revokeAgent(agent.agentPubkey, deps, { tellService: allowed });
-      const parts = [
-        result.listUpdated
-          ? 'Removed from the submitters list; its drafts are refused from now on.'
-          : 'It was not on the submitters list.',
-      ];
-      if (result.refusals.length > 0)
-        parts.push(`Some relays refused: ${result.refusals.join('; ')}`);
-      if (result.service === 'revoked') parts.push('The service destroyed its key.');
-      else if (result.service === 'failed')
-        parts.push(`The service was not told: ${result.serviceError}`);
-      else if (result.service === 'skipped')
-        parts.push('The service was not told (no permission).');
-      return parts.join(' ');
+      const result = await revokeAgent(agent.agentPubkey, deps, { serviceAllowed: allowed });
+      return revokeMessage(agentName(agent), result);
+    });
+  const retry = (agent: AgentRow) =>
+    run(async () => {
+      if (!(await deps.requestServicePermission())) throw new SetupError(NO_SERVICE_PERMISSION);
+      await finishRevocation(agent.agentPubkey, deps);
+      return `${agentName(agent)} can no longer send drafts. Remove it from its client too.`;
     });
   const confirm = (d: Destination) =>
     run(async () => {
@@ -609,6 +652,7 @@ export function AgentsScreen(props: { deps: SetupDeps; onBack: () => void }) {
           view={view}
           busy={busy}
           onRevoke={revoke}
+          onRetry={retry}
           onConfirm={confirm}
           onReject={reject}
         />
