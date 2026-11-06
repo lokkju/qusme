@@ -9,6 +9,7 @@ import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
 import { CreateScreen } from './create.tsx';
 import { DestinationsScreen } from './destinations.tsx';
 import { Drafts } from './drafts.tsx';
+import { FirstRunChecklist } from './firstRun.tsx';
 import { type InsertionUiDeps, InsertPanel } from './insert.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
 import { RecoverScreen } from './recover.tsx';
@@ -21,7 +22,8 @@ export type Route =
   | 'pair-source'
   | 'approve-agent'
   | 'agents'
-  | 'destinations';
+  | 'destinations'
+  | 'add-destination';
 
 /** A message for the user from anything a flow threw. */
 export function messageOf(error: unknown): string {
@@ -77,13 +79,17 @@ export function App(props: {
     );
   } else if (route === 'agents' && status.state === 'unlocked') {
     body = <AgentsScreen deps={deps} onBack={home} />;
-  } else if (route === 'destinations' && status.state === 'unlocked') {
+  } else if (
+    (route === 'destinations' || route === 'add-destination') &&
+    status.state === 'unlocked'
+  ) {
     body = (
       <DestinationsScreen
         deps={deps}
         definitions={props.insertion?.definitions ?? definitionSource()}
         detect={props.insertion}
         onBack={home}
+        startAdding={route === 'add-destination' ? 'x' : undefined}
       />
     );
   } else if (status.state === 'empty') {
@@ -109,7 +115,8 @@ export function App(props: {
         route !== 'home' &&
         route !== 'approve-agent' &&
         route !== 'agents' &&
-        route !== 'destinations' && (
+        route !== 'destinations' &&
+        route !== 'add-destination' && (
           <p class="mt-4 text-xs">
             <button type="button" class="underline" onClick={props.openInTab}>
               Open in a tab
@@ -195,6 +202,11 @@ function Unlocked(props: {
   return (
     <Screen title="qus.me">
       <p class="mt-2 break-all font-mono text-xs">{npubEncode(status.pubkey)}</p>
+      <FirstRunChecklist
+        deps={deps}
+        onAddDestination={() => props.onRoute('add-destination')}
+        onPair={() => props.onRoute('pair-source')}
+      />
       {props.insertion && <InsertPanel store={deps.store} deps={props.insertion} setup={deps} />}
       <Drafts deps={deps} />
       <div class="mt-4 flex flex-col gap-2">

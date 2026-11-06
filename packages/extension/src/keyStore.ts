@@ -18,6 +18,8 @@
  *   only, never decrypted content.
  * - `qusme.pendingRevocations`: agents revoked on this device that the service has not confirmed
  *   revoking yet (`src/agents/pendingRevocations.ts`): pubkeys, labels and the last error.
+ * - `qusme.firstRun`: the first-run checklist's dismissal and pairing state (`src/firstRun.ts`),
+ *   no secrets.
  *
  * `storage.session` (memory only, cleared when the browser closes, readable only by extension
  * pages and the service worker):
