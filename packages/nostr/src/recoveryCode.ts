@@ -27,6 +27,9 @@ function checkLength(bytes: Uint8Array): void {
   if (bytes.length !== RECOVERY_CODE_BYTES) throw new Error('a recovery code is 16 bytes');
 }
 
+/** The BIP-39 English list the code's words come from (2048 words), for passphrase suggestions. */
+export const RECOVERY_WORDLIST: readonly string[] = wordlist;
+
 /** The 12 BIP-39 English words for the code, the last carrying the checksum. */
 export function recoveryCodeToWords(bytes: Uint8Array): string[] {
   checkLength(bytes);
