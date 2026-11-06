@@ -100,6 +100,27 @@ describe('insert panel', () => {
     expect(html).toContain("This tab can't take drafts.");
   });
 
+  it('points at the picker shortcut, or at binding one when the browser has none', () => {
+    const view = (pickerShortcut: string | undefined) =>
+      renderToString(
+        <InsertView
+          url="https://x.com/home"
+          page={undefined}
+          undetected={[]}
+          armed={undefined}
+          showElsewhere={false}
+          status={undefined}
+          unrecorded={0}
+          busy={false}
+          pickerShortcut={pickerShortcut}
+          {...handlers}
+        />
+      );
+    expect(view('Alt+Q')).toContain('Press Alt+Q in any text field to pick a draft there.');
+    expect(view('')).toContain('keyboard shortcut in your browser');
+    expect(view(undefined)).not.toContain('text field');
+  });
+
   it('writes each outcome for the user', () => {
     expect(insertMessage({ state: 'inserted', strategy: 'paste', recorded: true })).toBe(
       'Inserted (paste). The draft is archived.'

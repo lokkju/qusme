@@ -271,5 +271,9 @@ export function browserInsertionUiDeps(definitions: SiteDefinitionSource): Inser
       return () => browser.storage.onChanged.removeListener(listener);
     },
     pasteShortcut: /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘V' : 'Ctrl+V',
+    pickerShortcut: async () => {
+      const commands = await browser.commands.getAll();
+      return commands.find((c) => c.name === PICKER_COMMAND)?.shortcut ?? '';
+    },
   };
 }
