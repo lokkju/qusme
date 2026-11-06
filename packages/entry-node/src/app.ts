@@ -4,6 +4,8 @@ import {
   bundledRegistry,
   createAgentKeyCustody,
   createApp,
+  DEFAULT_LIMITS,
+  limitFromEnv,
 } from '@qusme/core';
 import { createStore } from '@qusme/store-sql';
 import { openSqlite } from '@qusme/store-sql/sqlite';
@@ -17,6 +19,8 @@ export interface NodeConfig {
   version: string;
   /** The origin clients sign NIP-98 requests for (spec 8.5); never taken from request headers. */
   publicOrigin: string;
+  /** The service-wide daily create_draft ceiling (spec 8.5, "Limits"). */
+  draftsPerDayCeiling: number;
   /**
    * Tests only: a registry snapshot and the key to pin for it, in place of the bundled
    * `registry/snapshot.json` and the production publisher key. Never read from the environment.
@@ -32,7 +36,8 @@ export const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * Reads the Node entrypoint's settings from the environment. Throws, so the server refuses to
- * start, if QUSME_AGENT_KEY_SECRET is missing or not base64 of 32 bytes.
+ * start, if QUSME_AGENT_KEY_SECRET is missing or not base64 of 32 bytes, or if
+ * QUSME_DAILY_DRAFT_CEILING is set to anything but a whole number.
  */
 export function configFromEnv(env: NodeJS.ProcessEnv): NodeConfig {
   return {
@@ -41,6 +46,11 @@ export function configFromEnv(env: NodeJS.ProcessEnv): NodeConfig {
     // Baked into the image at build time (the Dockerfile's QUSME_VERSION build argument).
     version: env.QUSME_VERSION ?? 'dev',
     publicOrigin: env.QUSME_PUBLIC_ORIGIN ?? DEFAULT_PUBLIC_ORIGIN,
+    draftsPerDayCeiling: limitFromEnv(
+      env.QUSME_DAILY_DRAFT_CEILING,
+      'QUSME_DAILY_DRAFT_CEILING',
+      DEFAULT_LIMITS.draftsPerDayCeiling
+    ),
   };
 }
 
@@ -62,6 +72,8 @@ export function buildApp(config: NodeConfig, log: (line: string) => void = conso
     db,
     agentKeys: config.agentKeys,
     publicOrigin: config.publicOrigin,
+    // Rate limits in memory for this one process; the caps are counted in the SQLite file.
+    limits: { config: { draftsPerDayCeiling: config.draftsPerDayCeiling } },
     mcp: {
       registry,
       // Pubkeys only (spec 8.4): a tool went ahead on the grant without the submitters list.

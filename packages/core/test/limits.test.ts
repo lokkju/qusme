@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { QusmeDb } from '@qusme/store-sql';
 import { describe, expect, it } from 'vitest';
 import {
@@ -192,5 +193,43 @@ describe('request size caps', () => {
   it('refuses an overlong URL with 414', async () => {
     const res = await app.request(`/authorize?state=${'s'.repeat(MAX_URL_BYTES)}`);
     expect(res.status).toBe(414);
+  });
+});
+
+describe('the Workers configuration', () => {
+  /** wrangler.jsonc without its comments. */
+  function wranglerConfig() {
+    const text = readFileSync(
+      new URL('../../entry-worker/wrangler.jsonc', import.meta.url),
+      'utf8'
+    );
+    const stripped = text.replace(
+      /("(?:[^"\\]|\\.)*")|\/\/[^\n]*/g,
+      (_m: string, str: string | undefined) => str ?? ''
+    );
+    return JSON.parse(stripped) as {
+      vars: Record<string, string>;
+      ratelimits: {
+        name: string;
+        namespace_id: string;
+        simple: { limit: number; period: number };
+      }[];
+    };
+  }
+
+  it('declares one rate limiting binding per rate class, with the same limit and period', () => {
+    const { ratelimits } = wranglerConfig();
+    const declared = Object.fromEntries(ratelimits.map((r) => [r.name, r.simple]));
+    const expected = Object.fromEntries(
+      Object.values(RATE_CLASSES).map((c) => [c.binding, { limit: c.limit, period: c.period }])
+    );
+    expect(declared).toEqual(expected);
+    const ids = ratelimits.map((r) => r.namespace_id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[1-9]\d*$/);
+  });
+
+  it('configures the daily draft ceiling as a whole number', () => {
+    expect(wranglerConfig().vars.QUSME_DAILY_DRAFT_CEILING).toMatch(/^\d+$/);
   });
 });

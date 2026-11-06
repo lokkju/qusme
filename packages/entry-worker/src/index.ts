@@ -3,6 +3,10 @@ import {
   bundledRegistry,
   createAgentKeyCustody,
   createApp,
+  createBindingRateLimiter,
+  DEFAULT_LIMITS,
+  limitFromEnv,
+  type RateLimitBinding,
 } from '@qusme/core';
 import { createStore } from '@qusme/store-sql';
 import { openD1 } from '@qusme/store-sql/d1';
@@ -21,6 +25,16 @@ export interface Env {
   QUSME_AGENT_KEY_VERSION?: string;
   /** The secret of the version before it, only during a rotation. */
   QUSME_AGENT_KEY_SECRET_PREVIOUS?: string;
+  /** The service-wide daily create_draft ceiling; a plain var in wrangler.jsonc. */
+  QUSME_DAILY_DRAFT_CEILING?: string;
+  /** The Workers Rate Limiting bindings in wrangler.jsonc, one per rate class (RATE_CLASSES). */
+  RL_IP_AUTHORIZE: RateLimitBinding;
+  RL_IP_POLL: RateLimitBinding;
+  RL_IP_TOKEN: RateLimitBinding;
+  RL_IP_PAIR: RateLimitBinding;
+  RL_MCP_AGENT_FREE: RateLimitBinding;
+  RL_MCP_QUEUE_FREE: RateLimitBinding;
+  RL_DEVICE_QUEUE_FREE: RateLimitBinding;
 }
 
 /** Set at build time through wrangler's `define` (the commit, in deploy.yml). */
@@ -37,6 +51,18 @@ export default {
       db: openD1(env.DB),
       agentKeys: agentKeyRingFromEnv({ ...env }),
       publicOrigin: env.QUSME_PUBLIC_ORIGIN,
+      // Throws when a binding is missing or the ceiling is not a whole number, so a misconfigured
+      // deploy refuses requests instead of running without limits.
+      limits: {
+        rateLimiter: createBindingRateLimiter({ ...env }),
+        config: {
+          draftsPerDayCeiling: limitFromEnv(
+            env.QUSME_DAILY_DRAFT_CEILING,
+            'QUSME_DAILY_DRAFT_CEILING',
+            DEFAULT_LIMITS.draftsPerDayCeiling
+          ),
+        },
+      },
       mcp: {
         registry,
         // Pubkeys only (spec 8.4): a tool went ahead on the grant without the submitters list.

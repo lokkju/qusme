@@ -17,8 +17,44 @@
   },
   // The origin clients sign NIP-98 requests for (the u tag). Not a secret.
   "vars": {
-    "QUSME_PUBLIC_ORIGIN": "https://app.qus.me"
+    "QUSME_PUBLIC_ORIGIN": "https://app.qus.me",
+    // The most create_draft calls the whole service accepts per UTC day (spec 8.5, "Limits"), so
+    // a bug or abuse cannot pass a known cost. A whole number; 0 refuses every draft.
+    "QUSME_DAILY_DRAFT_CEILING": "2000"
   },
+  // Workers Rate Limiting (spec 8.5, "Limits"): one binding per rate class in
+  // packages/core/src/limits.ts (RATE_CLASSES), with the same limit and period; a test holds the
+  // two together. Counts are per Cloudflare location and approximate, which is enough for abuse
+  // limits; the hard caps that bound cost are counted in D1. namespace_id is ours to pick, unique
+  // in the account; no Cloudflare resource is created ahead of the deploy.
+  "ratelimits": [
+    // GET /authorize, per client IP
+    { "name": "RL_IP_AUTHORIZE", "namespace_id": "7701", "simple": { "limit": 10, "period": 60 } },
+    // GET /authorize/:id and its status poll, per client IP
+    { "name": "RL_IP_POLL", "namespace_id": "7702", "simple": { "limit": 60, "period": 60 } },
+    // POST /token and POST /revoke, per client IP
+    { "name": "RL_IP_TOKEN", "namespace_id": "7703", "simple": { "limit": 20, "period": 60 } },
+    // GET /pair/:code, per client IP
+    { "name": "RL_IP_PAIR", "namespace_id": "7704", "simple": { "limit": 10, "period": 60 } },
+    // /mcp, per agent key (free tier)
+    {
+      "name": "RL_MCP_AGENT_FREE",
+      "namespace_id": "7705",
+      "simple": { "limit": 30, "period": 60 }
+    },
+    // /mcp, per queue (free tier)
+    {
+      "name": "RL_MCP_QUEUE_FREE",
+      "namespace_id": "7706",
+      "simple": { "limit": 60, "period": 60 }
+    },
+    // NIP-98 device routes and POST /pair, per queue key (free tier)
+    {
+      "name": "RL_DEVICE_QUEUE_FREE",
+      "namespace_id": "7707",
+      "simple": { "limit": 30, "period": 60 }
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
