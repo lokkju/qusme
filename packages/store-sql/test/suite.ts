@@ -66,6 +66,7 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
           'pairing_sessions',
           'pending_authorizations',
           'submission_receipts',
+          'usage_counters',
         ]);
       });
 
@@ -85,10 +86,13 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
           'oauth_tokens_expires_idx',
           'pairing_sessions_expires_idx',
           'pending_authorizations_agent_key_idx',
+          'pending_authorizations_client_ip_idx',
           'pending_authorizations_expires_idx',
           'pending_authorizations_user_code_idx',
           'submission_receipts_agent_created_idx',
           'submission_receipts_expires_idx',
+          'submission_receipts_queue_created_idx',
+          'usage_counters_expires_idx',
         ]);
       });
 
@@ -293,6 +297,45 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
         ).toBeUndefined();
       });
 
+      it('counts open (undecided, live) authorizations, per client IP hash and in all', async () => {
+        const open = (
+          id: string,
+          ip: string | null,
+          status: 'pending' | 'fetched' | 'approved',
+          expiresAt: number
+        ) =>
+          h.store.pendingAuthorizations.create({
+            id,
+            userCode: id,
+            clientId: CLIENT,
+            redirectUri: 'http://127.0.0.1:3000/cb',
+            codeChallenge: 'c',
+            scopes: 'submit',
+            status,
+            clientIpHash: ip,
+            createdAt: NOW,
+            expiresAt,
+          });
+        await open('a', 'ip1', 'pending', NOW + 300);
+        await open('b', 'ip1', 'fetched', NOW + 100);
+        await open('c', 'ip1', 'approved', NOW + 50);
+        await open('d', 'ip1', 'pending', NOW);
+        await open('e', 'ip2', 'pending', NOW + 600);
+        await open('f', null, 'pending', NOW + 700);
+        expect(await h.store.pendingAuthorizations.countOpen(NOW, 'ip1')).toEqual({
+          count: 2,
+          earliestExpiry: NOW + 100,
+        });
+        expect(await h.store.pendingAuthorizations.countOpen(NOW)).toEqual({
+          count: 4,
+          earliestExpiry: NOW + 100,
+        });
+        expect(await h.store.pendingAuthorizations.countOpen(NOW, 'ip3')).toEqual({
+          count: 0,
+          earliestExpiry: undefined,
+        });
+      });
+
       it('refuses a duplicate user code', async () => {
         await pending('p1', 'SAME');
         await expect(pending('p2', 'SAME')).rejects.toThrow();
@@ -466,6 +509,17 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
         expect(await h.store.bindings.revoke('k2', NOW + 2)).toBeUndefined();
       });
 
+      it('counts a queue’s unrevoked bindings, optionally leaving one out', async () => {
+        await bind('k1', 100);
+        await bind('k2', 100);
+        await bind('k3', 200);
+        expect(await h.store.bindings.countByQueue(pk(100))).toBe(2);
+        expect(await h.store.bindings.countByQueue(pk(100), 'k1')).toBe(1);
+        await h.store.bindings.revoke('k2', NOW + 1);
+        expect(await h.store.bindings.countByQueue(pk(100))).toBe(1);
+        expect(await h.store.bindings.countByQueue(pk(300))).toBe(0);
+      });
+
       it('rebinds every unrevoked binding to the new queue key once', async () => {
         await bind('k1', 100);
         await bind('k2', 100);
@@ -547,6 +601,22 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
         await receipt('d', 'k2', NOW + 10);
         expect(await h.store.submissionReceipts.countSince('k1', NOW)).toBe(2);
         expect(await h.store.submissionReceipts.countSince('k1', 0)).toBe(3);
+      });
+
+      it('counts a queue’s submissions since a time, across its agent keys', async () => {
+        await receipt('a', 'k1', NOW - 10);
+        await receipt('b', 'k1', NOW);
+        await receipt('c', 'k2', NOW + 10);
+        await h.store.submissionReceipts.create({
+          giftWrapId: 'other-queue',
+          agentKeyId: 'k1',
+          queuePubkey: pk(200),
+          createdAt: NOW,
+          expiresAt: NOW + 86_400,
+        });
+        expect(await h.store.submissionReceipts.countByQueueSince(pk(100), NOW)).toBe(2);
+        expect(await h.store.submissionReceipts.countByQueueSince(pk(100), 0)).toBe(3);
+        expect(await h.store.submissionReceipts.countByQueueSince(pk(300), 0)).toBe(0);
       });
 
       it('hides expired receipts and refuses a duplicate gift wrap id', async () => {
@@ -683,6 +753,40 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
       });
     });
 
+    describe('usageCounters', () => {
+      it('reserves up to the limit exactly, per scope and window, and releases', async () => {
+        const r = (limit: number, window = NOW) =>
+          h.store.usageCounters.reserve('create_draft', window, limit, window + 86_400);
+        expect(await r(3)).toBe(1);
+        expect(await r(3)).toBe(2);
+        expect(await r(3)).toBe(3);
+        expect(await r(3)).toBeUndefined();
+        expect(await h.store.usageCounters.get('create_draft', NOW)).toBe(3);
+        await h.store.usageCounters.release('create_draft', NOW);
+        expect(await r(3)).toBe(3);
+        expect(await r(3, NOW + 86_400)).toBe(1);
+        expect(await h.store.usageCounters.reserve('other', NOW, 3, NOW + 1)).toBe(1);
+        expect(await h.store.usageCounters.get('nothing', NOW)).toBe(0);
+      });
+
+      it('never reserves under a limit below 1, and never releases below 0', async () => {
+        expect(await h.store.usageCounters.reserve('s', NOW, 0, NOW + 1)).toBeUndefined();
+        expect(await h.store.usageCounters.get('s', NOW)).toBe(0);
+        await h.store.usageCounters.reserve('s', NOW, 1, NOW + 1);
+        await h.store.usageCounters.release('s', NOW);
+        await h.store.usageCounters.release('s', NOW);
+        expect(await h.store.usageCounters.get('s', NOW)).toBe(0);
+      });
+
+      it('holds the limit under concurrent reservations', async () => {
+        const results = await Promise.all(
+          Array.from({ length: 20 }, () => h.store.usageCounters.reserve('c', NOW, 7, NOW + 86_400))
+        );
+        expect(results.filter((n) => n !== undefined)).toHaveLength(7);
+        expect(await h.store.usageCounters.get('c', NOW)).toBe(7);
+      });
+    });
+
     describe('sweepExpired', () => {
       it('deletes expired rows in every TTL table and the keys of unapproved expired authorizations', async () => {
         await seedClient();
@@ -781,6 +885,8 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
         }
         await h.store.nip98Replays.remember('e-old', NOW - 1, NOW - 100);
         await h.store.nip98Replays.remember('e-new', NOW + 60, NOW - 100);
+        await h.store.usageCounters.reserve('create_draft', NOW - 86_400, 10, NOW);
+        await h.store.usageCounters.reserve('create_draft', NOW, 10, NOW + 1);
 
         expect(await h.store.sweepExpired(NOW)).toEqual({
           agentKeys: 2,
@@ -790,6 +896,7 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
           submissionReceipts: 1,
           pairingSessions: 1,
           nip98Replays: 1,
+          usageCounters: 1,
         });
 
         expect(await h.store.agentKeys.get('k-denied')).toBeUndefined();
@@ -806,9 +913,10 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
         const remaining = await rows<{ n: number }>(
           sql`select (select count(*) from pending_authorizations) + (select count(*) from oauth_codes)
             + (select count(*) from oauth_tokens) + (select count(*) from submission_receipts)
-            + (select count(*) from pairing_sessions) + (select count(*) from nip98_replays) as n`
+            + (select count(*) from pairing_sessions) + (select count(*) from nip98_replays)
+            + (select count(*) from usage_counters) as n`
         );
-        expect(remaining[0]?.n).toBe(6);
+        expect(remaining[0]?.n).toBe(7);
 
         expect(await h.store.sweepExpired(NOW)).toEqual({
           agentKeys: 0,
@@ -818,6 +926,7 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
           submissionReceipts: 0,
           pairingSessions: 0,
           nip98Replays: 0,
+          usageCounters: 0,
         });
       });
     });

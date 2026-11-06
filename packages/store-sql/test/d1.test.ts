@@ -22,6 +22,7 @@ const TABLES = [
   'agent_keys',
   'oauth_clients',
   'pairing_sessions',
+  'usage_counters',
   'nip98_replays',
   'hosted_queues',
 ];
