@@ -421,15 +421,22 @@ export function DestinationsScreen(props: {
   definitions: SiteDefinitionSource;
   detect?: DetectDeps | undefined;
   onBack: () => void;
+  /** Open on the add form with this registry site chosen (the first-run checklist's "Add your X account"). */
+  startAdding?: string | undefined;
 }) {
   const { deps, definitions, detect } = props;
+  const choices = siteChoices(definitions);
   const [destinations, setDestinations] = useState<Destination[] | undefined>();
-  const [mode, setMode] = useState<Mode>({ mode: 'list' });
+  const [mode, setMode] = useState<Mode>(() => {
+    if (props.startAdding === undefined) return { mode: 'list' };
+    const values = emptyAdd(choices);
+    if (choices.some((c) => c.id === props.startAdding)) values.choice = props.startAdding;
+    return { mode: 'add', values };
+  });
   const [confirmingId, setConfirmingId] = useState<string>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState<string>();
-  const choices = siteChoices(definitions);
 
   const load = useCallback(async () => {
     try {

@@ -1,6 +1,5 @@
 import type { ProbeResult } from '@qusme/nostr';
 import { useEffect, useState } from 'preact/hooks';
-import { checkPassphrase } from '../passphrase.ts';
 import {
   type CreateDraft,
   cleanRelayList,
@@ -13,25 +12,108 @@ import {
   wipeDraft,
 } from '../setup/create.ts';
 import type { SetupDeps } from '../setup/deps.ts';
+import {
+  type RecoverySheet,
+  recoverySheetFilename,
+  recoverySheetHtml,
+  recoverySheetText,
+} from '../setup/recoverySheet.ts';
 import { messageOf } from './app.tsx';
 import {
   Button,
+  CopyButton,
   ErrorText,
   Field,
   inputClass,
   LossWarning,
   NewPassphrase,
   ProbeResults,
+  passphraseReady,
   Screen,
+  saveFile,
 } from './components.tsx';
 
-type Step = 'passphrase' | 'code' | 'confirm' | 'relays' | 'done';
+/**
+ * The create flow (spec 11.3): passphrase, relays, the recovery sheet, then the typed
+ * confirmation, which publishes. The relays come before the sheet so the sheet names the relays
+ * the queue is actually created on.
+ */
+type Step = 'passphrase' | 'relays' | 'sheet' | 'confirm' | 'done';
 
 const lines = (text: string): string[] => text.split(/\s+/).filter(Boolean);
 
-export function CreateScreen(props: { deps: SetupDeps; onDone: () => void; onBack: () => void }) {
+/** The Queue ID and the storage servers, as the sheet and confirm steps show them. */
+export function QueueFacts(props: { npub: string; storageRelays: readonly string[] }) {
+  return (
+    <dl class="mt-3 flex flex-col gap-1 text-sm">
+      <dt class="font-semibold text-ink/80 text-xs uppercase">Queue ID (npub)</dt>
+      <dd class="break-all font-mono text-xs">{props.npub}</dd>
+      <dt class="mt-2 font-semibold text-ink/80 text-xs uppercase">Storage servers (relays)</dt>
+      {props.storageRelays.map((url) => (
+        <dd key={url} class="font-mono text-xs">
+          {url}
+        </dd>
+      ))}
+    </dl>
+  );
+}
+
+/** The sheet step's content: the code in both forms, the Queue ID, the relays and the save controls. */
+export function RecoverySheetView(props: { sheet: RecoverySheet }) {
+  const { sheet } = props;
+  return (
+    <>
+      <div class="mt-3 rounded border border-ink/20 p-3">
+        <p class="font-semibold text-ink/80 text-xs uppercase">Recovery code</p>
+        <ol class="mt-1 grid list-decimal grid-cols-3 gap-x-6 gap-y-1 pl-6 font-mono text-sm">
+          {sheet.words.map((word, i) => (
+            <li key={i}>{word}</li>
+          ))}
+        </ol>
+        <p class="mt-2 text-xs">The same code, for printing:</p>
+        <p class="font-mono text-sm">{sheet.base32}</p>
+        <QueueFacts npub={sheet.npub} storageRelays={sheet.storageRelays} />
+      </div>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <Button
+          onClick={() =>
+            saveFile(
+              recoverySheetFilename(sheet.createdAt, 'txt'),
+              'text/plain;charset=utf-8',
+              recoverySheetText(sheet)
+            )
+          }
+        >
+          Download recovery sheet
+        </Button>
+        <Button
+          variant="plain"
+          onClick={() =>
+            saveFile(
+              recoverySheetFilename(sheet.createdAt, 'html'),
+              'text/html;charset=utf-8',
+              recoverySheetHtml(sheet)
+            )
+          }
+        >
+          Printable version
+        </Button>
+        <CopyButton text={recoverySheetText(sheet)} />
+      </div>
+    </>
+  );
+}
+
+export function CreateScreen(props: {
+  deps: SetupDeps;
+  onDone: () => void;
+  onBack: () => void;
+  /** Tests pass a deterministic passphrase suggestion. */
+  suggest?: () => string;
+}) {
   const { deps } = props;
   const [draft] = useState<CreateDraft>(() => startCreate());
+  const [createdAt] = useState(() => new Date());
   const [step, setStep] = useState<Step>('passphrase');
   const [passphrase, setPassphrase] = useState('');
   const [again, setAgain] = useState('');
@@ -39,6 +121,7 @@ export function CreateScreen(props: { deps: SetupDeps; onDone: () => void; onBac
   const [typed, setTyped] = useState('');
   const [storage, setStorage] = useState(DEFAULT_STORAGE_RELAYS.join('\n'));
   const [inbox, setInbox] = useState(DEFAULT_INBOX_RELAYS.join('\n'));
+  const [chosen, setChosen] = useState<{ storage: string[]; inbox: string[] }>();
   const [results, setResults] = useState<ProbeResult[]>([]);
   const [probedFor, setProbedFor] = useState<string>();
   const [error, setError] = useState<string>();
@@ -47,15 +130,6 @@ export function CreateScreen(props: { deps: SetupDeps; onDone: () => void; onBac
   // An abandoned setup leaves no key material behind in memory it can reach.
   useEffect(() => () => wipeDraft(draft), [draft]);
 
-  const strength = checkPassphrase(passphrase);
-  const problem =
-    passphrase === ''
-      ? 'At least 12 characters; a few unrelated words work well.'
-      : !strength.ok
-        ? strength.problem
-        : again !== '' && again !== passphrase
-          ? 'The two entries differ.'
-          : undefined;
   const relayKey = `${storage}\n--\n${inbox}`;
   const probesPassed = probedFor === relayKey && results.length > 0 && results.every((r) => r.ok);
 
@@ -80,90 +154,18 @@ export function CreateScreen(props: { deps: SetupDeps; onDone: () => void; onBac
         <NewPassphrase
           value={passphrase}
           confirm={again}
-          problem={problem}
           onInput={setPassphrase}
           onConfirm={setAgain}
+          {...(props.suggest && { suggest: props.suggest })}
         />
         <LossWarning />
         <Button
           class="mt-3"
-          disabled={!strength.ok || again !== passphrase}
-          onClick={() => setStep('code')}
+          disabled={!passphraseReady(passphrase, again)}
+          onClick={() => setStep('relays')}
         >
           Next
         </Button>
-      </Screen>
-    );
-  }
-
-  if (step === 'code') {
-    return (
-      <Screen title="Your recovery code">
-        <p class="mt-2 text-sm">
-          Write this down and keep it somewhere safe. It is shown only now, and this device does not
-          keep it. With it you can restore the queue on a new device, or if you forget the
-          passphrase.
-        </p>
-        <ol class="mt-3 grid list-decimal grid-cols-3 gap-x-6 gap-y-1 pl-6 font-mono text-sm">
-          {draft.words.map((word, i) => (
-            <li key={i}>{word}</li>
-          ))}
-        </ol>
-        <p class="mt-3 text-sm">The same code for printing:</p>
-        <p class="font-mono text-sm">{draft.base32}</p>
-        <div class="mt-3 flex items-center gap-2">
-          <input
-            id="code-saved"
-            type="checkbox"
-            checked={saved}
-            onChange={(e) => setSaved(e.currentTarget.checked)}
-          />
-          <label for="code-saved" class="text-sm">
-            I saved the recovery code
-          </label>
-        </div>
-        <Button class="mt-3" disabled={!saved} onClick={() => setStep('confirm')}>
-          Next
-        </Button>
-      </Screen>
-    );
-  }
-
-  if (step === 'confirm') {
-    const submit = (event: Event) => {
-      event.preventDefault();
-      if (confirmRecoveryCode(draft, typed)) {
-        setTyped('');
-        setError(undefined);
-        setStep('relays');
-      } else {
-        setError('That is not the code shown. Check what you wrote down.');
-      }
-    };
-    return (
-      <Screen title="Confirm the recovery code" onBack={() => setStep('code')}>
-        <form onSubmit={submit}>
-          <Field
-            id="code-typed"
-            label="Type the recovery code"
-            hint="The 12 words, or the 26-character code."
-          >
-            <textarea
-              id="code-typed"
-              rows={3}
-              class={inputClass}
-              autocomplete="off"
-              spellcheck={false}
-              value={typed}
-              aria-describedby="code-typed-hint"
-              onInput={(e) => setTyped(e.currentTarget.value)}
-            />
-          </Field>
-          <ErrorText message={error} />
-          <Button type="submit" class="mt-3" disabled={typed.trim() === ''}>
-            Confirm
-          </Button>
-        </form>
       </Screen>
     );
   }
@@ -184,19 +186,18 @@ export function CreateScreen(props: { deps: SetupDeps; onDone: () => void; onBac
         setResults(all);
         setProbedFor(relayKey);
       });
-    const create = () =>
-      run(async () => {
-        await finishCreate(
-          draft,
-          { passphrase, storageRelays: lines(storage), inboxRelays: lines(inbox) },
-          deps
-        );
-        setPassphrase('');
-        setAgain('');
-        setStep('done');
+    const next = () => {
+      setError(undefined);
+      setChosen({
+        storage: cleanRelayList(lines(storage), 'storage relay'),
+        inbox: cleanRelayList(lines(inbox), 'inbox relay'),
       });
+      // New relays make a new sheet, which the user has to save again.
+      setSaved(false);
+      setStep('sheet');
+    };
     return (
-      <Screen title="Choose relays">
+      <Screen title="Choose relays" onBack={() => setStep('passphrase')}>
         <p class="mt-2 text-sm">
           Storage relays hold the encrypted queue. The inbox relay receives drafts from agents and
           must show them only to you. Each is checked before it is saved.
@@ -225,12 +226,111 @@ export function CreateScreen(props: { deps: SetupDeps; onDone: () => void; onBac
         <ErrorText message={error} />
         <div class="mt-3 flex gap-2">
           <Button variant={probesPassed ? 'plain' : 'primary'} disabled={busy} onClick={probe}>
-            {busy && !probesPassed ? 'Checking…' : 'Check relays'}
+            {busy ? 'Checking…' : 'Check relays'}
           </Button>
-          <Button disabled={busy || !probesPassed} onClick={create}>
-            {busy && probesPassed ? 'Creating…' : 'Create queue'}
+          <Button disabled={busy || !probesPassed} onClick={next}>
+            Next
           </Button>
         </div>
+      </Screen>
+    );
+  }
+
+  const sheet: RecoverySheet = {
+    words: draft.words,
+    base32: draft.base32,
+    npub: draft.npub,
+    storageRelays: chosen?.storage ?? [],
+    inboxRelays: chosen?.inbox ?? [],
+    createdAt,
+  };
+
+  if (step === 'sheet') {
+    return (
+      <Screen title="Save your recovery sheet" onBack={() => setStep('relays')}>
+        <p class="mt-2 text-sm">
+          If you lose this device or forget the passphrase, you need all of this to get your queue
+          back: the recovery code, the Queue ID and a storage server. The code is shown only now,
+          and this device does not keep it. Download the sheet, or write it down.
+        </p>
+        <RecoverySheetView sheet={sheet} />
+        <Button class="mt-3" onClick={() => setStep('confirm')}>
+          Next
+        </Button>
+      </Screen>
+    );
+  }
+
+  if (step === 'confirm') {
+    const submit = (event: Event) => {
+      event.preventDefault();
+      if (!confirmRecoveryCode(draft, typed)) {
+        setError('That is not the code shown. Check what you wrote down.');
+        return;
+      }
+      void run(async () => {
+        await finishCreate(
+          draft,
+          {
+            passphrase,
+            storageRelays: [...sheet.storageRelays],
+            inboxRelays: [...sheet.inboxRelays],
+          },
+          deps
+        );
+        setPassphrase('');
+        setAgain('');
+        setTyped('');
+        setStep('done');
+      });
+    };
+    return (
+      <Screen title="Confirm and create" onBack={() => setStep('sheet')}>
+        <form onSubmit={submit}>
+          <p class="mt-2 text-sm">
+            Check that your sheet has this Queue ID and these storage servers.
+          </p>
+          <QueueFacts npub={sheet.npub} storageRelays={sheet.storageRelays} />
+          <Field
+            id="code-typed"
+            label="Type the recovery code"
+            hint="The 12 words, or the 26-character code."
+          >
+            <textarea
+              id="code-typed"
+              rows={3}
+              class={inputClass}
+              autocomplete="off"
+              spellcheck={false}
+              value={typed}
+              aria-describedby="code-typed-hint"
+              onInput={(e) => setTyped(e.currentTarget.value)}
+            />
+          </Field>
+          <div class="mt-3 flex items-start gap-2">
+            <input
+              id="sheet-saved"
+              type="checkbox"
+              class="mt-1"
+              checked={saved}
+              onChange={(e) => setSaved(e.currentTarget.checked)}
+            />
+            <label for="sheet-saved" class="text-sm">
+              I saved the recovery code and the recovery sheet somewhere other than this computer
+            </label>
+          </div>
+          <ErrorText message={error} />
+          <div class="mt-3 flex gap-2">
+            <Button type="submit" disabled={busy || !saved || typed.trim() === ''}>
+              {busy ? 'Creating…' : 'Create queue'}
+            </Button>
+            {error !== undefined && draft.confirmed && (
+              <Button variant="plain" disabled={busy} onClick={() => setStep('relays')}>
+                Change relays
+              </Button>
+            )}
+          </div>
+        </form>
       </Screen>
     );
   }

@@ -222,6 +222,7 @@ export {
   RECOVERY_CODE_BASE32_LENGTH,
   RECOVERY_CODE_BYTES,
   RECOVERY_CODE_WORDS,
+  RECOVERY_WORDLIST,
   recoveryCodeToBase32,
   recoveryCodeToWords,
   recoveryPassword,

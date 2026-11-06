@@ -4,7 +4,15 @@
  */
 import type { ProbeResult } from '@qusme/nostr';
 import type { ButtonHTMLAttributes, ComponentChildren } from 'preact';
+import { useState } from 'preact/hooks';
 import { encode } from 'uqr';
+import {
+  checkPassphrase,
+  PASSPHRASE_RULE,
+  passphraseStrength,
+  type StrengthLevel,
+  suggestPassphrase,
+} from '../passphrase.ts';
 
 export function Button(
   props: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'plain' | 'danger' }
@@ -135,36 +143,122 @@ export function ProbeResults(props: { results: ProbeResult[] }) {
   );
 }
 
-/** Two password inputs and the strength problem, if any. */
+/** Copies `text` and says so on the button for a moment. */
+export function CopyButton(props: { text: string; label?: string; class?: string }) {
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const label = props.label ?? 'Copy';
+  return (
+    <Button
+      variant="plain"
+      class={props.class}
+      disabled={props.text === ''}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(props.text);
+          setFailed(false);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch {
+          setFailed(true);
+        }
+      }}
+    >
+      {failed ? 'Copy failed' : copied ? 'Copied' : label}
+    </Button>
+  );
+}
+
+/** The strength meter: four bars, filled to the level, hidden from screen readers (the text says it). */
+export function StrengthMeter(props: { level: StrengthLevel }) {
+  const color =
+    props.level >= 3 ? 'bg-green-700' : props.level === 2 ? 'bg-amber-500' : 'bg-danger';
+  return (
+    <div class="mt-1 flex gap-1" aria-hidden="true" data-level={props.level}>
+      {[1, 2, 3, 4].map((n) => (
+        <div key={n} class={`h-1.5 flex-1 rounded ${n <= props.level ? color : 'bg-ink/15'}`} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Two passphrase inputs with the rule stated, live strength feedback (a meter and, for screen
+ * readers, the same in words in a polite live region), "Suggest one" and a copy button. Callers
+ * accept the passphrase when {@link checkPassphrase} passes and both entries match.
+ */
 export function NewPassphrase(props: {
   value: string;
   confirm: string;
-  problem: string | undefined;
   onInput: (value: string) => void;
   onConfirm: (value: string) => void;
+  /** Draws a suggestion; tests pass a deterministic one. */
+  suggest?: () => string;
 }) {
+  const [shown, setShown] = useState(false);
+  const strength = passphraseStrength(props.value);
+  const inputType = shown ? ({ type: 'text' } as const) : ({ type: 'password' } as const);
+  const mismatch = props.confirm !== '' && props.confirm !== props.value;
+  const status =
+    props.value === ''
+      ? ''
+      : strength.check.ok && mismatch
+        ? 'The two entries differ.'
+        : strength.label;
   return (
     <>
-      <Field
-        id="new-passphrase"
-        label="Passphrase for this device"
-        hint={props.problem ?? 'Strong enough.'}
-      >
-        <input
-          id="new-passphrase"
-          type="password"
-          autocomplete="new-password"
-          class={inputClass}
-          value={props.value}
-          aria-describedby="new-passphrase-hint"
-          onInput={(e) => props.onInput(e.currentTarget.value)}
-        />
-      </Field>
+      <div class="mt-3 flex flex-col gap-1">
+        <label for="new-passphrase" class="font-medium text-sm">
+          Passphrase for this device
+        </label>
+        <div class="flex gap-2">
+          <input
+            id="new-passphrase"
+            {...inputType}
+            autocomplete="new-password"
+            spellcheck={false}
+            class={inputClass}
+            value={props.value}
+            aria-describedby="new-passphrase-rule new-passphrase-status"
+            onInput={(e) => props.onInput(e.currentTarget.value)}
+          />
+          <Button
+            variant="plain"
+            class="shrink-0 text-sm"
+            onClick={() => {
+              const phrase = (props.suggest ?? suggestPassphrase)();
+              props.onInput(phrase);
+              props.onConfirm(phrase);
+              setShown(true);
+            }}
+          >
+            Suggest one
+          </Button>
+        </div>
+        <p id="new-passphrase-rule" class="text-ink/70 text-xs">
+          {PASSPHRASE_RULE}
+        </p>
+        <StrengthMeter level={strength.level} />
+        <p
+          id="new-passphrase-status"
+          class={`text-xs ${strength.level >= 3 && !mismatch ? 'text-green-700' : 'text-ink'}`}
+          aria-live="polite"
+        >
+          {status}
+        </p>
+        <div class="flex gap-2">
+          <Button variant="plain" class="px-2 py-1 text-xs" onClick={() => setShown(!shown)}>
+            {shown ? 'Hide' : 'Show'}
+          </Button>
+          <CopyButton text={props.value} class="px-2 py-1 text-xs" />
+        </div>
+      </div>
       <Field id="new-passphrase-confirm" label="Type it again">
         <input
           id="new-passphrase-confirm"
-          type="password"
+          {...inputType}
           autocomplete="new-password"
+          spellcheck={false}
           class={inputClass}
           value={props.confirm}
           onInput={(e) => props.onConfirm(e.currentTarget.value)}
@@ -172,6 +266,25 @@ export function NewPassphrase(props: {
       </Field>
     </>
   );
+}
+
+/** Whether a new passphrase and its confirmation can be used. */
+export const passphraseReady = (value: string, confirm: string): boolean =>
+  checkPassphrase(value).ok && confirm === value;
+
+/**
+ * Saves `content` as a file through an object URL and a download link, which needs no
+ * `downloads` permission (11.2).
+ */
+export function saveFile(name: string, type: string, content: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** The statement spec 6.1 requires at setup. */

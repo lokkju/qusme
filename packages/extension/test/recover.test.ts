@@ -1,12 +1,15 @@
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { describe, expect, it } from 'vitest';
 import {
+  BackupNotFound,
   fetchRecoveryBackup,
+  findRecoveryBackup,
   finishRecover,
   openRecoveryBackup,
   readQueuePubkey,
 } from '../src/setup/recover.ts';
-import { createdDevice, device, network, STORAGE } from './helpers.ts';
+import { parseRecoverySheet, recoverySheetText } from '../src/setup/recoverySheet.ts';
+import { createdDevice, device, INBOX, network, STORAGE } from './helpers.ts';
 
 const NEW_PASSPHRASE = 'harbor lantern copper ninety';
 
@@ -61,7 +64,7 @@ describe('recover flow (spec 6.1, 11.3)', { timeout: 30_000 }, () => {
     ).rejects.toThrow(/not a wss/);
     await expect(
       fetchRecoveryBackup({ relayUrl: STORAGE[0] as string, npub: 'npub1nope' }, b.deps)
-    ).rejects.toThrow(/not an npub/);
+    ).rejects.toThrow(/not a Queue ID/);
     await expect(
       fetchRecoveryBackup({ relayUrl: 'wss://gone.example', npub: a.npub }, b.deps)
     ).rejects.toThrow(/Could not reach/);
@@ -96,5 +99,61 @@ describe('recover flow (spec 6.1, 11.3)', { timeout: 30_000 }, () => {
       finishRecover(fetched, openRecoveryBackup(fetched, a.words), 'short', b.deps)
     ).rejects.toThrow(/12 characters/);
     expect(await b.store.status()).toEqual({ state: 'empty' });
+  });
+
+  it('finds the queue on the default storage relays from the npub and code alone, then reads its 10013', async () => {
+    const net = network();
+    net.add('wss://default-empty.example');
+    const a = await createdDevice(net);
+    const b = device(net);
+    // Only one default relay holds the queue; the 10013 read with the key names both.
+    b.deps.defaultStorageRelays = ['wss://default-empty.example', STORAGE[1] as string];
+    const fetched = await findRecoveryBackup({ npub: a.npub }, b.deps);
+    expect(fetched.relayUrl).toBe(STORAGE[1]);
+    expect(fetched.relays).toEqual([STORAGE[1]]);
+    const key = openRecoveryBackup(fetched, a.words);
+    const result = await finishRecover(fetched, key, NEW_PASSPHRASE, b.deps);
+    expect(result).toEqual({ storageRelays: STORAGE, relayListFound: true, settingsFound: true });
+    expect((await b.store.record())?.storageRelays).toEqual(STORAGE);
+  });
+
+  it('asks for a relay only when the queue is not on the default storage relays', async () => {
+    const net = network();
+    net.add('wss://default-empty.example');
+    const a = await createdDevice(net);
+    const b = device(net);
+    b.deps.defaultStorageRelays = ['wss://default-empty.example'];
+    const missing = findRecoveryBackup({ npub: a.npub }, b.deps);
+    await expect(missing).rejects.toThrow(/isn’t on the default storage servers/);
+    await expect(missing).rejects.toBeInstanceOf(BackupNotFound);
+    await missing.catch((e: BackupNotFound) => expect(e.askedDefaults).toBe(true));
+    const fetched = await findRecoveryBackup(
+      { npub: a.npub, relays: [STORAGE[0] as string] },
+      b.deps
+    );
+    expect(openRecoveryBackup(fetched, a.base32)).toEqual(a.secretKey);
+  });
+
+  it('recovers from a pasted recovery sheet: its storage relays, npub and code', async () => {
+    const net = network();
+    const a = await createdDevice(net);
+    const b = device(net);
+    b.deps.defaultStorageRelays = ['wss://unreachable.example'];
+    const text = recoverySheetText({
+      words: a.words.split(' '),
+      base32: a.base32,
+      npub: a.npub,
+      storageRelays: STORAGE,
+      inboxRelays: INBOX,
+      createdAt: new Date(),
+    });
+    const parsed = parseRecoverySheet(text);
+    expect(parsed.storageRelays).toEqual(STORAGE);
+    const fetched = await findRecoveryBackup(
+      { npub: parsed.npub as string, relays: parsed.storageRelays },
+      b.deps
+    );
+    expect(fetched.relays.sort()).toEqual([...STORAGE].sort());
+    expect(openRecoveryBackup(fetched, parsed.code as string)).toEqual(a.secretKey);
   });
 });
