@@ -15,15 +15,19 @@ import type {
   PageInserted,
   PageInsertRequest,
   PageOutcome,
+  PickerOpened,
+  PickerView,
   Resolution,
 } from '../protocol.ts';
 import { PAGE_DONE_MESSAGE } from '../protocol.ts';
 import { accessibleName, collapse, findByLocator } from './accessible.ts';
+import { mountPicker, type PickerHandle } from './picker.ts';
 import { type Prompt, showPrompt } from './prompt.ts';
 import { IMMEDIATE_STRATEGIES, placeCaretAtEnd } from './strategies.ts';
 import {
   type EditableTarget,
   editableOf,
+  focusedEditable,
   isTextControl,
   normalizeText,
   readBack,
@@ -43,6 +47,15 @@ export interface PageEnv {
   settleMs?: number;
   /** How often to read the target back while waiting, in milliseconds. Defaults to 25. */
   pollMs?: number;
+  /**
+   * Asks the extension to insert the draft the user chose in the picker; resolves with the
+   * background's answer, which for an insertion that ran is reported by that insertion itself.
+   */
+  pick?(token: string, d: string): Promise<unknown>;
+  /** Asks the extension to open its popup; false when the browser refused. */
+  openPopup?(): Promise<boolean>;
+  /** Mounts the picker; defaults to {@link mountPicker}. Tests use it to reach the closed root. */
+  mountPicker?: typeof mountPicker;
 }
 
 /** How long to wait for the user's click or paste unless the request says otherwise. */
@@ -256,7 +269,8 @@ export function createPageApi(env: PageEnv): PageApi {
     if (resolved.target !== undefined) {
       if (resolved.resolution === 'locator') placeCaretAtEnd(resolved.target);
       const outcome = await runChain(resolved.target, resolved.resolution);
-      if (outcome.state === 'failed' && request.method === 'extension_context_menu') {
+      // The popup shows its own outcome; the context menu and the shortcut have only the page.
+      if (outcome.state === 'failed' && request.method !== 'extension_popup') {
         showFailure(outcome.reason);
       }
       return outcome;
@@ -294,5 +308,93 @@ export function createPageApi(env: PageEnv): PageApi {
     return { state: 'waiting', reason: 'focus' };
   };
 
-  return { detectAccount: (account) => detectAccount(doc, account), insert };
+  /** What a pick answered when no insertion ran to report for itself. */
+  const PICK_TEXT: Record<string, string> = {
+    locked: 'qus.me is locked. Open qus.me to unlock it, then press the shortcut again.',
+    not_found: "qus.me: that draft isn't in the queue any more.",
+    expired: 'qus.me: this list was out of date. Press the shortcut again.',
+  };
+  const reportPick = (response: unknown) => {
+    const r = (typeof response === 'object' && response !== null ? response : {}) as {
+      state?: unknown;
+      reason?: unknown;
+      message?: unknown;
+    };
+    let text: string | undefined;
+    if (typeof r.state === 'string') text = PICK_TEXT[r.state];
+    if (r.state === 'failed' && r.reason === 'injection')
+      text = typeof r.message === 'string' ? r.message : FAILURE_TEXT.exhausted;
+    if (text === undefined) return;
+    const notice = prompt(text);
+    view.setTimeout(() => notice.remove(), FAILURE_NOTICE_MS);
+  };
+
+  let picker: PickerHandle | undefined;
+  // The field the last picker opened at, so pressing the shortcut again after the focus moved off
+  // it (to the page, or to the picker itself) still finds it. Held weakly; no listener tracks it.
+  let lastTarget: WeakRef<EditableTarget> | undefined;
+
+  const openPicker = (pickerView: PickerView): PickerOpened => {
+    picker?.close('replaced');
+    picker = undefined;
+    const remembered = lastTarget?.deref();
+    const target =
+      focusedEditable(doc) ?? (remembered?.isConnected === true ? remembered : undefined);
+    lastTarget = target === undefined ? undefined : new WeakRef(target);
+    const restore = saveSelection(target);
+    const mount = env.mountPicker ?? mountPicker;
+    const handle = mount(doc, pickerView, target, {
+      onPick: (d) => {
+        if (picker === handle) picker = undefined;
+        // Back into the field, caret where it was, so the insertion resolves it as focused.
+        restore();
+        const sent = env.pick?.(pickerView.token, d);
+        void sent?.then(reportPick, () => reportPick({ state: 'expired' }));
+      },
+      onClose: (reason) => {
+        if (picker === handle) picker = undefined;
+        if (reason === 'escape') restore();
+      },
+      onOpenPopup: () => env.openPopup?.() ?? Promise.resolve(false),
+    });
+    picker = handle;
+    return { anchored: target !== undefined };
+  };
+
+  return { detectAccount: (account) => detectAccount(doc, account), insert, openPicker };
+}
+
+/**
+ * Remembers the caret or selection in `target` and returns a function that focuses the target
+ * and puts it back. A rich editor's selection is a DOM range; a control's is its offsets.
+ */
+function saveSelection(target: EditableTarget | undefined): () => void {
+  if (target === undefined) return () => undefined;
+  if (isTextControl(target)) {
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+    return () => {
+      if (!target.isConnected) return;
+      target.focus();
+      if (start === null || end === null) return;
+      try {
+        target.setSelectionRange(start, end);
+      } catch {
+        // No selection on this input type.
+      }
+    };
+  }
+  const selection = target.ownerDocument.defaultView?.getSelection();
+  const range =
+    selection && selection.rangeCount > 0 && target.contains(selection.getRangeAt(0).startContainer)
+      ? selection.getRangeAt(0).cloneRange()
+      : undefined;
+  return () => {
+    if (!target.isConnected) return;
+    target.focus();
+    if (range === undefined) return;
+    const current = target.ownerDocument.defaultView?.getSelection();
+    current?.removeAllRanges();
+    current?.addRange(range);
+  };
 }

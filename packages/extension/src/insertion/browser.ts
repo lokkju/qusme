@@ -4,6 +4,7 @@
  */
 import type { SiteAccount } from '@qusme/nostr';
 import { browser } from 'wxt/browser';
+import { PICKER_COMMAND } from '../commands.ts';
 import { type KeyStore, SESSION_ARMED, SESSION_DRAFTS, SESSION_INSERTION } from '../keyStore.ts';
 import { readDraftCache } from '../sync/state.ts';
 import type { InsertionUiDeps } from '../ui/insert.tsx';
@@ -11,12 +12,15 @@ import { readArmed, readInsertionState } from './armed.ts';
 import type { SiteDefinitionSource } from './definitions.ts';
 import { MENU_CHOOSE, MENU_INSERT, menuItem } from './menu.ts';
 import { INSERT_MESSAGE, RETRY_RECORD_MESSAGE } from './messages.ts';
+import { type PickerPage, PickerService, readPickMessage } from './picker.ts';
 import {
   PAGE_API_GLOBAL,
   PAGE_SCRIPT_FILE,
   type PageAccountResult,
   type PageInsertRequest,
   type PageOutcome,
+  PICKER_POPUP_MESSAGE,
+  type PickerView,
 } from './protocol.ts';
 import { InsertionService, type InsertResponse, type PageRunner, readPageDone } from './service.ts';
 
@@ -82,7 +86,26 @@ export async function detectAccounts(
   return (result?.result as (string | undefined)[] | undefined) ?? [];
 }
 
-/** Sets up the context menu, its click handler and the insertion messages in the background. */
+/** Opens the keyboard picker in the tab's main frame. */
+export const scriptingPicker: PickerPage = {
+  detectAccounts,
+  async open(tabId, view) {
+    await injectPageScript({ tabId });
+    await browser.scripting.executeScript({
+      target: { tabId },
+      func: (v: PickerView, name: string) =>
+        (globalThis as unknown as Record<string, { openPicker(v: PickerView): unknown }>)[
+          name
+        ]?.openPicker(v),
+      args: [view, PAGE_API_GLOBAL],
+    });
+  },
+};
+
+/**
+ * Sets up the context menu, its click handler, the picker shortcut and the insertion messages in
+ * the background.
+ */
 export function installInsertion(
   store: KeyStore,
   definitions: SiteDefinitionSource
@@ -146,16 +169,49 @@ export function installInsertion(
     })();
   });
 
+  const picker = new PickerService({
+    store,
+    definitions,
+    page: scriptingPicker,
+    insertion: service,
+  });
+  // The shortcut grants activeTab on the tab it was pressed in (spec 11.2); the tab's URL is
+  // readable from then until it navigates.
+  browser.commands.onCommand.addListener((command, tab) => {
+    if (command !== PICKER_COMMAND) return;
+    void (async () => {
+      const [active] =
+        tab?.id === undefined
+          ? await browser.tabs.query({ active: true, currentWindow: true })
+          : [tab];
+      if (active?.id === undefined) return;
+      const url = active.url ?? (await browser.tabs.get(active.id)).url;
+      if (url === undefined || !/^https?:/.test(url)) return;
+      await picker.open({ id: active.id, url });
+    })().catch(() => undefined);
+  });
+
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sender.id !== browser.runtime.id) return false;
     const type = (message as { type?: unknown } | null)?.type;
     let work: Promise<unknown> | undefined;
+    const pick = sender.tab?.id === undefined ? undefined : readPickMessage(message);
     if (sender.tab === undefined && type === INSERT_MESSAGE) {
       const tabId = (message as { tabId?: unknown }).tabId;
       if (typeof tabId !== 'number') return false;
       work = service.insert({ tabId, method: 'extension_popup' });
     } else if (sender.tab === undefined && type === RETRY_RECORD_MESSAGE) {
       work = service.retryUnrecorded();
+    } else if (sender.tab?.id !== undefined && pick !== undefined) {
+      // The user chose a draft in the picker.
+      work = picker.pick(sender.tab.id, sender.frameId, pick);
+    } else if (sender.tab?.id !== undefined && type === PICKER_POPUP_MESSAGE) {
+      // The picker's "Open qus.me". Firefox refuses openPopup outside a user action, and the
+      // page then tells the user to click the toolbar button.
+      work = browser.action.openPopup().then(
+        () => ({ opened: true }),
+        () => ({ opened: false })
+      );
     } else if (sender.tab?.id !== undefined) {
       // The page script reporting an insertion that waited for the user's click or paste.
       const done = readPageDone(message);

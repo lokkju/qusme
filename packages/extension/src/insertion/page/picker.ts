@@ -1,0 +1,399 @@
+/**
+ * The keyboard picker (spec 11.5): a small list of drafts anchored at the focused field, opened
+ * by the extension's shortcut. Type to filter, arrow keys to choose, Enter to insert, Escape to
+ * close.
+ *
+ * It lives in a closed shadow root on a plain `<div>` with no qus.me id, class or attribute, so
+ * the page's scripts can neither find it by name nor reach into it, and its styles sit entirely
+ * inside the root. The host's own box is pinned with inline `!important` declarations, which
+ * outrank any page rule that matches a `<div>`. Every string is set with `textContent`. Key and
+ * input events stop at the shadow root, so a page's single-key shortcuts don't fire while the
+ * user types a filter. Only trusted events act. Closing removes the host and every listener the
+ * picker added; nothing stays behind.
+ */
+import type { PickerItem, PickerView } from '../protocol.ts';
+import { type EditableTarget, isTextControl } from './target.ts';
+
+export type PickerCloseReason = 'pick' | 'escape' | 'blur' | 'navigation' | 'replaced';
+
+export interface PickerCallbacks {
+  /** The user chose `d`. The picker has already been removed. */
+  onPick(d: string): void;
+  /** The picker closed without a pick. It has already been removed. */
+  onClose(reason: Exclude<PickerCloseReason, 'pick'>): void;
+  /** Asks the extension to open its popup; false when the browser refused. */
+  onOpenPopup(): Promise<boolean>;
+}
+
+export interface PickerHandle {
+  /** The element in the page's DOM; its shadow root is closed. */
+  readonly host: HTMLElement;
+  /** The closed shadow root, reachable only through this handle (for tests). */
+  readonly root: ShadowRoot;
+  close(reason: Exclude<PickerCloseReason, 'pick'>): void;
+}
+
+const WIDTH = 460;
+const GAP = 6;
+const MARGIN = 8;
+
+const HOST_STYLE = [
+  'all:initial',
+  'display:block',
+  'position:fixed',
+  'left:0',
+  'top:0',
+  'width:0',
+  'height:0',
+  'margin:0',
+  'padding:0',
+  'border:0',
+  'overflow:visible',
+  'z-index:2147483647',
+]
+  .map((d) => `${d} !important`)
+  .join(';');
+
+const STYLE = `
+:host { all: initial; }
+.p {
+  --bg: #ffffff; --fg: #111418; --muted: #3b424d; --line: #d5dae0; --edge: #858d99;
+  --sel: #eaf1fc; --foot: #f7f8fa; --accent: #1f5fd1; --kbd: #ffffff;
+  position: fixed; box-sizing: border-box; width: ${WIDTH}px; max-width: calc(100vw - ${2 * MARGIN}px);
+  max-height: min(420px, calc(100vh - ${2 * MARGIN}px)); display: flex; flex-direction: column;
+  overflow: hidden; background: var(--bg); color: var(--fg); border: 1px solid var(--edge);
+  border-radius: 12px; box-shadow: 0 16px 40px rgba(17, 20, 24, .25);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  text-align: left; direction: ltr; letter-spacing: normal; text-transform: none;
+}
+@media (prefers-color-scheme: dark) {
+  .p {
+    --bg: #1b1f24; --fg: #eef0f3; --muted: #b9c0ca; --line: #3b424d; --edge: #5c6370;
+    --sel: #1e3a66; --foot: #22272e; --accent: #7aa7f0; --kbd: #2b323c;
+  }
+}
+.p *, .p *::before, .p *::after { box-sizing: border-box; }
+.h { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.b { flex: none; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--fg); color: var(--bg);
+  font-size: 12px; font-weight: 700; display: flex; align-items: center; }
+.f { flex: 1; min-width: 0; min-height: 40px; border: 0; outline: none; background: transparent; color: inherit;
+  font: inherit; font-size: 16px; padding: 0 4px; margin: 0; }
+.c { flex: none; max-width: 45%; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.m { margin: 0; padding: 12px 14px 4px; color: var(--fg); }
+.l { list-style: none; margin: 0; padding: 6px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.g { padding: 8px 8px 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.o { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.o[aria-selected="true"] { background: var(--sel); }
+.t { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.o .s { font-size: 12px; color: var(--muted); }
+.a { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 14px 12px; }
+.btn { all: unset; box-sizing: border-box; min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--edge);
+  font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; color: var(--fg); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.k { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--line); background: var(--foot);
+  font-size: 12px; color: var(--muted); }
+kbd { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; border: 1px solid var(--edge);
+  border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--kbd); color: var(--fg); }
+[hidden] { display: none !important; }
+`;
+
+/** The caret's box in a contenteditable target, else the target's box. */
+function anchorRect(target: EditableTarget): DOMRect {
+  const doc = target.ownerDocument;
+  if (!isTextControl(target)) {
+    const selection = doc.defaultView?.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      if (target.contains(range.startContainer)) {
+        const rect = range.getBoundingClientRect?.();
+        if (rect && (rect.width > 0 || rect.height > 0)) return rect;
+      }
+    }
+  }
+  return target.getBoundingClientRect();
+}
+
+const matches = (item: PickerItem, words: string[]): boolean => {
+  const hay = `${item.text}\n${item.meta}`.toLocaleLowerCase();
+  return words.every((w) => hay.includes(w));
+};
+
+/** Mounts the picker on `doc` for `view`, at `anchor` or the top of the viewport. */
+export function mountPicker(
+  doc: Document,
+  view: PickerView,
+  anchor: EditableTarget | undefined,
+  callbacks: PickerCallbacks
+): PickerHandle {
+  const win = doc.defaultView as Window;
+  const el = <K extends keyof HTMLElementTagNameMap>(
+    tag: K,
+    cls?: string,
+    text?: string
+  ): HTMLElementTagNameMap[K] => {
+    const node = doc.createElement(tag);
+    if (cls !== undefined) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  const host = doc.createElement('div');
+  host.setAttribute('style', HOST_STYLE);
+  const root = host.attachShadow({ mode: 'closed' });
+  const style = el('style');
+  style.textContent = STYLE;
+
+  const panel = el('div', 'p');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'qus.me drafts');
+
+  const head = el('div', 'h');
+  const badge = el('span', 'b', 'qus.me');
+  const filter = el('input', 'f');
+  filter.type = 'text';
+  filter.autocomplete = 'off';
+  filter.spellcheck = false;
+  filter.placeholder = 'Type to filter drafts';
+  filter.setAttribute('aria-label', 'Filter drafts');
+  filter.setAttribute('role', 'combobox');
+  filter.setAttribute('aria-controls', 'l');
+  filter.setAttribute('aria-expanded', 'true');
+  const context = el('span', 'c');
+  head.append(badge, filter, context);
+
+  const message = el('p', 'm');
+  message.setAttribute('role', 'status');
+  const list = el('ul', 'l');
+  list.id = 'l';
+  list.setAttribute('role', 'listbox');
+  list.setAttribute('aria-label', 'Drafts');
+  const actions = el('div', 'a');
+  const toggle = el('button', 'btn');
+  toggle.type = 'button';
+  const openPopup = el('button', 'btn');
+  openPopup.type = 'button';
+  actions.append(toggle, openPopup);
+
+  const keys = el('div', 'k');
+  for (const [k, label] of [
+    ['Enter', 'insert'],
+    ['↑ ↓', 'choose'],
+    ['Esc', 'close'],
+  ] as const) {
+    const span = el('span');
+    span.append(el('kbd', undefined, k), doc.createTextNode(` ${label}`));
+    keys.append(span);
+  }
+
+  panel.append(head, message, list, actions, keys);
+  root.append(style, panel);
+
+  let showOthers = false;
+  let visible: PickerItem[] = [];
+  let selected = 0;
+  let closed = false;
+
+  const render = () => {
+    const words = filter.value.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    const here = view.here.filter((i) => matches(i, words));
+    const others = showOthers ? view.others.filter((i) => matches(i, words)) : [];
+    visible = [...here, ...others];
+    if (selected >= visible.length) selected = Math.max(0, visible.length - 1);
+
+    list.replaceChildren();
+    const option = (item: PickerItem, index: number) => {
+      const li = el('li', 'o');
+      li.id = `o${index}`;
+      li.setAttribute('role', 'option');
+      li.setAttribute('aria-selected', String(index === selected));
+      li.dataset.i = String(index);
+      li.append(el('span', 't', item.text), el('span', 's', item.meta));
+      return li;
+    };
+    here.forEach((item, i) => {
+      list.append(option(item, i));
+    });
+    if (others.length > 0) {
+      const label = el('li', 'g', 'Other sites');
+      label.setAttribute('role', 'presentation');
+      list.append(label);
+      others.forEach((item, i) => {
+        list.append(option(item, here.length + i));
+      });
+    }
+    list.hidden = visible.length === 0;
+    if (visible.length > 0) filter.setAttribute('aria-activedescendant', `o${selected}`);
+    else filter.removeAttribute('aria-activedescendant');
+    root.getElementById?.(`o${selected}`)?.scrollIntoView?.({ block: 'nearest' });
+
+    const total = view.here.length + (showOthers ? view.others.length : 0);
+    context.textContent =
+      words.length > 0
+        ? `${view.context ? `${view.context} · ` : ''}${visible.length} of ${total}`
+        : view.context;
+
+    let text = '';
+    if (view.state === 'locked') text = 'Your qus.me queue is locked.';
+    else if (view.state === 'setup') text = "qus.me isn't set up in this browser yet.";
+    else if (visible.length === 0 && words.length > 0) text = 'No drafts match.';
+    else if (view.here.length === 0 && !showOthers) text = 'No drafts for this page.';
+    message.textContent = text;
+    message.hidden = text === '';
+
+    toggle.hidden = view.state !== 'ready' || view.others.length === 0;
+    toggle.textContent = `${showOthers ? 'Hide' : 'Show'} drafts for other sites (${view.others.length})`;
+    toggle.setAttribute('aria-expanded', String(showOthers));
+    openPopup.hidden = !(view.state !== 'ready' || view.here.length === 0);
+    openPopup.textContent = view.state === 'locked' ? 'Open qus.me to unlock' : 'Open qus.me';
+    actions.hidden = toggle.hidden && openPopup.hidden;
+  };
+
+  const select = (index: number) => {
+    if (visible.length === 0) return;
+    selected = (index + visible.length) % visible.length;
+    render();
+  };
+
+  // Every listener the picker adds, so close() can take each one off again.
+  const added: [EventTarget, string, EventListener, boolean][] = [];
+  const listen = (target: EventTarget, type: string, fn: EventListener, capture = false) => {
+    target.addEventListener(type, fn, capture);
+    added.push([target, type, fn, capture]);
+  };
+
+  const remove = () => {
+    closed = true;
+    for (const [target, type, fn, capture] of added) target.removeEventListener(type, fn, capture);
+    added.length = 0;
+    host.remove();
+  };
+
+  const close = (reason: Exclude<PickerCloseReason, 'pick'>) => {
+    if (closed) return;
+    remove();
+    callbacks.onClose(reason);
+  };
+
+  function pick(index: number) {
+    const item = visible[index];
+    if (closed || item === undefined) return;
+    remove();
+    callbacks.onPick(item.d);
+  }
+
+  const position = () => {
+    if (closed) return;
+    const vw = win.innerWidth || doc.documentElement.clientWidth;
+    const vh = win.innerHeight || doc.documentElement.clientHeight;
+    const width = Math.min(WIDTH, vw - 2 * MARGIN);
+    const height = panel.offsetHeight || 0;
+    let left = (vw - width) / 2;
+    let top = MARGIN * 6;
+    if (anchor?.isConnected) {
+      const rect = anchorRect(anchor);
+      left = rect.left;
+      top = rect.bottom + GAP;
+      if (top + height > vh - MARGIN && rect.top - GAP - height >= MARGIN) {
+        top = rect.top - GAP - height;
+      }
+    }
+    left = Math.max(MARGIN, Math.min(left, vw - width - MARGIN));
+    top = Math.max(MARGIN, Math.min(top, vh - height - MARGIN));
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(top)}px`;
+  };
+
+  // Keys and text input stay inside: the page sees no keystroke typed into the filter.
+  const contain: EventListener = (event) => event.stopPropagation();
+  for (const type of [
+    'keydown',
+    'keyup',
+    'keypress',
+    'beforeinput',
+    'input',
+    'compositionstart',
+    'compositionupdate',
+    'compositionend',
+    'paste',
+    'copy',
+    'cut',
+  ]) {
+    listen(root, type, contain);
+  }
+
+  listen(root, 'keydown', (event) => {
+    const key = event as KeyboardEvent;
+    if (!key.isTrusted || closed) return;
+    const fromFilter = key.composedPath()[0] === filter;
+    if (key.key === 'Escape') {
+      key.preventDefault();
+      close('escape');
+    } else if (key.key === 'ArrowDown' && view.state === 'ready') {
+      key.preventDefault();
+      select(selected + 1);
+    } else if (key.key === 'ArrowUp' && view.state === 'ready') {
+      key.preventDefault();
+      select(selected - 1);
+    } else if (key.key === 'Enter' && fromFilter && !key.isComposing && view.state === 'ready') {
+      key.preventDefault();
+      pick(selected);
+    }
+  });
+  listen(list, 'click', (event) => {
+    if (!event.isTrusted) return;
+    const option = (event.target as Element | null)?.closest?.('[role="option"]');
+    const index = Number((option as HTMLElement | null | undefined)?.dataset.i);
+    if (Number.isInteger(index)) pick(index);
+  });
+  listen(filter, 'input', (event) => {
+    if (!event.isTrusted) return;
+    selected = 0;
+    render();
+  });
+  listen(toggle, 'click', (event) => {
+    if (!event.isTrusted) return;
+    showOthers = !showOthers;
+    if (!showOthers && selected >= view.here.length) selected = 0;
+    render();
+    position();
+    filter.focus();
+  });
+  listen(openPopup, 'click', (event) => {
+    if (!event.isTrusted) return;
+    void callbacks.onOpenPopup().then((opened) => {
+      if (!opened && !closed) {
+        message.textContent = 'Click the qus.me button in the browser toolbar.';
+        message.hidden = false;
+      }
+    });
+  });
+  // A click on the panel's chrome keeps focus in the filter, so it doesn't count as leaving.
+  listen(panel, 'mousedown', (event) => {
+    const target = event.composedPath()[0];
+    if (target !== filter) event.preventDefault();
+  });
+  listen(root, 'focusout', (event) => {
+    const next = (event as FocusEvent).relatedTarget as Node | null;
+    if (next !== null && root.contains(next)) return;
+    close('blur');
+  });
+  listen(win, 'blur', () => close('blur'));
+  for (const type of ['pagehide', 'popstate', 'hashchange']) {
+    listen(win, type, () => close('navigation'));
+  }
+  listen(win, 'resize', position);
+  listen(doc, 'scroll', position, true);
+
+  render();
+  doc.documentElement.append(host);
+  position();
+  if (view.state === 'ready') filter.focus();
+  else {
+    filter.hidden = true;
+    openPopup.focus();
+  }
+
+  return { host, root, close };
+}

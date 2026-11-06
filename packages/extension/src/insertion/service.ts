@@ -7,7 +7,7 @@
  */
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 import { INJECTION_STRATEGIES, type InjectionStrategy, type Insertion } from '@qusme/nostr';
-import { readDraftCache } from '../sync/state.ts';
+import { type CachedDraft, readDraftCache } from '../sync/state.ts';
 import {
   disarm,
   type InsertionState,
@@ -112,15 +112,19 @@ export class InsertionService {
     return this.deps.now?.() ?? Math.floor(Date.now() / 1000);
   }
 
-  /** Inserts the armed draft into the tab (step 5). */
+  /**
+   * Inserts the armed draft into the tab (step 5), or `draft` when given: the picker inserts the
+   * draft the user chose there without arming it, so a failure leaves the armed draft as it was.
+   */
   async insert(input: {
     tabId: number;
     frameId?: number;
     method: InsertMethod;
+    draft?: Pick<CachedDraft, 'd' | 'site' | 'account' | 'field' | 'destination' | 'content'>;
   }): Promise<InsertResponse> {
     const { store } = this.deps;
     if ((await store.status()).state !== 'unlocked') return { state: 'locked' };
-    const armed = await readArmed(store.session);
+    const armed = input.draft ?? (await readArmed(store.session));
     if (armed === undefined) return { state: 'not_armed' };
     const destinations = (await readDraftCache(store.session))?.destinations ?? [];
     const { definition, field } = definitionForDraft(this.deps.definitions, armed, destinations);
@@ -214,7 +218,8 @@ export class InsertionService {
       accessibleName: outcome.accessibleName.slice(0, MAX_NAME),
       detectedAccount: outcome.detectedAccount.slice(0, MAX_NAME),
     };
-    // The draft is in the page now: disarm first, so a second click cannot insert it twice.
+    // The draft is in the page now: disarm first, so a second click cannot insert it twice. Only
+    // this draft: one inserted from the picker leaves another armed draft armed.
     await disarm(this.deps.store.session, d);
     const result = await recordInsertion(this.deps, d, insertion);
     if (result.state === 'recorded')

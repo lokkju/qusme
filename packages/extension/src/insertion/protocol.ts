@@ -6,7 +6,11 @@
 import type { InjectionStrategy, Locator, SiteAccount } from '@qusme/nostr';
 
 /** How the user asked for the insertion; recorded as the `inserted` tag's method (7.1). */
-export const INSERT_METHODS = ['extension_popup', 'extension_context_menu'] as const;
+export const INSERT_METHODS = [
+  'extension_popup',
+  'extension_context_menu',
+  'extension_shortcut',
+] as const;
 export type InsertMethod = (typeof INSERT_METHODS)[number];
 
 /** How the target was found (10.2): the focused element, a field locator, or the user's click. */
@@ -99,6 +103,8 @@ export interface PageAccountResult {
 export interface PageApi {
   detectAccount(account: SiteAccount): PageAccountResult;
   insert(request: PageInsertRequest): Promise<PageOutcome>;
+  /** Opens the keyboard picker at the focused (or last-focused) field, replacing any open one. */
+  openPicker(view: PickerView): PickerOpened;
 }
 
 /** The isolated-world global the page script installs {@link PageApi} on. */
@@ -106,3 +112,48 @@ export const PAGE_API_GLOBAL = '__qusmeInsertion';
 
 /** The bundled insertion script, as `scripting.executeScript` names it. */
 export const PAGE_SCRIPT_FILE = '/qusme-page.js';
+
+/**
+ * One draft in the keyboard picker. The picker renders it inside a closed shadow root in the
+ * extension's isolated world, so the page's scripts can't read it; the full value still crosses
+ * only for the draft the user inserts, in {@link PageInsertRequest}.
+ */
+export interface PickerItem {
+  d: string;
+  /** The draft's text, cut to {@link PICKER_TEXT_CHARS} code points, for display and filtering. */
+  text: string;
+  /** Site name, account and field, for the row's second line. */
+  meta: string;
+}
+
+/** How much of each draft the picker shows. */
+export const PICKER_TEXT_CHARS = 280;
+
+export interface PickerView {
+  /** Names this picker in the pick message, so a stale picker can't insert. */
+  token: string;
+  /** `ready`: drafts listed. `locked`: the queue is locked. `setup`: no queue on this device. */
+  state: 'ready' | 'locked' | 'setup';
+  /** Drafts whose destination matches the page, after the account filter. */
+  here: PickerItem[];
+  /** Every other active draft, behind a toggle. */
+  others: PickerItem[];
+  /** The detected accounts, as "X as @lokkju". */
+  context: string;
+}
+
+export interface PickerOpened {
+  /** Whether the picker anchored at an editable field (else at the top of the viewport). */
+  anchored: boolean;
+}
+
+/** The page script's picker asks the background to insert the chosen draft. */
+export const PICKER_PICK_MESSAGE = 'qusme.picker.pick';
+export interface PickerPickMessage {
+  type: typeof PICKER_PICK_MESSAGE;
+  token: string;
+  d: string;
+}
+
+/** The page script's picker asks the background to open the popup (to unlock, say). */
+export const PICKER_POPUP_MESSAGE = 'qusme.picker.popup';
