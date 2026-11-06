@@ -37,7 +37,11 @@ export default {
       db: openD1(env.DB),
       agentKeys: agentKeyRingFromEnv({ ...env }),
       publicOrigin: env.QUSME_PUBLIC_ORIGIN,
-      mcp: { registry },
+      mcp: {
+        registry,
+        // Pubkeys only (spec 8.4): a tool went ahead on the grant without the submitters list.
+        notice: (n) => console.warn(`${n.event} agent=${n.agentPubkey} queue=${n.queuePubkey}`),
+      },
     });
     return app.fetch(request, env, ctx);
   },
