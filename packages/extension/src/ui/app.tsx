@@ -1,11 +1,13 @@
 import { npubEncode } from 'nostr-tools/nip19';
 import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
+import { definitionSource } from '../insertion/definitions.ts';
 import { type KeyStatus, type PendingImport, WrongPassphrase } from '../keyStore.ts';
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
 import { AgentsScreen, ApproveAgentScreen } from './agents.tsx';
 import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
 import { CreateScreen } from './create.tsx';
+import { DestinationsScreen } from './destinations.tsx';
 import { Drafts } from './drafts.tsx';
 import { type InsertionUiDeps, InsertPanel } from './insert.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
@@ -18,7 +20,8 @@ export type Route =
   | 'recover'
   | 'pair-source'
   | 'approve-agent'
-  | 'agents';
+  | 'agents'
+  | 'destinations';
 
 /** A message for the user from anything a flow threw. */
 export function messageOf(error: unknown): string {
@@ -74,6 +77,15 @@ export function App(props: {
     );
   } else if (route === 'agents' && status.state === 'unlocked') {
     body = <AgentsScreen deps={deps} onBack={home} />;
+  } else if (route === 'destinations' && status.state === 'unlocked') {
+    body = (
+      <DestinationsScreen
+        deps={deps}
+        definitions={props.insertion?.definitions ?? definitionSource()}
+        detect={props.insertion}
+        onBack={home}
+      />
+    );
   } else if (status.state === 'empty') {
     body = <Welcome onRoute={setRoute} />;
   } else if (status.state === 'locked') {
@@ -93,14 +105,18 @@ export function App(props: {
   return (
     <div class="min-w-[22rem] max-w-md bg-paper p-4 text-ink">
       {body}
-      {props.openInTab && route !== 'home' && route !== 'approve-agent' && route !== 'agents' && (
-        <p class="mt-4 text-xs">
-          <button type="button" class="underline" onClick={props.openInTab}>
-            Open in a tab
-          </button>{' '}
-          so this stays open while you use your other device.
-        </p>
-      )}
+      {props.openInTab &&
+        route !== 'home' &&
+        route !== 'approve-agent' &&
+        route !== 'agents' &&
+        route !== 'destinations' && (
+          <p class="mt-4 text-xs">
+            <button type="button" class="underline" onClick={props.openInTab}>
+              Open in a tab
+            </button>{' '}
+            so this stays open while you use your other device.
+          </p>
+        )}
     </div>
   );
 }
@@ -179,10 +195,13 @@ function Unlocked(props: {
   return (
     <Screen title="qus.me">
       <p class="mt-2 break-all font-mono text-xs">{npubEncode(status.pubkey)}</p>
-      {props.insertion && <InsertPanel store={deps.store} deps={props.insertion} />}
+      {props.insertion && <InsertPanel store={deps.store} deps={props.insertion} setup={deps} />}
       <Drafts deps={deps} />
       <div class="mt-4 flex flex-col gap-2">
         <Button onClick={() => props.onRoute('approve-agent')}>Approve an agent</Button>
+        <Button variant="plain" onClick={() => props.onRoute('destinations')}>
+          Destinations
+        </Button>
         <Button variant="plain" onClick={() => props.onRoute('agents')}>
           Agents and pending destinations
         </Button>

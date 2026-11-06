@@ -72,6 +72,11 @@ export {
   parseDeletionRequest,
 } from './deletion.ts';
 export {
+  type CheckedOverride,
+  checkDestinationOverride,
+  parseDestinationOverride,
+} from './destinationOverride.ts';
+export {
   buildDraftDeletion,
   buildDraftWrap,
   type DeletedDraftWrap,
