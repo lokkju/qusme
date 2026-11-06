@@ -3,7 +3,12 @@
  * edit and remove. Labels, accounts, site names and overrides come from relays, the registry and
  * agents, so every one is a JSX text child (or an input's value), which Preact sets as text.
  */
-import { type Destination, type JsonObject, parseDestinationOverride } from '@qusme/nostr';
+import {
+  type Destination,
+  displayAccount,
+  type JsonObject,
+  parseDestinationOverride,
+} from '@qusme/nostr';
 import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import {
@@ -467,7 +472,7 @@ export function DestinationsScreen(props: {
         mode: 'add',
         values:
           detection.state === 'detected'
-            ? { ...values, account: detection.account.replace(/^@/, '') }
+            ? { ...values, account: displayAccount(detection.account) }
             : values,
         ...(note !== undefined && { detectNote: note }),
       });
@@ -568,7 +573,7 @@ export function DestinationsScreen(props: {
             onAskRemove={(d) => setConfirmingId(d?.id)}
             onRemove={(d) =>
               void run('Removing…', async () => {
-                const { dismissed } = await removeDestination(d.id, deps);
+                const { dismissed } = await removeDestination(d.id, deps, definitions);
                 return `Removed ${d.label} and dismissed ${dismissed} draft${dismissed === 1 ? '' : 's'}.`;
               })
             }

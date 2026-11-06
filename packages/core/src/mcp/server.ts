@@ -19,6 +19,7 @@ import {
   type AgentGrant,
   buildSubmission,
   createLocalSigner,
+  displayAccount,
   type FieldValidation,
   type GrantDestination,
   type JsonObject,
@@ -26,6 +27,7 @@ import {
   quotaPeriodStart,
   type SiteDefinition,
   type SiteField,
+  sameAccount,
   validateFieldValue,
   validationTagJson,
 } from '@qusme/nostr';
@@ -154,8 +156,18 @@ function definitionSummary(definition: SiteDefinition) {
   };
 }
 
-function findDestination(grant: AgentGrant, site: string, account: string) {
-  return grant.destinations.find((d) => d.site === site && d.account === account);
+/**
+ * The grant's destination for a site and account, accounts compared as devices compare them
+ * (`normalizeAccount`: no leading `@`, no surrounding whitespace, case-folded unless the effective
+ * definition says the site's accounts are case-sensitive).
+ */
+function findDestination(registry: Registry, grant: AgentGrant, site: string, account: string) {
+  return grant.destinations.find((d) => {
+    if (d.site !== site) return false;
+    const effective = effectiveDefinition(registry, d.site, d.override);
+    const rules = effective.kind === 'definition' ? effective.definition : undefined;
+    return sameAccount(site, d.account, account, rules);
+  });
 }
 
 /** Receipts page from the newest; the cursor is the last receipt's `created_at` and id. */
@@ -253,7 +265,7 @@ export function createMcp(options: McpOptions) {
     account: string,
     field?: string
   ): GrantDestination | undefined {
-    const destination = findDestination(grant, site, account);
+    const destination = findDestination(registry, grant, site, account);
     if (destination === undefined) {
       if (grant.allow_new_destinations) return undefined;
       throw new ToolError('destination_not_granted', 'this destination is not in the agent grant', {
@@ -349,7 +361,8 @@ export function createMcp(options: McpOptions) {
           grant.inbox_pubkey,
           {
             site: args.site,
-            account: args.account,
+            // The grant's spelling when it names the destination, so the draft matches it.
+            account: destination?.account ?? displayAccount(args.account),
             field: args.field,
             content: args.value,
             validation: validationTagJson(validation),
@@ -519,7 +532,7 @@ export function createMcp(options: McpOptions) {
           }
           return {
             site,
-            account,
+            account: destination?.account ?? displayAccount(account),
             granted: destination !== undefined,
             definition: effective.kind === 'definition' ? { ...effective.definition } : null,
           };

@@ -5,6 +5,12 @@
 
 export type { EventTemplate, NostrEvent, UnsignedEvent } from 'nostr-tools/core';
 export {
+  type AccountRules,
+  displayAccount,
+  normalizeAccount,
+  sameAccount,
+} from './account.ts';
+export {
   type AgentGrant,
   type AgentGrantEvent,
   type AgentGrantInput,

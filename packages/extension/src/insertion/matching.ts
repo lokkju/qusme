@@ -2,7 +2,7 @@
  * Which drafts belong on the current page (spec 11.5 step 3) and where the context menu appears
  * (`documentUrlPatterns`, step 5). Both come from the effective definitions' `match` patterns.
  */
-import type { Destination, SiteAccount } from '@qusme/nostr';
+import { type Destination, type SiteAccount, sameAccount } from '@qusme/nostr';
 import type { CachedDraft } from '../sync/state.ts';
 import {
   definitionForDraft,
@@ -47,10 +47,6 @@ export function matchesPattern(pattern: string, url: string): boolean {
   const glob = new RegExp(`^${path.split('*').map(escapeRegExp).join('.*')}$`);
   return glob.test(parsed.pathname + parsed.search);
 }
-
-/** Accounts compare without a leading `@` and case-blind, as handles are on the sites we know. */
-export const sameAccount = (a: string, b: string): boolean =>
-  a.replace(/^@/, '').toLowerCase() === b.replace(/^@/, '').toLowerCase();
 
 export interface PageDraft {
   draft: CachedDraft;
@@ -118,7 +114,7 @@ export function draftsForPage(input: {
       continue;
     }
     const detected = input.detected[draft.site];
-    if (detected !== undefined && !sameAccount(detected, draft.account)) {
+    if (detected !== undefined && !sameAccount(draft.site, detected, draft.account, definition)) {
       result.otherAccounts++;
       continue;
     }

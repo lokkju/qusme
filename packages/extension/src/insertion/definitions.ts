@@ -13,6 +13,7 @@ import {
   parseSiteDefinition,
   type SiteDefinition,
   type SiteField,
+  sameAccount,
 } from '@qusme/nostr';
 import type { CachedDraft } from '../sync/state.ts';
 import { BUNDLED_REGISTRY } from './registry.ts';
@@ -61,16 +62,29 @@ export function effectiveDefinition(
   return parsed.ok ? parsed.value : undefined;
 }
 
-/** The draft's destination: by id when it names one, else by site and account. */
+/**
+ * The draft's destination: by id when it names one, else by site and account, accounts compared
+ * by `normalizeAccount` under each destination's effective definition when `source` is given.
+ */
 export function destinationOf(
   draft: Pick<CachedDraft, 'destination' | 'site' | 'account'>,
-  destinations: readonly Destination[]
+  destinations: readonly Destination[],
+  source?: SiteDefinitionSource
 ): Destination | undefined {
   if (draft.destination !== undefined) {
     const byId = destinations.find((d) => d.id === draft.destination);
     if (byId !== undefined) return byId;
   }
-  return destinations.find((d) => d.site === draft.site && d.account === draft.account);
+  return destinations.find(
+    (d) =>
+      d.site === draft.site &&
+      sameAccount(
+        d.site,
+        d.account,
+        draft.account,
+        source && effectiveDefinition(source, d.site, d.override)
+      )
+  );
 }
 
 /** The effective definition for a draft's destination, and the draft's field in it. */
@@ -79,7 +93,7 @@ export function definitionForDraft(
   draft: Pick<CachedDraft, 'destination' | 'site' | 'account' | 'field'>,
   destinations: readonly Destination[]
 ): { definition?: SiteDefinition; field?: SiteField } {
-  const destination = destinationOf(draft, destinations);
+  const destination = destinationOf(draft, destinations, source);
   const definition = effectiveDefinition(source, draft.site, destination?.override);
   if (definition === undefined) return {};
   const field = definition.fields.find((f) => f.name === draft.field);
