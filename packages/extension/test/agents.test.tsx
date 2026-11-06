@@ -42,6 +42,7 @@ import {
   defaultChoices,
   denyAgent,
   grantFor,
+  sharesNothing,
 } from '../src/agents/approve.ts';
 import { parseApprovalCode } from '../src/agents/code.ts';
 import { confirmPendingDestination, rejectPendingDestination } from '../src/agents/destinations.ts';
@@ -53,7 +54,14 @@ import { loadAgents } from '../src/agents/view.ts';
 import { KeyStore, LOCAL_QUEUE, type QueueRecord, SESSION_UNLOCKED } from '../src/keyStore.ts';
 import { MemoryStorageArea } from '../src/storage.ts';
 import { syncOnce } from '../src/sync/engine.ts';
-import { AgentsList, GrantForm, RequestSummary, revokeMessage } from '../src/ui/agents.tsx';
+import {
+  AgentsList,
+  ApprovalDone,
+  ApprovalReview,
+  GrantForm,
+  RequestSummary,
+  revokeMessage,
+} from '../src/ui/agents.tsx';
 import { INBOX, network, ORIGIN, STORAGE } from './helpers.ts';
 
 const CLIENT_ID = 'https://client.example/oauth/client-metadata.json';
@@ -929,8 +937,80 @@ describe('agent screens', () => {
     expect(html).not.toContain('<img');
     expect(html).toContain('&lt;img src=x onerror=alert(1)>Claude Desktop');
     expect(html).toContain('&lt;b>meta&lt;/b>');
-    expect(html).toMatch(/text-lg[^>]*>evil\.example</);
+    expect(html).toMatch(/text-2xl[^>]*>evil\.example</);
+    expect(html).toContain('Only approve if you just connected an agent from evil.example.');
     expect(html).toContain('The name is whatever the client says it is');
+    // Client ID, scope and agent key sit under Details.
+    expect(html.indexOf('<summary')).toBeLessThan(html.indexOf('Client ID<'));
+  });
+
+  it('ticks every confirmed destination by default', () => {
+    const pending = { ...X_ALT, id: 'p'.repeat(32), status: 'pending' as const };
+    const choices = defaultChoices(request, [X_LOKKJU, X_ALT, pending]);
+    expect(choices.destinations).toEqual([
+      { id: X_LOKKJU.id, fields: ['text'] },
+      { id: X_ALT.id, fields: ['text'] },
+    ]);
+    expect(choices.allowNewDestinations).toBe(false);
+    const html = renderToString(
+      <GrantForm destinations={[X_LOKKJU, X_ALT]} choices={choices} onChange={() => {}} />
+    );
+    expect(html.match(/type="checkbox"[^>]*checked/g)).toHaveLength(2);
+  });
+
+  const review = (choices: ApprovalChoices, destinations = [X_LOKKJU]) =>
+    renderToString(
+      <ApprovalReview
+        request={request}
+        destinations={destinations}
+        choices={choices}
+        busy={undefined}
+        error={undefined}
+        onChange={() => {}}
+        onApprove={() => {}}
+        onDeny={() => {}}
+        onBack={() => {}}
+      />
+    );
+
+  it('warns above Approve when nothing is shared and new destinations are off', () => {
+    const none = { ...defaultChoices(request), label: '<i>Bot</i>' };
+    const html = review(none);
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("This agent won't be able to draft anything");
+    expect(html).toContain('Nothing is shared with &lt;i>Bot&lt;/i>');
+    expect(html).toContain('>Approve anyway<');
+    expect(sharesNothing(none)).toBe(true);
+  });
+
+  it('does not warn when a destination is shared or new ones are allowed', () => {
+    for (const choices of [
+      defaultChoices(request, [X_LOKKJU]),
+      { ...defaultChoices(request), allowNewDestinations: true },
+    ]) {
+      const html = review(choices);
+      expect(html).not.toContain("won't be able to draft anything");
+      expect(html).toContain('>Approve<');
+      expect(sharesNothing(choices)).toBe(false);
+    }
+  });
+
+  it('lists the finished steps and what was shared when done', () => {
+    const html = renderToString(
+      <ApprovalDone name="<b>Claude</b>" shared={['X / lokkju', 'X / alt']} onDone={() => {}} />
+    );
+    expect(html).not.toContain('<b>Claude');
+    expect(html).toContain('&lt;b>Claude&lt;/b> is connected');
+    const steps = [
+      'Saved to your queue',
+      'qus.me confirmed the approval',
+      '&lt;b>Claude&lt;/b> finishes signing in on its own',
+    ];
+    const at = steps.map((step) => html.indexOf(step));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(html).toContain('Shared: X / lokkju, X / alt.');
+    expect(html).toContain('>Back to drafts<');
   });
 
   it('offers new destinations off by default, with the explanation', () => {

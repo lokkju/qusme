@@ -62,15 +62,29 @@ export interface ApprovalChoices {
   expiresAt: number | null;
 }
 
-export function defaultChoices(request: AuthorizationRequest): ApprovalChoices {
+/**
+ * Where the approval screen starts: every confirmed destination shared with the default field
+ * (operator decision 2026-11-06; UX audit 4.8), new destinations off.
+ */
+export function defaultChoices(
+  request: AuthorizationRequest,
+  destinations: readonly Destination[] = []
+): ApprovalChoices {
   return {
     label: request.clientName,
-    destinations: [],
+    destinations: destinations
+      .filter((d) => d.status === 'confirmed')
+      .map((d) => ({ id: d.id, fields: [...DEFAULT_FIELDS] })),
     allowNewDestinations: false,
     quota: { ...DEFAULT_QUOTA },
     submissionExpirationDays: DEFAULT_SUBMISSION_EXPIRATION_DAYS,
     expiresAt: null,
   };
+}
+
+/** True when the choices share no destination and refuse new ones: the agent can draft nothing. */
+export function sharesNothing(choices: ApprovalChoices): boolean {
+  return choices.destinations.length === 0 && !choices.allowNewDestinations;
 }
 
 /**
