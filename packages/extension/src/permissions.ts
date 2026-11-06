@@ -10,6 +10,7 @@ export const SERVICE_ORIGIN = 'https://app.qus.me';
 
 /**
  * The one optional host permission (spec 11.2): the service origin, requested at the moment a
- * typed pairing code is used, never at install. Relay websockets need no host permission.
+ * typed pairing code or an approval code is used, an agent is approved or revoked, never at
+ * install. Relay websockets need no host permission.
  */
 export const OPTIONAL_HOST_PERMISSIONS = [`${SERVICE_ORIGIN}/*`] as const;

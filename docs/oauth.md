@@ -55,7 +55,9 @@ A denial destroys the agent key and the page redirects with `error=access_denied
 
 **The authorize page.** Read-only, under `default-src 'none'` with a nonce for its one script and style, `form-action 'none'`, `frame-ancestors 'none'`, `Referrer-Policy: no-referrer` (its URL carries the pending authorization's id) and `Cache-Control: no-store`. With scripts off it asks the person to reload after approving.
 
-**Revocation from a device.** `DELETE /device/bindings/:agentPubkey` revokes the binding and every token, and revokes the agent key, which discards its ciphertext but keeps its submission receipts. Removing the agent from the submitters list is the device's job (spec 8.2, "Revocation").
+**Revocation from a device.** `DELETE /device/bindings/:agentPubkey` revokes the binding and every token, and revokes the agent key, which discards its ciphertext but keeps its submission receipts. Removing the agent from the submitters list is the device's job (spec 8.2, "Revocation"); the device calls this endpoint after it, keeps the revocation pending until the service answers 200 or 404, and retries on each sync (spec 11.8). A 404 counts as done: the binding is already gone.
+
+**Between the list and the DELETE.** The agent's tokens stay valid until the `DELETE` arrives, but the MCP tools re-read the queue's submitters list on each call, cached for 30 seconds alongside the grant, and answer `grant_revoked` once the list no longer names the agent (spec 8.4). So a device that cannot reach the service still stops the agent at the service within the cache time, even on relays that ignore the grant's deletion. If no storage relay returns a list, the tools decide on the grant alone and the entrypoints log `submitters_list_unavailable` with the agent and queue pubkeys.
 
 **An approval nobody collects.** If the device approves but the browser never polls again, the code is never issued and the agent key stays, bound but with no token that could use it, until a device revokes it. The sweep keeps approved authorizations' keys, as the store was designed to.
 
