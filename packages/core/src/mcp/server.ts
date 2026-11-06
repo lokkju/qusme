@@ -38,6 +38,14 @@ import { generateSecretKey } from 'nostr-tools/pure';
 import { z } from 'zod';
 import type { AgentKeyRing } from '../agentKeyRing.ts';
 import { type AgentKeyCustody, createAgentKeyCustody } from '../agentKeys.ts';
+import {
+  BODY_LIMITS,
+  createServiceLimits,
+  type ServiceLimits,
+  type TierLimits,
+  tooManyRequests,
+  utcDay,
+} from '../limits.ts';
 import { checkStorageRelays, type RelayReader } from '../oauth/relayReader.ts';
 import type { McpAuthEnv } from '../oauth/server.ts';
 import {
@@ -62,7 +70,9 @@ export const DEFAULT_MAX_POW = 24;
 /** Seconds a grant read from the relays is reused by default. */
 export const DEFAULT_GRANT_CACHE_SECONDS = 30;
 /** Largest request body: a 32 KiB value, JSON-escaped, with room for the envelope. */
-const MAX_REQUEST_BYTES = 256 * 1024;
+const MAX_REQUEST_BYTES = BODY_LIMITS.mcp;
+/** The usage counter scope of the service-wide daily create_draft ceiling. */
+export const DRAFT_CEILING_SCOPE = 'create_draft';
 /** Most receipts `list_submissions` returns per page. */
 export const MAX_SUBMISSIONS_PAGE = 100;
 
@@ -93,6 +103,8 @@ export interface McpOptions extends McpOverrides {
   agentKeys: AgentKeyRing;
   relayReader: RelayReader;
   version: string;
+  /** Rate limits, caps and tiers (spec 8.5, "Limits"); in-memory defaults when left out. */
+  limits?: ServiceLimits;
 }
 
 /** Something an operator may want to see; carries no key material and no submitted value. */
@@ -115,6 +127,7 @@ export type McpToolErrorCode =
   | 'invalid_definition'
   | 'constraint_violation'
   | 'quota_exhausted'
+  | 'rate_limited'
   | 'publish_failed'
   | 'invalid_cursor'
   | 'internal_error';
@@ -151,9 +164,24 @@ function failed(error: ToolError): ToolResult {
   };
 }
 
-/** Runs a tool body, turning a ToolError into its result and anything else into a bare one. */
-async function run(body: () => Promise<Record<string, unknown>>): Promise<ToolResult> {
+/**
+ * Runs a tool body, turning a ToolError into its result and anything else into a bare one. A
+ * request over its rate limit runs no tool at all and gets `rate_limited`.
+ */
+async function run(
+  session: Session,
+  body: () => Promise<Record<string, unknown>>
+): Promise<ToolResult> {
   try {
+    if (session.rateLimited !== undefined) {
+      const seconds = session.rateLimited;
+      throw new ToolError(
+        'rate_limited',
+        `Too many requests from this agent or its queue. Nothing was done. Wait ${seconds} ` +
+          'seconds, then retry the same call.',
+        { retry_after: seconds }
+      );
+    }
     return ok(await body());
   } catch (error) {
     // Unexpected errors carry no message: it could hold relay text or, worse, part of the value.
@@ -224,6 +252,24 @@ const receiptSchema = z.object({
 interface Session {
   agent: McpAuthEnv['Variables']['agent'];
   now: number;
+  /** The limits of the agent's queue's tier. */
+  tier: TierLimits;
+  /** Seconds to wait when this request is over a rate limit; tools then refuse. */
+  rateLimited?: number;
+}
+
+/** True when a JSON-RPC body (one message or a batch) calls a tool. */
+function callsTool(text: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    const messages = Array.isArray(parsed) ? parsed : [parsed];
+    return messages.some(
+      (m) =>
+        typeof m === 'object' && m !== null && (m as { method?: unknown }).method === 'tools/call'
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function createMcp(options: McpOptions) {
@@ -239,6 +285,7 @@ export function createMcp(options: McpOptions) {
   const submitters: SubmittersCache = createSubmittersCache(cacheOptions);
   const maxPow = options.maxPow ?? DEFAULT_MAX_POW;
   const clock = options.now ?? (() => Math.floor(Date.now() / 1000));
+  const limits = options.limits ?? createServiceLimits({ now: clock });
 
   /**
    * The current grant or a ToolError; read as the agent key (7.4). The submitters list is read
@@ -391,14 +438,58 @@ export function createMcp(options: McpOptions) {
     }
     const quota = await quotaUsage(session, grant);
     if (quota.used >= quota.max_submissions) {
-      throw new ToolError('quota_exhausted', 'the grant quota for this period is used up', quota);
+      const retryAfter = Math.max(1, quota.resets_at - session.now);
+      throw new ToolError(
+        'quota_exhausted',
+        `The user's grant allows ${quota.max_submissions} drafts per ${quota.period} and they ` +
+          `are used up. Nothing was submitted. Retry after ${retryAfter} seconds.`,
+        { ...quota, scope: 'grant', retry_after: retryAfter }
+      );
     }
 
     const { now } = session;
+    // The queue's own daily cap (its tier), counted from receipts, then the service-wide ceiling,
+    // reserved exactly before publishing and given back if nothing is published.
+    const day = utcDay(now);
+    const queueUsed = await store.submissionReceipts.countByQueueSince(
+      session.agent.queuePubkey,
+      day.start
+    );
+    if (queueUsed >= session.tier.draftsPerDay) {
+      throw new ToolError(
+        'quota_exhausted',
+        `This qus.me queue has reached its limit of ${session.tier.draftsPerDay} drafts per day. ` +
+          `Nothing was submitted. Retry after ${day.retryAfter} seconds (00:00 UTC).`,
+        {
+          scope: 'queue',
+          max_submissions: session.tier.draftsPerDay,
+          period: 'day',
+          used: queueUsed,
+          resets_at: day.end,
+          retry_after: day.retryAfter,
+        }
+      );
+    }
+    const reserved = await store.usageCounters.reserve(
+      DRAFT_CEILING_SCOPE,
+      day.start,
+      limits.config.draftsPerDayCeiling,
+      day.end + DAY
+    );
+    if (reserved === undefined) {
+      throw new ToolError(
+        'quota_exhausted',
+        'The qus.me service has reached its limit of drafts for today across all users. ' +
+          `Nothing was submitted. Retry after ${day.retryAfter} seconds (00:00 UTC).`,
+        { scope: 'service', period: 'day', resets_at: day.end, retry_after: day.retryAfter }
+      );
+    }
+    const release = () =>
+      store.usageCounters.release(DRAFT_CEILING_SCOPE, day.start).catch(() => undefined);
+
     const expiration = now + grant.submission_expiration_days * DAY;
-    const { wrapId, results } = await custody.withAgentKey(
-      session.agent.agentKeyId,
-      async (agentSigner) => {
+    const publishWrap = () =>
+      custody.withAgentKey(session.agent.agentKeyId, async (agentSigner) => {
         const wrap = await buildSubmission(
           agentSigner,
           grant.inbox_pubkey,
@@ -425,10 +516,18 @@ export function createMcp(options: McpOptions) {
         } finally {
           connectionKey.fill(0);
         }
-      }
-    );
+      });
+    let published: Awaited<ReturnType<typeof publishWrap>>;
+    try {
+      published = await publishWrap();
+    } catch (error) {
+      await release();
+      throw error;
+    }
+    const { wrapId, results } = published;
     const accepted = results.filter((r) => r.ok).map((r) => r.relay);
     if (accepted.length === 0) {
+      await release();
       throw new ToolError('publish_failed', 'no inbox relay accepted the submission', {
         relays: results.map((r) => ({ relay: r.relay, message: r.message })),
       });
@@ -483,7 +582,7 @@ export function createMcp(options: McpOptions) {
         }),
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
-      () => run(async () => ({ sites: registry.definitions.map(definitionSummary) }))
+      () => run(session, async () => ({ sites: registry.definitions.map(definitionSummary) }))
     );
 
     server.registerTool(
@@ -516,7 +615,7 @@ export function createMcp(options: McpOptions) {
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       () =>
-        run(async () => {
+        run(session, async () => {
           const { grant } = await currentGrant(session);
           const destinations = grant.destinations.map((d) => {
             const effective = effectiveDefinition(registry, d.site, d.override);
@@ -559,7 +658,7 @@ export function createMcp(options: McpOptions) {
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ site, account }) =>
-        run(async () => {
+        run(session, async () => {
           const { grant } = await currentGrant(session);
           const destination = resolveDestination(grant, site, account);
           const effective = effectiveDefinition(registry, site, destination?.override);
@@ -610,7 +709,7 @@ export function createMcp(options: McpOptions) {
           openWorldHint: true,
         },
       },
-      (args) => run(() => createDraft(session, args))
+      (args) => run(session, () => createDraft(session, args))
     );
 
     server.registerTool(
@@ -631,7 +730,7 @@ export function createMcp(options: McpOptions) {
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ limit, cursor }) =>
-        run(async () => {
+        run(session, async () => {
           await currentGrant(session);
           const pageSize = limit ?? 50;
           const page = cursor === undefined ? {} : decodeCursor(cursor);
@@ -664,15 +763,50 @@ export function createMcp(options: McpOptions) {
 
   /** The `/mcp` handler; mount it after `requireBearer()`. */
   async function handle(c: Context<McpAuthEnv>): Promise<Response> {
-    const session: Session = { agent: c.var.agent, now: clock() };
+    const agent = c.var.agent;
+    const tier = await limits.tierFor(agent.queuePubkey);
+    // The body is already capped by the app's size limit; read it once to see whether it calls a
+    // tool, and hand the SDK a copy.
+    const raw = c.req.raw;
+    const hasBody = raw.method !== 'GET' && raw.method !== 'HEAD';
+    const text = hasBody ? await raw.text() : '';
+    const rate =
+      (await limitedFor(limits, tier.mcpAgentRate, agent.agentPubkey)) ??
+      (await limitedFor(limits, tier.mcpQueueRate, agent.queuePubkey));
+    // Over the limit: a tool call gets a tool error the agent can read and act on; anything else
+    // (initialize, tools/list) gets a plain 429.
+    if (rate !== undefined && !callsTool(text)) {
+      return tooManyRequests(
+        c,
+        rate,
+        `too many requests from this agent or its queue; retry after ${rate} seconds`
+      );
+    }
+    const session: Session = { agent, now: clock(), tier };
+    if (rate !== undefined) session.rateLimited = rate;
     // 'auto' answers with one JSON body, since no tool emits anything before its result.
     const handler = createMcpHandler(() => buildServer(session), {
       maxRequestBodySize: MAX_REQUEST_BYTES,
     });
-    return handler.fetch(c.req.raw);
+    const request = new Request(raw.url, {
+      method: raw.method,
+      headers: raw.headers,
+      ...(hasBody ? { body: text } : {}),
+    });
+    return handler.fetch(request);
   }
 
   return { handle, grants, submitters, registry };
+}
+
+/** Seconds to wait if `key` is over `rateClass`, or undefined. */
+async function limitedFor(
+  limits: ServiceLimits,
+  rateClass: TierLimits['mcpAgentRate'],
+  key: string
+): Promise<number | undefined> {
+  const decision = await limits.limiter.limit(rateClass, key);
+  return decision.ok ? undefined : decision.retryAfter;
 }
 
 export type Mcp = ReturnType<typeof createMcp>;

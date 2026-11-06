@@ -9,7 +9,7 @@ import {
   openSubmission,
   type Signer,
 } from '@qusme/nostr';
-import type { QusmeDb, Store } from '@qusme/store-sql';
+import { type QusmeDb, type Store, schema } from '@qusme/store-sql';
 import { Hono } from 'hono';
 import { generateSecretKey } from 'nostr-tools/pure';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -17,11 +17,16 @@ import {
   type AgentAuth,
   createAgentKeyRing,
   createApp,
+  createMemoryRateLimiter,
   createOAuth,
   createWebSocketRelayPublisher,
+  type LimitsOptions,
   type McpAuthEnv,
+  RATE_CLASSES,
+  type RateRule,
   type RelayQuery,
   type RelayReader,
+  TIERS,
 } from '../../src/index.ts';
 import { s256 } from '../../src/oauth/secrets.ts';
 import { fakeInboxRelay } from '../mcp/fakes.ts';
@@ -790,6 +795,171 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
       expect(res.headers.get('Cache-Control')).toBe('no-store');
       const help = await (await app.request(`/approve?code=${s.code}`)).text();
       expect(help).toContain(s.code);
+    });
+
+    describe('limits', () => {
+      /** The app again, with these limits. */
+      function withLimits(limits: LimitsOptions) {
+        app = createApp({
+          version: 'test',
+          db: h.db,
+          agentKeys: ring,
+          publicOrigin: ORIGIN,
+          oauth: overrides(),
+          limits,
+        });
+      }
+
+      /** An in-memory limiter on the test clock with some classes tightened. */
+      const tightened = (classes: Partial<Record<keyof typeof RATE_CLASSES, RateRule>>) =>
+        createMemoryRateLimiter({ now: () => clock, classes: { ...RATE_CLASSES, ...classes } });
+
+      const from = (ip: string, path = authorizeUrl()) =>
+        app.request(path, { headers: { 'CF-Connecting-IP': ip } });
+
+      it('caps open authorizations per IP, keyed by a hash, until one is decided or expires', async () => {
+        withLimits({ config: { pendingPerIp: 2 } });
+        expect((await from('198.51.100.1')).status).toBe(303);
+        clock += 30;
+        const second = await from('198.51.100.1');
+        expect(second.status).toBe(303);
+        const over = await from('198.51.100.1');
+        expect(over.status).toBe(429);
+        // The first one expires 10 minutes after it started, 30 s ago.
+        expect(over.headers.get('Retry-After')).toBe(String(600 - 30));
+        expect(over.headers.get('Content-Type')).toContain('text/html');
+        expect(await over.text()).toContain('Too many authorizations');
+        expect((await from('203.0.113.9')).status).toBe(303);
+
+        const rows = await h.db.select().from(schema.pendingAuthorizations).all();
+        for (const r of rows) {
+          expect(r.clientIpHash).toMatch(/^[0-9a-f]{64}$/);
+          expect(r.clientIpHash).not.toContain('198.51.100.1');
+        }
+
+        // A decided authorization no longer counts.
+        const page = second.headers.get('Location') ?? '';
+        const html = await (await app.request(page)).text();
+        const code = /class="code"[^>]*>([0-9A-Z]{4}-[0-9A-Z]{4})</.exec(html)?.[1] ?? '';
+        await fetchOnDevice(code);
+        expect((await device('POST', `/device/authorizations/${code}/deny`)).status).toBe(200);
+        expect((await from('198.51.100.1')).status).toBe(303);
+        expect((await from('198.51.100.1')).status).toBe(429);
+
+        clock += 600;
+        expect((await from('198.51.100.1')).status).toBe(303);
+      });
+
+      it('caps open authorizations across the service', async () => {
+        withLimits({ config: { pendingGlobal: 2 } });
+        expect((await from('198.51.100.1')).status).toBe(303);
+        expect((await from('198.51.100.2')).status).toBe(303);
+        const over = await from('198.51.100.3');
+        expect(over.status).toBe(429);
+        expect(over.headers.get('Retry-After')).toBe('600');
+        expect(await over.text()).toContain('too many authorizations');
+      });
+
+      it('caps agents per queue at fetch and again at approval', async () => {
+        withLimits({ tiers: { free: { ...TIERS.free, maxAgents: 1 } } });
+        // Two requests fetched while the queue has no agent; only one can be approved.
+        const a = await start();
+        const b = await start();
+        const fa = await fetchOnDevice(a.code);
+        const fb = await fetchOnDevice(b.code);
+        await publishList([fa.agent_pubkey, fb.agent_pubkey]);
+        expect((await approve(a.code)).status).toBe(200);
+        const refused = await approve(b.code);
+        expect(refused.status).toBe(409);
+        expect(await refused.json()).toMatchObject({ error: 'agent_limit_reached', max_agents: 1 });
+        expect(await h.store.bindings.countByQueue(queuePubkey)).toBe(1);
+
+        // A third is refused before a key is minted.
+        const c = await start();
+        const keysBefore = (await h.db.select().from(schema.agentKeys).all()).length;
+        const third = await device('GET', `/device/authorizations/${c.code}`);
+        expect(third.status).toBe(409);
+        expect((await h.db.select().from(schema.agentKeys).all()).length).toBe(keysBefore);
+
+        // Revoking the agent makes room again.
+        expect((await device('DELETE', `/device/bindings/${fa.agent_pubkey}`)).status).toBe(200);
+        expect((await device('GET', `/device/authorizations/${c.code}`)).status).toBe(200);
+      });
+
+      it('resolves the agent cap from the queue’s tier', async () => {
+        withLimits({
+          tiers: {
+            free: { ...TIERS.free, maxAgents: 0 },
+            pro: { ...TIERS.free, maxAgents: 5 },
+          },
+          tierLookup: (pk) => (pk === queuePubkey ? 'pro' : 'free'),
+        });
+        const s = await start();
+        expect((await device('GET', `/device/authorizations/${s.code}`)).status).toBe(200);
+        const other = createLocalSigner(generateSecretKey());
+        const t = await start();
+        expect(
+          (await device('GET', `/device/authorizations/${t.code}`, undefined, other)).status
+        ).toBe(409);
+      });
+
+      it('rate-limits /authorize per IP with an HTML 429 and Retry-After', async () => {
+        withLimits({ rateLimiter: tightened({ ip_authorize: { limit: 2, period: 60 } }) });
+        await from('198.51.100.1');
+        clock += 15;
+        await from('198.51.100.1');
+        const over = await from('198.51.100.1');
+        expect(over.status).toBe(429);
+        expect(over.headers.get('Retry-After')).toBe('45');
+        expect(over.headers.get('Content-Type')).toContain('text/html');
+        expect((await from('198.51.100.2')).status).toBe(303);
+        clock += 45;
+        expect((await from('198.51.100.1')).status).toBe(303);
+      });
+
+      it('rate-limits the waiting page and its poll per IP', async () => {
+        withLimits({ rateLimiter: tightened({ ip_poll: { limit: 2, period: 10 } }) });
+        const s = await start();
+        // start() opened the page once; the poll is the second call in the window.
+        expect((await app.request(s.status)).status).toBe(200);
+        const over = await app.request(s.status);
+        expect(over.status).toBe(429);
+        expect(over.headers.get('Retry-After')).toBe('10');
+        expect(await over.json()).toMatchObject({ error: 'rate_limited', retry_after: 10 });
+        expect((await app.request(s.page)).status).toBe(429);
+      });
+
+      it('rate-limits /token and /revoke per IP, with CORS on the 429', async () => {
+        withLimits({ rateLimiter: tightened({ ip_token: { limit: 2, period: 60 } }) });
+        const form = (path: string) =>
+          app.request(path, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'CF-Connecting-IP': '198.51.100.1',
+              Origin: 'http://localhost:6274',
+            },
+            body: 'token=x&client_id=y',
+          });
+        expect((await form('/revoke')).status).toBe(200);
+        expect((await form('/token')).status).toBe(400);
+        const over = await form('/token');
+        expect(over.status).toBe(429);
+        expect(over.headers.get('Retry-After')).toBe('60');
+        expect(over.headers.get('Access-Control-Allow-Origin')).toBe('*');
+        expect((await form('/revoke')).status).toBe(429);
+      });
+
+      it('rate-limits device routes per queue key', async () => {
+        withLimits({ rateLimiter: tightened({ device_queue_free: { limit: 2, period: 60 } }) });
+        expect((await device('GET', '/device/bindings')).status).toBe(200);
+        expect((await device('GET', '/device/bindings')).status).toBe(200);
+        const over = await device('GET', '/device/bindings');
+        expect(over.status).toBe(429);
+        expect(over.headers.get('Retry-After')).toBe('60');
+        const other = createLocalSigner(generateSecretKey());
+        expect((await device('GET', '/device/bindings', undefined, other)).status).toBe(200);
+      });
     });
   });
 }

@@ -1,6 +1,7 @@
 import { createStore, type QusmeDb } from '@qusme/store-sql';
 import { Hono } from 'hono';
 import type { AgentKeyRing } from './agentKeyRing.ts';
+import { createServiceLimits, type LimitsOptions, requestSizeLimits } from './limits.ts';
 import { createMcp, type McpOverrides } from './mcp/server.ts';
 import { nip98Auth } from './nip98.ts';
 import { createWebSocketRelayReader } from './oauth/relayReader.ts';
@@ -27,6 +28,12 @@ export interface AppDeps {
    * never read from the request or forwarded headers.
    */
   publicOrigin: string;
+  /**
+   * Rate limits, hard caps and tiers (spec 8.5, "Limits"): the rate limiter (the Workers binding
+   * there, in memory by default), cap overrides such as the daily draft ceiling, the tier table and
+   * tier lookup, and how to read the client IP.
+   */
+  limits?: LimitsOptions;
   /** Test and entrypoint overrides for the OAuth server: fetch, relay reader, clock, lifetimes. */
   oauth?: OAuthOverrides;
   /**
@@ -38,6 +45,13 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
+  const now = deps.mcp?.now ?? deps.oauth?.now;
+  const limits = createServiceLimits({
+    ...(now !== undefined && { now }),
+    ...deps.limits,
+  });
+  // Every route: URL and body size caps, checked before any handler reads or parses the body.
+  app.use('*', requestSizeLimits());
   const requireNip98 = nip98Auth({
     publicOrigin: deps.publicOrigin,
     replays: createStore(deps.db).nip98Replays,
@@ -53,12 +67,12 @@ export function createApp(deps: AppDeps): Hono {
     db: deps.db,
     agentKeys: deps.agentKeys,
     publicOrigin: deps.publicOrigin,
+    limits,
   });
   app.route('/', oauth.routes);
 
   // Stateless streamable HTTP MCP endpoint (spec 8.4) behind the bearer check.
   const mcpOverrides: McpOverrides = { ...deps.mcp };
-  const now = deps.mcp?.now ?? deps.oauth?.now;
   if (now !== undefined) mcpOverrides.now = now;
   const mcp = createMcp({
     relayReader,
@@ -66,6 +80,7 @@ export function createApp(deps: AppDeps): Hono {
     db: deps.db,
     agentKeys: deps.agentKeys,
     version: deps.version,
+    limits,
   });
   app.use('/mcp', oauth.mcpCors);
   app.all('/mcp', oauth.requireBearer(), (c) => mcp.handle(c));
@@ -73,7 +88,7 @@ export function createApp(deps: AppDeps): Hono {
   // Typed-code pairing rendezvous (spec 8.3 steps 2 and 3).
   app.route(
     '/pair',
-    pairingRoutes({ sessions: createStore(deps.db).pairingSessions, requireNip98 })
+    pairingRoutes({ sessions: createStore(deps.db).pairingSessions, requireNip98, limits })
   );
   app.post('/rotate', requireNip98, (c) => c.json({ error: 'not implemented' }, 501));
 

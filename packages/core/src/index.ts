@@ -15,6 +15,31 @@ export {
   type RotationResult,
 } from './agentKeys.ts';
 export { type AppDeps, createApp } from './app.ts';
+export {
+  BODY_LIMITS,
+  bodyLimitFor,
+  createBindingRateLimiter,
+  createMemoryRateLimiter,
+  createServiceLimits,
+  DEFAULT_LIMITS,
+  type LimitsConfig,
+  type LimitsOptions,
+  limitFromEnv,
+  MAX_URL_BYTES,
+  RATE_CLASSES,
+  type RateClass,
+  type RateClassName,
+  type RateDecision,
+  type RateLimitBinding,
+  type RateLimiter,
+  type RateRule,
+  type ServiceLimits,
+  TIERS,
+  type TierLimits,
+  type TierLookup,
+  type TierTable,
+  utcDay,
+} from './limits.ts';
 export type { FoundGrant, GrantCache } from './mcp/grants.ts';
 export {
   type BundledRegistryOptions,
@@ -35,6 +60,7 @@ export {
   createMcp,
   DEFAULT_GRANT_CACHE_SECONDS,
   DEFAULT_MAX_POW,
+  DRAFT_CEILING_SCOPE,
   type Mcp,
   type McpNotice,
   type McpOptions,

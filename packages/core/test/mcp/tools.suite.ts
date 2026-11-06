@@ -12,12 +12,17 @@ import {
 import { hashSecret, type QusmeDb, type Store, schema } from '@qusme/store-sql';
 import { generateSecretKey } from 'nostr-tools/pure';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { renameTable } from '../../../store-sql/test/harness.ts';
 import {
   createAgentKeyCustody,
   createAgentKeyRing,
   createApp,
+  type LimitsOptions,
   type McpNotice,
   type McpOverrides,
+  type RateClassName,
+  type RateLimiter,
+  TIERS,
 } from '../../src/index.ts';
 import { fakeStorage, recordingPublisher } from './fakes.ts';
 
@@ -96,12 +101,13 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
     let inboxPubkey: string;
     let app: ReturnType<typeof createApp>;
 
-    const makeApp = (overrides: McpOverrides = {}) =>
+    const makeApp = (overrides: McpOverrides = {}, limits?: LimitsOptions) =>
       createApp({
         version: 'test',
         db: h.db,
         agentKeys: ring,
         publicOrigin: ORIGIN,
+        ...(limits && { limits }),
         mcp: {
           registry: REGISTRY,
           relayReader: storage.reader,
@@ -125,7 +131,7 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
     });
 
     /** An agent key bound to the queue with a live access token, as an approval leaves it. */
-    async function bindAgent() {
+    async function bindAgent(boundQueue = queuePubkey) {
       const now = Math.floor(Date.now() / 1000);
       await h.store.oauthClients.upsert({
         clientId: CLIENT_ID,
@@ -139,7 +145,7 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
       const key = await createAgentKeyCustody(h.store, ring).mint({ clientId: CLIENT_ID, now });
       await h.store.bindings.create({
         agentKeyId: key.id,
-        queuePubkey,
+        queuePubkey: boundQueue,
         clientLabel: 'Example Agent',
         storageRelays: STORAGE,
         createdAt: now,
@@ -962,6 +968,167 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
       const { client, key } = await granted();
       await createAgentKeyCustody(h.store, ring).revoke(key.id, Math.floor(Date.now() / 1000));
       await expect(call(client, 'list_destinations')).rejects.toThrow();
+    });
+
+    describe('limits', () => {
+      const midnight = Date.UTC(2026, 9, 29) / 1000;
+
+      /** A grant on this queue, connected to an app with these limits. */
+      async function limited(limits: LimitsOptions, input: Partial<AgentGrantInput> = {}) {
+        app = makeApp({}, limits);
+        return granted({ quota: { max_submissions: 50, period: 'day' }, ...input });
+      }
+
+      it('caps create_draft per queue per day across its agents, on top of the grant quota', async () => {
+        const limits = { tiers: { free: { ...TIERS.free, draftsPerDay: 2 } } };
+        const first = await limited(limits);
+        expect((await call(first.client, 'create_draft', draft('one'))).isError).toBeFalsy();
+        const second = await granted({ quota: { max_submissions: 50, period: 'day' } });
+        expect((await call(second.client, 'create_draft', draft('two'))).isError).toBeFalsy();
+        const over = await call(second.client, 'create_draft', draft('three'));
+        expect(over.isError).toBe(true);
+        expect(over.structuredContent).toMatchObject({
+          error: 'quota_exhausted',
+          scope: 'queue',
+          max_submissions: 2,
+          used: 2,
+          resets_at: midnight,
+          retry_after: midnight - T0,
+        });
+        expect(String(over.structuredContent?.message)).toContain(
+          `Retry after ${midnight - T0} seconds`
+        );
+        expect(inbox.published).toHaveLength(2);
+        clock = midnight;
+        expect((await call(first.client, 'create_draft', draft('next day'))).isError).toBeFalsy();
+      });
+
+      it('reports the grant quota with its scope and when to retry', async () => {
+        const { client } = await limited({}, { quota: { max_submissions: 1, period: 'day' } });
+        await call(client, 'create_draft', draft('one'));
+        const over = await call(client, 'create_draft', draft('two'));
+        expect(over.structuredContent).toMatchObject({
+          error: 'quota_exhausted',
+          scope: 'grant',
+          retry_after: midnight - T0,
+        });
+      });
+
+      it('holds the service-wide daily ceiling across queues, giving back failed publishes', async () => {
+        const { client } = await limited({ config: { draftsPerDayCeiling: 1 } });
+        inbox.failing.add(INBOX[0] as string);
+        expect((await call(client, 'create_draft', draft('lost'))).structuredContent?.error).toBe(
+          'publish_failed'
+        );
+        inbox.failing.clear();
+        expect((await call(client, 'create_draft', draft('one'))).isError).toBeFalsy();
+
+        const otherQueue = createLocalSigner(generateSecretKey());
+        const agent = await bindAgent(await otherQueue.getPublicKey());
+        storage.publish(
+          await buildAgentGrant(otherQueue, agent.key.pubkey, baseGrant(), { createdAt: clock }),
+          STORAGE
+        );
+        const other = await connect(agent.token);
+        const over = await call(other, 'create_draft', draft('two'));
+        expect(over.structuredContent).toMatchObject({
+          error: 'quota_exhausted',
+          scope: 'service',
+          resets_at: midnight,
+          retry_after: midnight - T0,
+        });
+        expect(inbox.published).toHaveLength(1);
+        expect(await h.store.usageCounters.get('create_draft', midnight - DAY)).toBe(1);
+      });
+
+      it('fails closed: a ceiling of 0 refuses every draft', async () => {
+        const { client } = await limited({ config: { draftsPerDayCeiling: 0 } });
+        const res = await call(client, 'create_draft', draft('none'));
+        expect(res.structuredContent).toMatchObject({ error: 'quota_exhausted', scope: 'service' });
+        expect(inbox.published).toHaveLength(0);
+      });
+
+      it('fails closed: publishes nothing when the ceiling cannot be counted', async () => {
+        const { client } = await limited({});
+        await renameTable(h.db, 'usage_counters', 'usage_counters_off');
+        try {
+          const res = await call(client, 'create_draft', draft('uncounted'));
+          expect(res.structuredContent?.error).toBe('internal_error');
+          expect(inbox.published).toHaveLength(0);
+        } finally {
+          await renameTable(h.db, 'usage_counters_off', 'usage_counters');
+        }
+      });
+
+      it('resolves a queue’s tier by pubkey and falls back to free for an unknown one', async () => {
+        const tiers = {
+          free: { ...TIERS.free, draftsPerDay: 1 },
+          pro: { ...TIERS.free, draftsPerDay: 3 },
+        };
+        let tierName = 'pro';
+        const seen: string[] = [];
+        const { client } = await limited({
+          tiers,
+          tierLookup: (pk) => {
+            seen.push(pk);
+            return tierName;
+          },
+        });
+        for (const v of ['a', 'b', 'c']) {
+          expect((await call(client, 'create_draft', draft(v))).isError).toBeFalsy();
+        }
+        expect((await call(client, 'create_draft', draft('d'))).structuredContent).toMatchObject({
+          scope: 'queue',
+          max_submissions: 3,
+        });
+        expect(new Set(seen)).toEqual(new Set([queuePubkey]));
+        tierName = 'gold';
+        clock = midnight;
+        expect((await call(client, 'create_draft', draft('e'))).isError).toBeFalsy();
+        expect((await call(client, 'create_draft', draft('f'))).structuredContent).toMatchObject({
+          scope: 'queue',
+          max_submissions: 1,
+        });
+      });
+
+      it('answers rate_limited with retry_after to a tool call, and 429 to anything else', async () => {
+        const refused = new Set<RateClassName>();
+        const calls: [RateClassName, string][] = [];
+        const rateLimiter: RateLimiter = {
+          async limit(rateClass, key) {
+            calls.push([rateClass, key]);
+            return refused.has(rateClass) ? { ok: false, retryAfter: 42 } : { ok: true };
+          },
+        };
+        const { client, key, token } = await limited({ rateLimiter });
+        expect(calls).toContainEqual(['mcp_agent_free', key.pubkey]);
+        expect(calls).toContainEqual(['mcp_queue_free', queuePubkey]);
+
+        for (const rateClass of ['mcp_agent_free', 'mcp_queue_free'] as const) {
+          refused.clear();
+          refused.add(rateClass);
+          const res = await call(client, 'create_draft', draft('slow down'));
+          expect(res.isError).toBe(true);
+          expect(res.structuredContent).toMatchObject({ error: 'rate_limited', retry_after: 42 });
+          expect(String(res.structuredContent?.message)).toContain('Wait 42 seconds');
+          expect(inbox.published).toHaveLength(0);
+
+          const list = await app.request('/mcp', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+              Accept: 'application/json, text/event-stream',
+              'MCP-Protocol-Version': '2025-11-25',
+            },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} }),
+          });
+          expect(list.status).toBe(429);
+          expect(list.headers.get('Retry-After')).toBe('42');
+        }
+        refused.clear();
+        expect((await call(client, 'create_draft', draft('again'))).isError).toBeFalsy();
+      });
     });
   });
 }
