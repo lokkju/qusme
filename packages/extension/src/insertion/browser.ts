@@ -4,11 +4,12 @@
  */
 import type { SiteAccount } from '@qusme/nostr';
 import { browser } from 'wxt/browser';
+import { badgeUpdater, changesBadge } from '../badge.ts';
 import { PICKER_COMMAND } from '../commands.ts';
 import { type KeyStore, SESSION_ARMED, SESSION_DRAFTS, SESSION_INSERTION } from '../keyStore.ts';
 import { readDraftCache } from '../sync/state.ts';
 import type { InsertionUiDeps } from '../ui/insert.tsx';
-import { readArmed, readInsertionState } from './armed.ts';
+import { readArmed } from './armed.ts';
 import type { SiteDefinitionSource } from './definitions.ts';
 import { MENU_CHOOSE, MENU_INSERT, menuItem } from './menu.ts';
 import { INSERT_MESSAGE, RETRY_RECORD_MESSAGE } from './messages.ts';
@@ -113,10 +114,15 @@ export function installInsertion(
   const service = new InsertionService({ store, definitions, page: scriptingPageRunner });
   const accessKeys = import.meta.env.FIREFOX === true;
 
-  const updateBadge = async () => {
-    const { unrecorded } = await readInsertionState(store.session);
-    await browser.action.setBadgeText({ text: unrecorded.length > 0 ? '!' : '' });
-  };
+  // The badge follows the drafts, the insertion bookkeeping, pending revocations and the lock:
+  // every sync, insert, dismissal, lock and unlock writes one of them (spec 11.4).
+  const updateBadge = badgeUpdater(store, browser.action);
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (changesBadge(changes, area)) void updateBadge();
+  });
+  browser.runtime.onStartup.addListener(() => void updateBadge());
+  browser.runtime.onInstalled.addListener(() => void updateBadge());
+  void updateBadge();
 
   let rebuilding = Promise.resolve();
   const rebuildMenu = () => {
