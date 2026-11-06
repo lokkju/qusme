@@ -32,6 +32,11 @@ export interface SetupDeps {
   probe?: ProbeOptions;
   /** scrypt cost for the recovery backup; tests lower it. Defaults to 18 (6.1). */
   logN?: number;
+  /**
+   * Where recovery looks a queue up when the user gives only its npub and code; defaults to the
+   * storage relays setup suggests (9.1). Tests point it at fake relays.
+   */
+  defaultStorageRelays?: readonly string[];
   /** The service origin, `https://app.qus.me`. */
   serviceOrigin: string;
   fetch: typeof fetch;

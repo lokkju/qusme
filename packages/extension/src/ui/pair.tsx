@@ -1,7 +1,7 @@
 import { formatPairingCode } from '@qusme/nostr';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { markPaired } from '../firstRun.ts';
 import type { PendingImport } from '../keyStore.ts';
-import { checkPassphrase } from '../passphrase.ts';
 import type { SetupDeps } from '../setup/deps.ts';
 import { SourcePairing, type SourcePhase } from '../setup/pairSource.ts';
 import {
@@ -19,6 +19,7 @@ import {
   inputClass,
   LossWarning,
   NewPassphrase,
+  passphraseReady,
   Qr,
   Sas,
   Screen,
@@ -175,12 +176,7 @@ function PairUnlock(props: {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ settingsFound: boolean }>();
 
-  const strength = checkPassphrase(passphrase);
-  const problem = !strength.ok
-    ? strength.problem
-    : again !== '' && again !== passphrase
-      ? 'The two entries differ.'
-      : undefined;
+  const ready = passphraseReady(passphrase, again);
 
   const submit = async (event: Event) => {
     event.preventDefault();
@@ -196,6 +192,8 @@ function PairUnlock(props: {
         relayPrompt === undefined ? undefined : relayUrl
       );
       if (result.ok) {
+        // This device came from another one, so the checklist's "pair a device" is done.
+        await markPaired(deps).catch(() => undefined);
         setDone({ settingsFound: result.settingsFound });
       } else {
         key.fill(0);
@@ -262,7 +260,6 @@ function PairUnlock(props: {
         <NewPassphrase
           value={passphrase}
           confirm={again}
-          problem={problem}
           onInput={setPassphrase}
           onConfirm={setAgain}
         />
@@ -286,8 +283,7 @@ function PairUnlock(props: {
             disabled={
               busy ||
               secret === '' ||
-              !strength.ok ||
-              again !== passphrase ||
+              !ready ||
               (relayPrompt !== undefined && relayUrl.trim() === '')
             }
           >
@@ -311,6 +307,11 @@ export function PairSourceScreen(props: { deps: SetupDeps; onDone: () => void })
   const [copied, setCopied] = useState(false);
   const [started, setStarted] = useState<SourcePairing>();
   const pairing = useRef<SourcePairing | undefined>(undefined);
+  const paired = phase?.phase === 'done' || phase?.phase === 'unconfirmed';
+
+  useEffect(() => {
+    if (paired) void markPaired(deps).catch(() => undefined);
+  }, [paired, deps]);
 
   useEffect(() => {
     let cancelled = false;
