@@ -203,9 +203,9 @@ export function installInsertion(
     let work: Promise<unknown> | undefined;
     const pick = sender.tab?.id === undefined ? undefined : readPickMessage(message);
     if (sender.tab === undefined && type === INSERT_MESSAGE) {
-      const tabId = (message as { tabId?: unknown }).tabId;
-      if (typeof tabId !== 'number') return false;
-      work = service.insert({ tabId, method: 'extension_popup' });
+      const { tabId, d } = message as { tabId?: unknown; d?: unknown };
+      if (typeof tabId !== 'number' || typeof d !== 'string') return false;
+      work = service.insertChosen(tabId, d);
     } else if (sender.tab === undefined && type === RETRY_RECORD_MESSAGE) {
       work = service.retryUnrecorded();
     } else if (sender.tab?.id !== undefined && pick !== undefined) {
@@ -251,8 +251,8 @@ export function browserInsertionUiDeps(definitions: SiteDefinitionSource): Inser
       return { id: tab.id, url: tab.url };
     },
     detectAccounts,
-    insert: (tabId) =>
-      browser.runtime.sendMessage({ type: INSERT_MESSAGE, tabId }) as Promise<InsertResponse>,
+    insert: (tabId, d) =>
+      browser.runtime.sendMessage({ type: INSERT_MESSAGE, tabId, d }) as Promise<InsertResponse>,
     retryRecord: () =>
       browser.runtime.sendMessage({ type: RETRY_RECORD_MESSAGE }) as Promise<{
         remaining: number;

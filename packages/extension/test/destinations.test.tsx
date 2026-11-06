@@ -488,7 +488,6 @@ describe('destinations screen', () => {
         page={{ matching: [], otherAccounts: 0, detected: { x: evil }, elsewhere: [] }}
         undetected={[]}
         armed={undefined}
-        showElsewhere={false}
         status={undefined}
         unrecorded={0}
         busy={false}
@@ -498,7 +497,6 @@ describe('destinations screen', () => {
         onDisarm={() => {}}
         onInsert={() => {}}
         onRetry={() => {}}
-        onToggleElsewhere={() => {}}
       />
     );
     expect(html).not.toMatch(/<(img|u)[ >]/);

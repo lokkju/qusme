@@ -8,7 +8,6 @@ import { AgentsScreen, ApproveAgentScreen } from './agents.tsx';
 import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
 import { CreateScreen } from './create.tsx';
 import { DestinationsScreen } from './destinations.tsx';
-import { Drafts } from './drafts.tsx';
 import { FirstRunChecklist } from './firstRun.tsx';
 import { type InsertionUiDeps, InsertPanel } from './insert.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
@@ -207,8 +206,7 @@ function Unlocked(props: {
         onAddDestination={() => props.onRoute('add-destination')}
         onPair={() => props.onRoute('pair-source')}
       />
-      {props.insertion && <InsertPanel store={deps.store} deps={props.insertion} setup={deps} />}
-      <Drafts deps={deps} />
+      <InsertPanel store={deps.store} deps={props.insertion} setup={deps} />
       <div class="mt-4 flex flex-col gap-2">
         <Button onClick={() => props.onRoute('approve-agent')}>Approve an agent</Button>
         <Button variant="plain" onClick={() => props.onRoute('destinations')}>

@@ -672,6 +672,68 @@ describe('insertion service (11.5 steps 5, 6)', () => {
   });
 });
 
+describe('popup one-click insert (11.5)', () => {
+  it('inserts the chosen draft without arming it and records the popup method', async () => {
+    const t = await setup();
+    const result = await t.service.insertChosen(7, 'd1');
+    expect(result).toEqual({ state: 'inserted', strategy: 'paste', recorded: true });
+    expect(t.requests[0]).toMatchObject({
+      value: 'Hello from the queue',
+      method: 'extension_popup',
+      clipboardFallback: true,
+    });
+    const wrap = await t.latest();
+    if (wrap.draft.type !== 'field_value') throw new Error('not a field value');
+    expect(wrap.draft.value.status).toBe('archived:inserted');
+    expect(wrap.draft.value.inserted.at(-1)?.method).toBe('extension_popup');
+    expect(await readArmed(t.session)).toBeUndefined();
+  });
+
+  it('arms nothing when the page fails, and leaves another armed draft armed', async () => {
+    const t = await setup();
+    t.setOutcome({ state: 'failed', reason: 'exhausted', tried: ['paste'] });
+    expect(await t.service.insertChosen(7, 'd1')).toEqual({ state: 'failed', reason: 'exhausted' });
+    expect(await readArmed(t.session)).toBeUndefined();
+    await arm(t.session, draft({ d: 'other', content: 'armed for right-click' }), 1);
+    expect(await t.service.insertChosen(7, 'd1')).toMatchObject({ state: 'failed' });
+    expect((await readArmed(t.session))?.d).toBe('other');
+    expect((await t.latest()).draft).toMatchObject({ value: { status: 'active' } });
+  });
+
+  it('finishes a waiting popup insertion on its own draft without touching the armed one', async () => {
+    const t = await setup();
+    await arm(t.session, draft({ d: 'other', content: 'armed for right-click' }), 1);
+    t.setOutcome({ state: 'waiting', reason: 'focus' });
+    expect(await t.service.insertChosen(7, 'd1')).toEqual({ state: 'waiting', reason: 'focus' });
+    expect(
+      await t.service.pageDone(7, {
+        type: 'qusme.insertion.done',
+        token: 'token-1',
+        outcome: {
+          state: 'inserted',
+          strategy: 'paste',
+          resolution: 'focus_placement',
+          accessibleName: 'Post text',
+          detectedAccount: '',
+          url: 'https://x.com/home',
+        },
+      })
+    ).toMatchObject({ state: 'inserted', recorded: true });
+    const wrap = await t.latest();
+    if (wrap.draft.type !== 'field_value') throw new Error('not a field value');
+    expect(wrap.draft.value.inserted.at(-1)?.method).toBe('extension_popup');
+    expect((await readArmed(t.session))?.d).toBe('other');
+  });
+
+  it('refuses a draft that is gone, and a locked queue', async () => {
+    const t = await setup();
+    expect(await t.service.insertChosen(7, 'missing')).toEqual({ state: 'not_found' });
+    expect(t.requests).toEqual([]);
+    await t.store.lock();
+    expect(await t.service.insertChosen(7, 'd1')).toEqual({ state: 'locked' });
+  });
+});
+
 describe('keyboard picker (11.5)', () => {
   async function pickerSetup(options: { detected?: string } = {}) {
     const t = await setup();
