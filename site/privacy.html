@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy policy · qus.me</title>
+<meta name="description" content="What the qus.me extension, the Nostr relays and the service at app.qus.me see and keep.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/newsreader-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="wrap site-header">
+<a class="brand" href="/">qus.me</a>
+<nav class="nav" aria-label="Main">
+<a href="/">Home</a>
+</nav>
+</header>
+
+<main id="main" class="prose">
+<h1>Privacy policy</h1>
+<p class="updated">Last updated: <time datetime="2026-11-07">7 November 2026</time></p>
+
+<p class="summary">Your drafts are encrypted on your devices before they go anywhere. The relays that store them can't read them, the agents you connect can add to your queue but can't read it, and we don't run analytics, track you or sell data.</p>
+
+<h2 id="who">Who runs qus.me</h2>
+<p>qus.me is run by an individual developer, not a company. It consists of the qus.me browser extension for Chrome and Firefox, the service at app.qus.me that AI agents connect to, and this website. "We" and "us" in this policy mean that developer. You can reach us at <a href="mailto:info@qus.me">info@qus.me</a>.</p>
+
+<h2 id="extension">What the extension keeps on your device</h2>
+<p>The extension keeps the following in your browser's storage on your device. None of it is sent to us.</p>
+<ul>
+<li><strong>Your queue's secret key, encrypted with your passphrase</strong>, in the browser's local storage. It is the key that encrypts and decrypts your drafts.</li>
+<li><strong>The unlocked keys</strong>, only in the browser's session storage while your queue is unlocked. Locking deletes them, and the browser clears session storage when it closes. If you turn on "stay unlocked on this device", the unlocked keys are also kept in local storage until you turn it off or lock.</li>
+<li><strong>Your decrypted drafts</strong>, only in session storage. Locking deletes them with the keys.</li>
+<li><strong>Your settings</strong>: a copy of your settings event as it is stored on the relays (your destinations, the agents you approved and what each may do), encrypted the same way, plus small bookkeeping records such as an agent revocation that app.qus.me hasn't confirmed yet and the IDs of agent submissions already handled.</li>
+</ul>
+<p>When you create a queue, the extension shows you a recovery code and offers a recovery sheet. The extension doesn't keep the code. It publishes a backup of your queue's key to your relays, encrypted with the recovery code, so you can recover the queue on a new device. Anyone can fetch that backup from an ordinary relay, which is why it is locked with a long random code and not your passphrase. Keep the code and the sheet as carefully as a password.</p>
+
+<h2 id="relays">What the Nostr relays see</h2>
+<p>Your queue lives on Nostr relays, servers run by third parties that store and pass along messages. You choose them when you create your queue; the extension suggests wss://nos.lol and wss://relay.ditto.pub for storage and wss://auth.nostr1.com as the inbox where agent submissions arrive. Every draft is encrypted on your device before it is sent, so a relay receives only data it can't read.</p>
+<p>The relays can see:</p>
+<ul>
+<li>the encrypted events themselves;</li>
+<li>your queue's public key (an identifier that doesn't unlock anything), and that it belongs to a qus.me queue;</li>
+<li>when events are written, changed or deleted, and how large they are;</li>
+<li>the list of public keys of the agents you have approved, and when each was added or removed;</li>
+<li>your IP address when your device connects to them.</li>
+</ul>
+<p>The inbox relay sees how many agent submissions arrive for your queue's inbox, when, and how large they are; nothing on the storage relays links the inbox to your queue. Each relay operator handles this information under its own policy.</p>
+
+<h2 id="service">What the service at app.qus.me sees and keeps</h2>
+<p>app.qus.me is where AI agents such as Claude connect to submit drafts. It never holds your queue's key and can't read your queue.</p>
+<ul>
+<li><strong>Agent submissions.</strong> When an approved agent submits a draft, the service sees it in plaintext only while it validates it and encrypts it to your queue's inbox. It doesn't keep the plaintext.</li>
+<li><strong>Submission receipts.</strong> For each submission it keeps a receipt with no content: which agent, your queue's public key, the encrypted submission's ID, and the time. These let the agent list its submissions and let the service count them against the limit you set.</li>
+<li><strong>OAuth records.</strong> For each agent application that connects, the service keeps the public information the application publishes about itself (its name and its sign-in return addresses). Authorization codes and access and refresh tokens are stored only as hashes, never as the tokens themselves.</li>
+<li><strong>Agent keys.</strong> The service makes one key per agent you approve, so it can deliver that agent's drafts. Each key is stored encrypted, with a secret held apart from the database. It records which of your queue's public key and storage relays each agent is linked to, and reads the permissions you gave that agent (its destinations and limit) from your relays.</li>
+<li><strong>Pairing codes.</strong> If you pair a new device using a typed code, the service holds the pairing link for at most two minutes and deletes it the first time it's fetched.</li>
+<li><strong>IP addresses.</strong> The service doesn't store IP addresses. For rate limits it passes your address to Cloudflare's rate limiting counters, which count requests per address over a one-minute window. While an agent's sign-in request is waiting for your approval, it keeps a keyed hash (an HMAC) of the requesting address, never the address itself, to cap how many open requests one address can make.</li>
+</ul>
+
+<h3>How long the service keeps things</h3>
+<p>Expired records are deleted by a sweep that runs every five minutes.</p>
+<ul>
+<li>A sign-in request waiting for approval, with its hashed IP address: 10 minutes. If you deny it or it runs out, the agent key made for it is deleted too.</li>
+<li>Authorization codes: 60 seconds. Access tokens: 1 hour. Refresh tokens: 30 days, replaced each time they're used.</li>
+<li>Submission receipts: until the submission itself expires (30 days by default, at most 90, set for each agent when you approve it) or the end of the limit period it counts toward, whichever is later.</li>
+<li>Pairing codes: at most 2 minutes. Records that stop the same signed request being replayed: 60 seconds.</li>
+<li>When you revoke an agent, its encrypted key is discarded and its tokens stop working. A record that the agent existed, with its public key, its link to your queue's public key, and its receipts until they expire, remains.</li>
+<li>The public information an agent application publishes about itself is kept, since tokens and agent records refer to it.</li>
+</ul>
+
+<h2 id="hosting">Hosting</h2>
+<p>app.qus.me and this website run on Cloudflare Workers. Cloudflare handles every request to them, including your IP address, and keeps its own request logs under its own policy. This website sets no cookies and loads nothing from other sites; its only script is the copy button.</p>
+
+<h2 id="dont">What we don't do</h2>
+<p>We don't use analytics, tracking cookies, pixels or advertising. We don't sell your data, and we don't share it except as this policy describes. qus.me never posts on your behalf; you click Post yourself.</p>
+
+<h2 id="others">Other parties</h2>
+<p>The agents you connect are run by their own providers, and what you share with them is covered by their policies. The relays are covered by theirs, and Cloudflare by its own.</p>
+
+<h2 id="choices">Your choices</h2>
+<p>You can revoke any agent from the extension at any time, delete drafts from your queue, and remove the extension. Removing it deletes everything it stored in your browser.</p>
+<p>Encrypted copies already published to relays stay there until they expire or the relay honors a deletion request; the extension sends deletion requests, but many relays ignore them. Agent submissions carry an expiry (30 days by default). Those copies are encrypted, and without your queue's key nobody can read them.</p>
+<p>To ask about or remove service records linked to your queue's public key, write to <a href="mailto:info@qus.me">info@qus.me</a>. The code is open source, so you can check what it does: <a href="https://github.com/lokkju/qusme">github.com/lokkju/qusme</a>.</p>
+
+<h2 id="changes">Changes</h2>
+<p>If this policy changes, the new version will be posted here with a new date.</p>
+
+<h2 id="contact">Contact</h2>
+<p>Questions about this policy or your data: <a href="mailto:info@qus.me">info@qus.me</a>.</p>
+</main>
+
+<footer class="site-footer">
+<div class="wrap">
+<span class="brand">qus.me</span>
+<nav aria-label="Footer">
+<a href="/privacy" aria-current="page">Privacy policy</a>
+<a href="https://github.com/lokkju/qusme">Source</a>
+<a href="mailto:info@qus.me">Contact: info@qus.me</a>
+</nav>
+</div>
+</footer>
+</body>
+</html>

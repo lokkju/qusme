@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qus.me: drafts wait in line, you post them</title>
+<meta name="description" content="qus.me keeps drafts from you and from AI agents like Claude in an end-to-end encrypted queue. Press Alt+Q in a post box, pick one, and click Post yourself.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/newsreader-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/style.css">
+<script src="/copy.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="wrap site-header">
+<a class="brand" href="/">qus.me</a>
+<nav class="nav" aria-label="Main">
+<a href="#how">How it works</a>
+<a href="#connect">Connect Claude</a>
+<a href="#privacy">Privacy</a>
+<a href="#faq">FAQ</a>
+<a class="button button-primary" href="#install">Install</a>
+</nav>
+</header>
+
+<main id="main">
+<section class="wrap hero" aria-labelledby="hero-title">
+<p class="eyebrow">A queue of drafts for your browser</p>
+<h1 class="display" id="hero-title">Drafts wait in line. You post them.</h1>
+<p class="lede">qus.me collects drafts from you and from AI agents like Claude, and keeps them in a queue only your devices can read. When you're ready, press Alt+Q in a post box, pick a draft, change it if you like, and click Post yourself. qus.me never posts anything.</p>
+<div class="actions">
+<a class="button button-primary" href="[Chrome Web Store link]">Add to Chrome</a>
+<a class="button button-secondary" href="[Firefox Add-ons link]">Add to Firefox</a>
+<span class="note">Free while in beta.</span>
+</div>
+</section>
+
+<div class="wrap mock-wrap">
+<div class="mock" role="img" aria-label="Illustration: a post composer with the Alt+Q draft picker open over it, listing a draft from Claude for LinkedIn and one of your own for X, beside the qus.me extension popup showing three drafts and Claude approved as an agent.">
+<div class="mock-composer-wrap">
+<div class="mock-panel mock-composer">
+<span class="note">Compose post</span>
+<span class="mock-caret"></span>
+<span class="mock-post">Post</span>
+</div>
+<div class="mock-picker">
+<div class="mock-picker-head"><span>Pick a draft</span><span>Alt+Q</span></div>
+<div class="mock-row is-active"><span class="mock-row-label">Claude · for LinkedIn</span><span class="bar w92"></span><span class="bar w64"></span></div>
+<div class="mock-row"><span class="mock-row-label">You · for X</span><span class="bar w80"></span></div>
+<div class="mock-row"><span class="mock-row-label">Claude · for X</span><span class="bar w86"></span><span class="bar w40"></span></div>
+</div>
+</div>
+<div class="mock-panel mock-popup">
+<div class="mock-popup-head"><span class="brand-small">qus.me</span><span>3 drafts</span></div>
+<div class="mock-popup-body"><span class="bar w92"></span><span class="bar w70"></span><span class="bar w80"></span></div>
+<div class="mock-popup-foot"><span>Agents</span><span>Claude: approved</span></div>
+</div>
+</div>
+</div>
+
+<section class="band-surface" aria-labelledby="who-posts">
+<div class="wrap section stack">
+<h2 class="title" id="who-posts">You post. The bot doesn't.</h2>
+<div class="grid grid-2">
+<div class="card">
+<h3 class="label-heading">An agent you approve can</h3>
+<ul class="list">
+<li>Add drafts to your queue</li>
+<li>Draft only for the destinations you chose for it</li>
+<li>Add only as many drafts as you allow, per day, week or month</li>
+</ul>
+</div>
+<div class="card">
+<h3 class="label-heading">Only you can</h3>
+<ul class="list">
+<li>Read what's in your queue</li>
+<li>Pick a draft, edit it and put it in the post box</li>
+<li>Click Post</li>
+<li>Revoke an agent, at any time</li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+
+<section class="wrap section stack" id="how" aria-labelledby="how-title">
+<h2 class="title" id="how-title">How it works</h2>
+<ol class="steps">
+<li><span class="step-number" aria-hidden="true">1</span><h3>Install the extension</h3><p class="muted">Add qus.me to Chrome or Firefox.</p></li>
+<li><span class="step-number" aria-hidden="true">2</span><h3>Create your queue</h3><p class="muted">The extension makes your queue's key on this device and locks it with your passphrase. It gives you a recovery code and a recovery sheet; keep them somewhere safe, because they get your queue back on a new device.</p></li>
+<li><span class="step-number" aria-hidden="true">3</span><h3>Connect Claude</h3><p class="muted">Add https://app.qus.me/mcp to Claude, approve it in the extension, and choose where it may draft and how many drafts it may add.</p></li>
+<li><span class="step-number" aria-hidden="true">4</span><h3>Insert and post</h3><p class="muted">In a post box, press Alt+Q, pick a draft, read it over and click Post yourself.</p></li>
+</ol>
+</section>
+
+<section class="band" id="privacy" aria-labelledby="privacy-title">
+<div class="wrap section stack">
+<h2 class="title" id="privacy-title">Your drafts are yours to read</h2>
+<div class="grid grid-3">
+<div class="card"><h3>Encrypted before they leave</h3><p class="muted">Every draft is encrypted with a key only your devices hold. The Nostr relays that store your queue keep data they can't open.</p></div>
+<div class="card"><h3>Agents write, they don't read</h3><p class="muted">An agent you approve can drop drafts into your queue. It can't read the queue. You choose its destinations and its limit, and you can revoke it.</p></div>
+<div class="card"><h3>No tracking</h3><p class="muted">No analytics, no ads, and no selling your data. When an agent submits a draft, app.qus.me sees it only while checking it and doesn't keep it.</p></div>
+</div>
+<p><a href="/privacy">Read the privacy policy</a></p>
+</div>
+</section>
+
+<section class="wrap section" id="install" aria-labelledby="install-title">
+<div class="stack">
+<h2 class="title" id="install-title">Get qus.me</h2>
+<p class="muted">The extension holds your key and shows your queue. Install it first, then connect Claude.</p>
+<div class="actions">
+<a class="button button-primary" href="[Chrome Web Store link]">Add to Chrome</a>
+<a class="button button-secondary" href="[Firefox Add-ons link]">Add to Firefox</a>
+</div>
+<p class="note">Free while in beta.</p>
+</div>
+</section>
+
+<section class="band" id="connect" aria-labelledby="connect-title">
+<div class="wrap section">
+<div class="grid grid-2">
+<div class="stack">
+<h2 class="title" id="connect-title">Connect Claude</h2>
+<p class="muted">qus.me is a remote MCP server. Add it to Claude, then approve the connection in the extension: Claude shows a short code, you enter it in the extension and choose the destinations Claude may draft for. In Claude's apps, add the URL as a custom connector; in Claude Code, use one of the snippets.</p>
+<label class="field-label" for="mcp-url">MCP server URL</label>
+<div class="copy-field">
+<input id="mcp-url" type="text" readonly value="https://app.qus.me/mcp">
+<button class="copy-button" type="button" data-copy="mcp-url"><span class="visually-hidden">MCP server URL: </span>Copy</button>
+</div>
+<p class="note" role="status" aria-live="polite" data-copy-status></p>
+</div>
+<div class="stack">
+<figure class="snippet">
+<figcaption class="snippet-head"><span>Claude Code</span><button class="copy-button" type="button" data-copy="snippet-cli"><span class="visually-hidden">Claude Code command: </span>Copy</button></figcaption>
+<pre><code id="snippet-cli">claude mcp add --transport http qusme https://app.qus.me/mcp</code></pre>
+</figure>
+<figure class="snippet">
+<figcaption class="snippet-head"><span>.mcp.json</span><button class="copy-button" type="button" data-copy="snippet-json"><span class="visually-hidden">.mcp.json block: </span>Copy</button></figcaption>
+<pre><code id="snippet-json">{
+  "mcpServers": {
+    "qusme": {
+      "type": "http",
+      "url": "https://app.qus.me/mcp"
+    }
+  }
+}</code></pre>
+</figure>
+</div>
+</div>
+</div>
+</section>
+
+<section class="wrap section stack" id="who-sees" aria-labelledby="who-sees-title">
+<h2 class="title" id="who-sees-title">Who can see what</h2>
+<p class="muted">The plain answer for every party that touches your queue, including us.</p>
+<div class="table-wrap">
+<table aria-labelledby="who-sees-title">
+<thead>
+<tr>
+<th scope="col">Who</th>
+<th scope="col">Read your queue</th>
+<th scope="col">Add drafts</th>
+<th scope="col">Post for you</th>
+<th scope="col">What it does see</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th scope="row">You, on your devices</th>
+<td data-label="Read your queue" class="yes">Yes</td>
+<td data-label="Add drafts" class="yes">Yes</td>
+<td data-label="Post for you">You click Post yourself</td>
+<td data-label="What it does see">Everything in your queue</td>
+</tr>
+<tr>
+<th scope="row">An agent you approve</th>
+<td data-label="Read your queue">No</td>
+<td data-label="Add drafts"><span class="yes">Yes</span>, for the destinations you allow, up to its limit</td>
+<td data-label="Post for you">No</td>
+<td data-label="What it does see">Only the drafts it writes</td>
+</tr>
+<tr>
+<th scope="row">The Nostr relays that store your queue</th>
+<td data-label="Read your queue">No</td>
+<td data-label="Add drafts">No</td>
+<td data-label="Post for you">No</td>
+<td data-label="What it does see">Encrypted data, your queue's public key, when and how much it changes, the public keys of agents you approved, and your IP address when you connect</td>
+</tr>
+<tr>
+<th scope="row">app.qus.me (us)</th>
+<td data-label="Read your queue">No</td>
+<td data-label="Add drafts">Passes an approved agent's drafts along, encrypted</td>
+<td data-label="Post for you">No</td>
+<td data-label="What it does see">An agent's draft only while checking it, not kept; your approvals; hashed IP addresses for rate limits</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p class="muted">No analytics, no tracking, no selling data. <a href="/privacy">Read the privacy policy</a>.</p>
+</section>
+
+<section class="band-surface" id="faq" aria-labelledby="faq-title">
+<div class="wrap narrow section stack">
+<h2 class="title" id="faq-title">Questions</h2>
+<div class="faq">
+<div><h3>Does qus.me post for me?</h3><p class="muted">No. It puts the draft you pick into the post box. You read it, edit it if you want, and click Post. qus.me never posts.</p></div>
+<div><h3>Can the agent read my drafts?</h3><p class="muted">No. Agents can add drafts to your queue, but they can't read it. The queue is encrypted with a key only your devices hold.</p></div>
+<div><h3>What sites work?</h3><p class="muted">Sites with a post box. X is built in, and you can add others, like LinkedIn or Facebook, as your own destinations. Alt+Q opens the picker in the field you're typing in.</p></div>
+<div><h3>What if I lose my device?</h3><p class="muted">Use the recovery code or recovery sheet you saved when you created the queue, or pair the new device from another one you already set up. Without the code and with no other device, the queue can't be recovered; nobody else holds its key.</p></div>
+<div><h3>What does it cost?</h3><p class="muted">It's free while in beta.</p></div>
+</div>
+</div>
+</section>
+
+<section class="band">
+<div class="wrap narrow section stack">
+<h2 class="label-heading">How it's built</h2>
+<p class="muted">Your queue is a Nostr key pair made in the extension. Drafts are encrypted end to end before they're published to Nostr relays, so relays hold only ciphertext. Agents reach your queue through the MCP server at app.qus.me after you approve them with OAuth; the server seals their drafts to your queue's inbox and can't read the queue itself. The code is open source on <a href="https://github.com/lokkju/qusme">GitHub</a>.</p>
+</div>
+</section>
+</main>
+
+<footer class="site-footer">
+<div class="wrap">
+<span class="brand">qus.me</span>
+<nav aria-label="Footer">
+<a href="/privacy">Privacy policy</a>
+<a href="https://github.com/lokkju/qusme">Source</a>
+<a href="mailto:info@qus.me">Contact: info@qus.me</a>
+</nav>
+</div>
+</footer>
+</body>
+</html>
