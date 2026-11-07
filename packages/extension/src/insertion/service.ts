@@ -53,6 +53,8 @@ export type InsertResponse =
   | { state: 'waiting'; reason: 'focus' | 'paste'; clipboardWritten?: boolean }
   | { state: 'failed'; reason: PageFailure | 'injection'; message?: string }
   | { state: 'not_armed' }
+  /** The draft the popup chose is no longer an active draft in the queue. */
+  | { state: 'not_found' }
   | { state: 'locked' };
 
 const MAX_URL = 2048;
@@ -169,6 +171,20 @@ export class InsertionService {
     await this.#clearPending(token);
     if (outcome.state === 'failed') return { state: 'failed', reason: outcome.reason };
     return this.#finish(armed.d, input.method, outcome);
+  }
+
+  /**
+   * The popup's Insert on a draft row: inserts that active draft into the tab in one click,
+   * without arming it, so a failure leaves nothing armed and any armed draft as it was.
+   */
+  async insertChosen(tabId: number, d: string): Promise<InsertResponse> {
+    const { store } = this.deps;
+    if ((await store.status()).state !== 'unlocked') return { state: 'locked' };
+    const draft = (await readDraftCache(store.session))?.drafts.find(
+      (entry) => entry.d === d && entry.status === 'active'
+    );
+    if (draft === undefined) return { state: 'not_found' };
+    return this.insert({ tabId, method: 'extension_popup', draft });
   }
 
   /**

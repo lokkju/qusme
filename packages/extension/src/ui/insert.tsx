@@ -1,16 +1,16 @@
 /**
- * The popup's arming and inserting panel (spec 11.5 steps 1 to 5). On open it reads the active
- * tab (activeTab), runs the read-only account detection there, and lists the active drafts whose
- * destination matches the page, filtered by the detected account. Picking one arms it; Insert asks
- * the background to put it into the page's focused field. Draft selection happens here, in
- * extension origin: only the inserted draft's text ever reaches the page. Every draft string is a
- * JSX text child, which Preact sets as text.
+ * The popup's draft list (spec 11.4, 11.5): one list grouped "For this page" (destination match
+ * and detected account) and "Elsewhere". On open it asks the background to sync, reads the active
+ * tab (activeTab) and runs the read-only account detection there. Each row expands to its full
+ * text and has an Insert button that inserts it in one click; "Arm for right-click" keeps the
+ * context menu path. Draft selection happens here, in extension origin: only the inserted draft's
+ * text ever reaches the page. Every draft string is a JSX text child, which Preact sets as text.
  */
 import type { SiteAccount } from '@qusme/nostr';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { addDestination } from '../agents/destinations.ts';
 import { type ArmedDraft, arm, disarm, readArmed, readInsertionState } from '../insertion/armed.ts';
-import type { SiteDefinitionSource } from '../insertion/definitions.ts';
+import { definitionSource, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import { type DestinationOffer, destinationOffers, registrySitesOn } from '../insertion/detect.ts';
 import {
   accountLocators,
@@ -21,10 +21,10 @@ import {
 import type { InsertResponse } from '../insertion/service.ts';
 import type { KeyStore } from '../keyStore.ts';
 import type { SetupDeps } from '../setup/deps.ts';
-import { readDraftCache } from '../sync/state.ts';
+import { readDraftCache, readSyncState, type SyncSummary } from '../sync/state.ts';
 import { messageOf } from './app.tsx';
 import { Button } from './components.tsx';
-import { firstLine } from './drafts.tsx';
+import { firstLine, SyncNote } from './drafts.tsx';
 
 /** What the panel needs from the browser; absent in tests of the rest of the popup. */
 export interface InsertionUiDeps {
@@ -32,8 +32,8 @@ export interface InsertionUiDeps {
   /** The active tab, readable after the popup opened under activeTab. */
   activeTab(): Promise<{ id: number; url: string } | undefined>;
   detectAccounts(tabId: number, locators: readonly SiteAccount[]): Promise<(string | undefined)[]>;
-  /** Asks the background to insert the armed draft into the tab. */
-  insert(tabId: number): Promise<InsertResponse>;
+  /** Asks the background to insert the chosen draft into the tab, without arming it. */
+  insert(tabId: number, d: string): Promise<InsertResponse>;
   retryRecord(): Promise<{ remaining: number; messages: string[] }>;
   writeClipboard(text: string): Promise<boolean>;
   /** Calls back when the session's drafts or armed draft change; returns the unsubscribe. */
@@ -57,6 +57,8 @@ export function insertMessage(response: InsertResponse, shortcut = 'Ctrl+V'): st
         : `The draft is on the clipboard. Click into the field and press ${shortcut}.`;
     case 'not_armed':
       return 'Pick a draft first.';
+    case 'not_found':
+      return "That draft isn't in the queue any more.";
     case 'locked':
       return 'Unlock the queue first.';
     case 'failed':
@@ -78,12 +80,16 @@ export function insertMessage(response: InsertResponse, shortcut = 'Ctrl+V'): st
 }
 
 interface ViewProps {
+  /** The active tab's URL when qus.me can use the tab; undefined hides "For this page". */
   url: string | undefined;
   page: PageDrafts | undefined;
+  /** Whether the session holds a synced draft cache yet. */
+  synced?: boolean;
+  syncing?: boolean;
+  last?: SyncSummary | undefined;
   /** Sites with an account locator where detection found nothing. */
   undetected: string[];
   armed: ArmedDraft | undefined;
-  showElsewhere: boolean;
   status: string | undefined;
   unrecorded: number;
   busy: boolean;
@@ -92,37 +98,76 @@ interface ViewProps {
   /** The picker shortcut for the hint; empty when unbound, undefined when not known. */
   pickerShortcut?: string | undefined;
   onAddOffer?(offer: DestinationOffer): void;
+  /** Inserts the row's draft into the tab in one click (spec 11.5). */
+  onInsert(entry: PageDraft): void;
+  /** Arms the row's draft for the context menu. */
   onArm(entry: PageDraft): void;
   onDisarm(): void;
-  onInsert(): void;
   onRetry(): void;
-  onToggleElsewhere(): void;
 }
 
 function DraftRow(props: {
   entry: PageDraft;
   armed: boolean;
   showAccount: boolean;
+  /** False on a tab qus.me can't use: the row offers no Insert. */
+  insertable: boolean;
+  busy: boolean;
+  onInsert: (entry: PageDraft) => void;
   onArm: (entry: PageDraft) => void;
 }) {
   const { draft } = props.entry;
+  const [open, setOpen] = useState(false);
+  const preview = firstLine(draft.content);
+  // Expanding shows something only when the preview cut the text.
+  const more = preview !== draft.content.trim();
   return (
-    <li class="flex items-start gap-2 rounded border border-ink/20 p-2">
-      <div class="min-w-0 flex-1">
-        <p class="text-ink/70 text-xs">
-          {draft.site}
-          {props.showAccount && ` / ${draft.account}`} · {draft.field}
-        </p>
-        <p class="break-words text-sm">{firstLine(draft.content)}</p>
+    <li class="rounded border border-ink/20 p-2" data-draft={draft.d}>
+      <p class="text-ink/70 text-xs">
+        {draft.site}
+        {props.showAccount && ` / ${draft.account}`} · {draft.field}
+        {draft.source !== undefined && ` · from ${draft.source.label ?? 'an agent'}`}
+      </p>
+      {open ? (
+        <p class="mt-1 whitespace-pre-wrap break-words text-sm">{draft.content}</p>
+      ) : (
+        <p class="mt-1 break-words text-sm">{preview}</p>
+      )}
+      <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
+        {more && (
+          <button
+            type="button"
+            class="mr-auto text-xs underline"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? 'Less' : 'Show all'}
+          </button>
+        )}
+        {props.armed ? (
+          <span class="text-ink/70 text-xs">Armed for right-click</span>
+        ) : (
+          open &&
+          props.insertable && (
+            <Button
+              variant="plain"
+              class="px-2 py-1 text-xs"
+              onClick={() => props.onArm(props.entry)}
+            >
+              Arm for right-click
+            </Button>
+          )
+        )}
+        {props.insertable && (
+          <Button
+            class="px-3 py-1 text-sm"
+            disabled={props.busy}
+            onClick={() => props.onInsert(props.entry)}
+          >
+            Insert
+          </Button>
+        )}
       </div>
-      <Button
-        variant={props.armed ? 'primary' : 'plain'}
-        class="px-2 py-1 text-xs"
-        aria-pressed={props.armed}
-        onClick={() => props.onArm(props.entry)}
-      >
-        {props.armed ? 'Armed' : 'Arm'}
-      </Button>
     </li>
   );
 }
@@ -131,22 +176,36 @@ function DraftRow(props: {
 export function InsertView(props: ViewProps) {
   const { page, armed } = props;
   const detected = Object.entries(page?.detected ?? {});
+  const onPage = props.url !== undefined;
+  const synced = props.synced ?? page !== undefined;
+  const matching = onPage ? (page?.matching ?? []) : [];
+  const elsewhere = page?.elsewhere ?? [];
+  const row = (entry: PageDraft, showAccount: boolean) => (
+    <DraftRow
+      key={entry.draft.d}
+      entry={entry}
+      armed={armed?.d === entry.draft.d}
+      showAccount={showAccount}
+      insertable={onPage}
+      busy={props.busy}
+      onInsert={props.onInsert}
+      onArm={props.onArm}
+    />
+  );
   return (
-    <section class="mt-4" aria-labelledby="insert-title">
-      <h2 id="insert-title" class="font-semibold text-sm">
-        On this page
-      </h2>
-      {props.pickerShortcut !== undefined && (
-        <p class="mt-1 text-ink/70 text-xs">
-          {props.pickerShortcut === ''
-            ? "Give qus.me a keyboard shortcut in your browser's extension shortcuts to pick drafts from any text field."
-            : `Press ${props.pickerShortcut} in any text field to pick a draft there.`}
-        </p>
-      )}
-      {props.url === undefined ? (
-        <p class="mt-1 text-ink/70 text-xs">This tab can't take drafts.</p>
-      ) : (
-        <>
+    <div class="mt-4 flex flex-col gap-4">
+      {onPage && (
+        <section aria-labelledby="this-page-title">
+          <h2 id="this-page-title" class="font-semibold text-sm">
+            For this page
+          </h2>
+          {props.pickerShortcut !== undefined && (
+            <p class="mt-1 text-ink/70 text-xs">
+              {props.pickerShortcut === ''
+                ? "Give qus.me a keyboard shortcut in your browser's extension shortcuts to pick drafts from any text field."
+                : `Press ${props.pickerShortcut} in any text field to pick a draft there.`}
+            </p>
+          )}
           {detected.map(([site, account]) => (
             <p key={site} class="mt-1 text-ink/70 text-xs">
               Signed in to {site} as {account}.
@@ -169,19 +228,11 @@ export function InsertView(props: ViewProps) {
               Couldn't tell which {site} account is signed in; showing drafts for every account.
             </p>
           ))}
-          {page === undefined || page.matching.length === 0 ? (
-            <p class="mt-2 text-sm">No drafts for this page.</p>
+          {matching.length === 0 ? (
+            <p class="mt-2 text-sm">{synced ? 'No drafts for this page.' : 'Not synced yet.'}</p>
           ) : (
             <ul class="mt-2 flex flex-col gap-2">
-              {page.matching.map((entry) => (
-                <DraftRow
-                  key={entry.draft.d}
-                  entry={entry}
-                  armed={armed?.d === entry.draft.d}
-                  showAccount={page.detected[entry.draft.site] === undefined}
-                  onArm={props.onArm}
-                />
-              ))}
+              {matching.map((entry) => row(entry, page?.detected[entry.draft.site] === undefined))}
             </ul>
           )}
           {page !== undefined && page.otherAccounts > 0 && (
@@ -190,35 +241,45 @@ export function InsertView(props: ViewProps) {
               hidden.
             </p>
           )}
-        </>
+        </section>
       )}
-      {armed !== undefined && (
-        <div class="mt-3 rounded border border-accent p-2">
-          <p class="text-xs">Armed:</p>
-          <p class="break-words text-sm">{firstLine(armed.content)}</p>
-          <div class="mt-2 flex gap-2">
-            {props.url !== undefined && (
-              <Button class="px-2 py-1 text-sm" disabled={props.busy} onClick={props.onInsert}>
-                Insert
-              </Button>
+      {(elsewhere.length > 0 || !onPage) && (
+        <section aria-labelledby="elsewhere-title">
+          <h2 id="elsewhere-title" class="font-semibold text-sm">
+            {onPage ? 'Elsewhere' : 'Drafts'}
+            {elsewhere.length > 0 && (
+              <span class="ml-2 font-normal text-ink/70 text-xs">
+                {elsewhere.length} draft{elsewhere.length === 1 ? '' : 's'}
+              </span>
             )}
-            <Button variant="plain" class="px-2 py-1 text-sm" onClick={props.onDisarm}>
-              Disarm
-            </Button>
-          </div>
+          </h2>
+          {elsewhere.length === 0 ? (
+            <p class="mt-2 text-sm">{synced ? 'No active drafts.' : 'Not synced yet.'}</p>
+          ) : (
+            <ul class="mt-2 flex flex-col gap-2">{elsewhere.map((entry) => row(entry, true))}</ul>
+          )}
+        </section>
+      )}
+      {props.syncing && <p class="text-ink/70 text-xs">Syncing…</p>}
+      {armed !== undefined && (
+        <div class="rounded border border-accent p-2">
+          <p class="text-xs">Armed for right-click:</p>
+          <p class="break-words text-sm">{firstLine(armed.content)}</p>
           <p class="mt-1 text-ink/70 text-xs">
-            Insert puts it into the field focused on the page. Right-clicking a field also offers
-            it.
+            Right-click a field on the destination's page and choose Insert.
           </p>
+          <Button variant="plain" class="mt-2 px-2 py-1 text-sm" onClick={props.onDisarm}>
+            Disarm
+          </Button>
         </div>
       )}
       {props.status !== undefined && (
-        <p role="status" class="mt-2 text-sm">
+        <p role="status" class="text-sm">
           {props.status}
         </p>
       )}
       {props.unrecorded > 0 && (
-        <p class="mt-2 text-danger text-xs">
+        <p class="text-danger text-xs">
           {props.unrecorded} insertion{props.unrecorded === 1 ? '' : 's'} not recorded on the relays
           yet.{' '}
           <button type="button" class="underline" onClick={props.onRetry}>
@@ -226,48 +287,30 @@ export function InsertView(props: ViewProps) {
           </button>
         </p>
       )}
-      {page !== undefined && page.elsewhere.length > 0 && (
-        <div class="mt-3">
-          <button
-            type="button"
-            class="text-xs underline"
-            aria-expanded={props.showElsewhere}
-            onClick={props.onToggleElsewhere}
-          >
-            {props.showElsewhere ? 'Hide' : 'Show'} drafts for other sites ({page.elsewhere.length})
-          </button>
-          {props.showElsewhere && (
-            <ul class="mt-2 flex flex-col gap-2">
-              {page.elsewhere.map((entry) => (
-                <DraftRow
-                  key={entry.draft.d}
-                  entry={entry}
-                  armed={armed?.d === entry.draft.d}
-                  showAccount={true}
-                  onArm={props.onArm}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </section>
+      {props.last !== undefined && <SyncNote summary={props.last} />}
+    </div>
   );
 }
 
-/** The panel with its effects: tab, detection, arming and inserting. */
+/**
+ * The home screen's draft list with its effects: the sync on open, the tab and the account
+ * detection, one-click insert and arming for the context menu. Without `deps` (tests of the rest
+ * of the popup, or no tab) it lists the drafts with no Insert.
+ */
 export function InsertPanel(props: {
   store: KeyStore;
-  deps: InsertionUiDeps;
-  /** For the add-destination shortcut; without it the panel offers none. */
+  deps?: InsertionUiDeps | undefined;
+  /** For the sync on open and the add-destination shortcut. */
   setup?: SetupDeps;
 }) {
   const { store, deps, setup } = props;
   const [tab, setTab] = useState<{ id: number; url: string } | undefined>();
   const [page, setPage] = useState<PageDrafts | undefined>();
+  const [synced, setSynced] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [last, setLast] = useState<SyncSummary | undefined>();
   const [undetected, setUndetected] = useState<string[]>([]);
   const [armed, setArmed] = useState<ArmedDraft | undefined>();
-  const [showElsewhere, setShowElsewhere] = useState(false);
   const [status, setStatus] = useState<string>();
   const [unrecorded, setUnrecorded] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -285,20 +328,23 @@ export function InsertPanel(props: {
   >(undefined);
 
   const load = useCallback(async () => {
-    tabRef.current ??= deps.activeTab().catch(() => undefined);
-    const [cache, currentArmed, insertion, active] = await Promise.all([
+    tabRef.current ??= deps?.activeTab().catch(() => undefined) ?? Promise.resolve(undefined);
+    const [cache, sync, currentArmed, insertion, active] = await Promise.all([
       readDraftCache(store.session),
+      readSyncState(store.local),
       readArmed(store.session),
       readInsertionState(store.session),
       tabRef.current,
     ]);
+    setSynced(cache !== undefined);
+    setLast(sync.last);
     setArmed(currentArmed);
     setUnrecorded(insertion.unrecorded.length);
     setTab(active);
     const drafts = cache?.drafts ?? [];
     const destinations = cache?.destinations ?? [];
     const url = active?.url ?? '';
-    if (active !== undefined && cache !== undefined) {
+    if (deps !== undefined && active !== undefined && cache !== undefined) {
       // Step 2: one read-only detection per site among the drafts for this page.
       detectedRef.current ??= (async () => {
         const locators = accountLocators(drafts, destinations, deps.definitions, url);
@@ -335,20 +381,36 @@ export function InsertPanel(props: {
       draftsForPage({
         drafts,
         destinations,
-        source: deps.definitions,
+        source: deps?.definitions ?? definitionSource(),
         url,
         detected: detection?.found ?? {},
       })
     );
-  }, [store, deps]);
+  }, [store, deps, setup]);
 
   useEffect(() => {
+    let live = true;
     void load();
-    return deps.onSessionChange?.(() => void load());
-  }, [load, deps]);
+    // Opening the popup syncs (spec 11.4); the list shows the cache meanwhile.
+    if (setup?.requestSync !== undefined) {
+      setSyncing(true);
+      setup
+        .requestSync()
+        .catch(() => undefined)
+        .then(async () => {
+          if (live) await load();
+        })
+        .finally(() => live && setSyncing(false));
+    }
+    const unsubscribe = deps?.onSessionChange?.(() => void load());
+    return () => {
+      live = false;
+      unsubscribe?.();
+    };
+  }, [load, deps, setup]);
   useEffect(() => {
     void deps
-      .pickerShortcut?.()
+      ?.pickerShortcut?.()
       .then(setPickerShortcut)
       .catch(() => undefined);
   }, [deps]);
@@ -361,12 +423,15 @@ export function InsertPanel(props: {
     await disarm(store.session);
     setArmed(undefined);
   };
-  const onInsert = async () => {
-    if (tab === undefined || armed === undefined) return;
+  // One click: the background inserts this draft without arming it (the popup's click granted
+  // activeTab), so a failure leaves nothing armed.
+  const onInsert = async (entry: PageDraft) => {
+    if (deps === undefined || tab === undefined) return;
     setBusy(true);
-    const content = armed.content;
+    setStatus(undefined);
+    const { content } = entry.draft;
     try {
-      const response = await deps.insert(tab.id);
+      const response = await deps.insert(tab.id, entry.draft.d);
       // The page could not write the clipboard; the popup can, inside the user's click.
       if (
         response.state === 'waiting' &&
@@ -390,7 +455,7 @@ export function InsertPanel(props: {
     }
   };
   const onAddOffer = async (offer: DestinationOffer) => {
-    if (setup === undefined) return;
+    if (setup === undefined || deps === undefined) return;
     setBusy(true);
     setStatus(undefined);
     try {
@@ -409,6 +474,7 @@ export function InsertPanel(props: {
     }
   };
   const onRetry = async () => {
+    if (deps === undefined) return;
     const result = await deps.retryRecord();
     setStatus(result.remaining === 0 ? 'Recorded.' : (result.messages[0] ?? 'Still not recorded.'));
     await load();
@@ -416,22 +482,23 @@ export function InsertPanel(props: {
 
   return (
     <InsertView
-      url={tab?.url}
+      url={deps === undefined ? undefined : tab?.url}
       page={page}
+      synced={synced}
+      syncing={syncing}
+      last={last}
       undetected={undetected}
       armed={armed}
-      showElsewhere={showElsewhere}
       status={status}
       unrecorded={unrecorded}
       busy={busy}
       offers={offers}
       pickerShortcut={pickerShortcut}
       onAddOffer={(o) => void onAddOffer(o)}
+      onInsert={(e) => void onInsert(e)}
       onArm={(e) => void onArm(e)}
       onDisarm={() => void onDisarm()}
-      onInsert={() => void onInsert()}
       onRetry={() => void onRetry()}
-      onToggleElsewhere={() => setShowElsewhere(!showElsewhere)}
     />
   );
 }

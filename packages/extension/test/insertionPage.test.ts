@@ -605,6 +605,27 @@ describe('insertion', () => {
         tried: ['paste', 'clipboard'],
       });
       expect(h.prompts.at(-1)).toContain("couldn't insert the draft or copy it");
+      // One notice, not one from the clipboard step and another from the chain's caller.
+      expect(
+        h.prompts.filter((p) => p.includes("couldn't insert the draft or copy it"))
+      ).toHaveLength(1);
+    });
+
+    it('tells the user once when the clipboard fails after a click into the field', async () => {
+      const { editor } = lexicalComposer('Write a post');
+      const h = harness({ clipboard: false });
+      await createPageApi(h.env).insert(
+        request({
+          field: { ...xField, inject: ['clipboard'] },
+          method: 'extension_shortcut',
+          clipboardFallback: false,
+        })
+      );
+      editor.focus();
+      expect((await h.nextDone()).outcome).toMatchObject({ reason: 'clipboard_denied' });
+      expect(
+        h.prompts.filter((p) => p.includes("couldn't insert the draft or copy it"))
+      ).toHaveLength(1);
     });
 
     it('times out when nobody pastes', async () => {

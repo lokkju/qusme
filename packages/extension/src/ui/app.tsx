@@ -8,7 +8,6 @@ import { AgentsScreen, ApproveAgentScreen } from './agents.tsx';
 import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
 import { CreateScreen } from './create.tsx';
 import { DestinationsScreen } from './destinations.tsx';
-import { Drafts } from './drafts.tsx';
 import { FirstRunChecklist } from './firstRun.tsx';
 import { type InsertionUiDeps, InsertPanel } from './insert.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
@@ -201,14 +200,12 @@ function Unlocked(props: {
   };
   return (
     <Screen title="qus.me">
-      <p class="mt-2 break-all font-mono text-xs">{npubEncode(status.pubkey)}</p>
       <FirstRunChecklist
         deps={deps}
         onAddDestination={() => props.onRoute('add-destination')}
         onPair={() => props.onRoute('pair-source')}
       />
-      {props.insertion && <InsertPanel store={deps.store} deps={props.insertion} setup={deps} />}
-      <Drafts deps={deps} />
+      <InsertPanel store={deps.store} deps={props.insertion} setup={deps} />
       <div class="mt-4 flex flex-col gap-2">
         <Button onClick={() => props.onRoute('approve-agent')}>Approve an agent</Button>
         <Button variant="plain" onClick={() => props.onRoute('destinations')}>
@@ -230,26 +227,52 @@ function Unlocked(props: {
           Lock
         </Button>
       </div>
-      <div class="mt-4 flex items-start gap-2">
-        <input
-          id="stay-unlocked"
-          type="checkbox"
-          class="mt-1"
-          checked={status.stayUnlocked}
-          aria-describedby="stay-unlocked-warning"
-          onChange={(e) => void toggle(e.currentTarget.checked)}
-        />
-        <div>
-          <label for="stay-unlocked" class="font-medium text-sm">
-            Stay unlocked on this device
-          </label>
-          <p id="stay-unlocked-warning" class="text-ink/70 text-xs">
-            Keeps the queue key unencrypted on this computer so a browser restart doesn't ask for
-            the passphrase. Anyone with access to this browser profile can then read and change the
-            queue.
-          </p>
+      <details class="mt-4 rounded border border-ink/20 p-2">
+        <summary class="cursor-pointer font-medium text-sm">Settings and about</summary>
+        <div class="mt-3 flex items-start gap-2">
+          <input
+            id="stay-unlocked"
+            type="checkbox"
+            class="mt-1"
+            checked={status.stayUnlocked}
+            aria-describedby="stay-unlocked-warning"
+            onChange={(e) => void toggle(e.currentTarget.checked)}
+          />
+          <div>
+            <label for="stay-unlocked" class="font-medium text-sm">
+              Stay unlocked on this device
+            </label>
+            <p id="stay-unlocked-warning" class="text-ink/70 text-xs">
+              Keeps the queue key unencrypted on this computer so a browser restart doesn't ask for
+              the passphrase. Anyone with access to this browser profile can then read and change
+              the queue.
+            </p>
+          </div>
         </div>
-      </div>
+        <QueueAbout pubkey={status.pubkey} />
+      </details>
     </Screen>
+  );
+}
+
+/**
+ * The queue's ID, for recovery and support; the recovery sheet has it too (spec 6.1). Rendered
+ * only when the Settings and about area is opened, so the home screen carries no npub.
+ */
+function QueueAbout(props: { pubkey: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div class="mt-3">
+      <p class="font-medium text-sm">About this queue</p>
+      {shown ? (
+        <p class="mt-1 text-xs">
+          Queue ID: <span class="break-all font-mono">{npubEncode(props.pubkey)}</span>
+        </p>
+      ) : (
+        <button type="button" class="mt-1 text-xs underline" onClick={() => setShown(true)}>
+          Show Queue ID
+        </button>
+      )}
+    </div>
   );
 }

@@ -14,6 +14,7 @@ import {
   DEFAULT_FIELDS,
   defaultChoices,
   denyAgent,
+  sharesNothing,
 } from '../agents/approve.ts';
 import { parseApprovalCode } from '../agents/code.ts';
 import { confirmPendingDestination, rejectPendingDestination } from '../agents/destinations.ts';
@@ -62,38 +63,138 @@ function dateOf(expiresAt: number | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** Who is asking, with the client ID's host prominent. */
+/**
+ * Who is asking, with the client ID's host large: any client can call itself anything, but it
+ * can't serve its document from another's host. The rest of the request is under Details.
+ */
 export function RequestSummary(props: { request: AuthorizationRequest }) {
   const { request } = props;
   return (
-    <div class="mt-3 rounded border border-ink/20 p-3">
-      <p class="text-sm">
-        <span class="font-semibold">{request.clientName}</span> wants to submit drafts to your
-        queue.
+    <div class="mt-3 rounded bg-ink/5 p-3">
+      <p class="text-ink/70 text-xs">Code {request.code} · this agent calls itself</p>
+      <p class="font-semibold text-lg break-words">{request.clientName}</p>
+      <p class="mt-2 text-ink/70 text-xs">Published by (the host of its client ID)</p>
+      <p class="font-mono font-bold text-2xl break-all" data-client-host>
+        {request.clientHost}
       </p>
-      <p class="mt-2 text-ink/70 text-xs">Client ID host (who published this client):</p>
-      <p class="font-mono font-semibold text-lg break-all">{request.clientHost}</p>
-      <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs">
-        <dt class="text-ink/70">Client ID</dt>
-        <dd class="break-all font-mono">{request.clientId}</dd>
-        {request.redirectHost !== undefined && (
-          <>
-            <dt class="text-ink/70">Returns to</dt>
-            <dd class="break-all font-mono">{request.redirectHost}</dd>
-          </>
-        )}
-        <dt class="text-ink/70">Scope</dt>
-        <dd class="font-mono">{request.scopes.join(' ')}</dd>
-        <dt class="text-ink/70">Agent key</dt>
-        <dd class="font-mono">{shortNpub(request.agentPubkey)}</dd>
-      </dl>
+      <p class="mt-1 text-xs">
+        Only approve if you just connected an agent from {request.clientHost}.
+      </p>
       {request.clientName.toLowerCase() !== request.clientHost.toLowerCase() && (
         <p class="mt-2 text-ink/70 text-xs">
           The name is whatever the client says it is. Approve only if you started this from a client
           you trust and the host above is the one you expect.
         </p>
       )}
+      <details class="mt-2 text-xs">
+        <summary class="cursor-pointer text-ink/70">Details</summary>
+        <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+          <dt class="text-ink/70">Client ID</dt>
+          <dd class="break-all font-mono">{request.clientId}</dd>
+          {request.redirectHost !== undefined && (
+            <>
+              <dt class="text-ink/70">Returns to</dt>
+              <dd class="break-all font-mono">{request.redirectHost}</dd>
+            </>
+          )}
+          <dt class="text-ink/70">Scope</dt>
+          <dd class="font-mono">{request.scopes.join(' ')}</dd>
+          <dt class="text-ink/70">Agent key</dt>
+          <dd class="font-mono">{shortNpub(request.agentPubkey)}</dd>
+        </dl>
+      </details>
     </div>
+  );
+}
+
+/** Above Approve when the agent would be able to draft nothing (UX audit 4.7). */
+export function NothingSharedWarning(props: { name: string }) {
+  return (
+    <div role="alert" class="mt-3 rounded border border-danger/50 bg-danger/5 p-3">
+      <p class="font-semibold text-sm">This agent won't be able to draft anything</p>
+      <p class="mt-1 text-xs">
+        Nothing is shared with {props.name} and it can't propose new destinations, so every draft it
+        sends will be refused. Tick a destination or let it propose new ones; otherwise you'd have
+        to revoke it and approve it again to share one later.
+      </p>
+    </div>
+  );
+}
+
+/** The review step: who is asking, the grant form, the warning and the buttons. */
+export function ApprovalReview(props: {
+  request: AuthorizationRequest;
+  destinations: Destination[];
+  choices: ApprovalChoices;
+  busy: string | undefined;
+  error: string | undefined;
+  onChange: (choices: ApprovalChoices) => void;
+  onApprove: () => void;
+  onDeny: () => void;
+  onBack: () => void;
+}) {
+  const { choices } = props;
+  const empty = sharesNothing(choices);
+  return (
+    <Screen title="Approve an agent" onBack={props.onBack}>
+      <RequestSummary request={props.request} />
+      <GrantForm destinations={props.destinations} choices={choices} onChange={props.onChange} />
+      {empty && <NothingSharedWarning name={choices.label.trim() || props.request.clientName} />}
+      <ErrorText message={props.error} />
+      <div class="mt-4 flex gap-2">
+        <Button onClick={props.onApprove} disabled={props.busy !== undefined}>
+          {props.busy ?? (empty ? 'Approve anyway' : 'Approve')}
+        </Button>
+        <Button variant="danger" onClick={props.onDeny} disabled={props.busy !== undefined}>
+          Deny
+        </Button>
+      </div>
+    </Screen>
+  );
+}
+
+/** After an approval: the steps that finished, and what the client does next on its own. */
+export function ApprovalDone(props: { name: string; shared: string[]; onDone: () => void }) {
+  const tick = (
+    <span
+      aria-hidden="true"
+      class="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-accent text-white text-xs"
+    >
+      ✓
+    </span>
+  );
+  return (
+    <Screen title="Agent approved">
+      <h2 class="mt-2 font-semibold text-base">{props.name} is connected</h2>
+      <div role="status">
+        <ol class="mt-3 flex flex-col gap-2 text-sm">
+          <li class="flex items-center gap-2">
+            {tick}
+            <span>Saved to your queue</span>
+          </li>
+          <li class="flex items-center gap-2">
+            {tick}
+            <span>qus.me confirmed the approval</span>
+          </li>
+          <li class="flex items-center gap-2">
+            {/* The extension can't see the client's tab; its authorize page redirects on its own. */}
+            <span
+              aria-hidden="true"
+              class="flex h-5 w-5 flex-none items-center justify-center rounded-full border border-accent text-accent text-xs"
+            >
+              →
+            </span>
+            <span>{props.name} finishes signing in on its own: go back to its page</span>
+          </li>
+        </ol>
+      </div>
+      <p class="mt-3 text-ink/70 text-xs">
+        {props.shared.length === 0 ? 'Shared: nothing yet.' : `Shared: ${props.shared.join(', ')}.`}
+      </p>
+      <Button class="mt-4" onClick={props.onDone}>
+        Back to drafts
+      </Button>
+    </Screen>
   );
 }
 
@@ -250,7 +351,8 @@ export function GrantForm(props: {
 type ApprovePhase =
   | { phase: 'code' }
   | { phase: 'review'; request: AuthorizationRequest; destinations: Destination[] }
-  | { phase: 'done'; approved: boolean };
+  | { phase: 'done'; approved: true; name: string; shared: string[] }
+  | { phase: 'done'; approved: false };
 
 /** Enter the code from the client's authorize page, review the request, approve or deny. */
 export function ApproveAgentScreen(props: {
@@ -287,7 +389,7 @@ export function ApproveAgentScreen(props: {
           fetchAuthorization(createLocalSigner(unlocked.queueKey), code, deps),
           loadShareableDestinations(deps),
         ]);
-        setChoices(defaultChoices(request));
+        setChoices(defaultChoices(request, destinations));
         setPhase({ phase: 'review', request, destinations });
       } catch (e) {
         setError(messageOf(e));
@@ -323,12 +425,12 @@ export function ApproveAgentScreen(props: {
   }
 
   if (phase.phase === 'done') {
+    if (phase.approved)
+      return <ApprovalDone name={phase.name} shared={phase.shared} onDone={props.onDone} />;
     return (
-      <Screen title={phase.approved ? 'Agent approved' : 'Request denied'}>
+      <Screen title="Request denied">
         <p class="mt-2 text-sm" role="status">
-          {phase.approved
-            ? "Go back to the client's page; it finishes signing in on its own."
-            : 'The service destroyed the key it made for this request.'}
+          The service destroyed the key it made for this request.
         </p>
         <Button class="mt-4" onClick={props.onDone}>
           Done
@@ -344,7 +446,15 @@ export function ApproveAgentScreen(props: {
     setBusy('Publishing…');
     try {
       await approveAgent(request, choices, deps);
-      setPhase({ phase: 'done', approved: true });
+      const shared = choices.destinations.flatMap(
+        (c) => destinations.find((d) => d.id === c.id)?.label ?? []
+      );
+      setPhase({
+        phase: 'done',
+        approved: true,
+        name: choices.label.trim() || request.clientName,
+        shared,
+      });
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -363,22 +473,19 @@ export function ApproveAgentScreen(props: {
       setBusy(undefined);
     }
   };
+  if (choices === undefined) return null;
   return (
-    <Screen title="Approve an agent" onBack={props.onBack}>
-      <RequestSummary request={request} />
-      {choices !== undefined && (
-        <GrantForm destinations={destinations} choices={choices} onChange={setChoices} />
-      )}
-      <ErrorText message={error} />
-      <div class="mt-4 flex gap-2">
-        <Button onClick={approve} disabled={busy !== undefined}>
-          {busy ?? 'Approve'}
-        </Button>
-        <Button variant="danger" onClick={deny} disabled={busy !== undefined}>
-          Deny
-        </Button>
-      </div>
-    </Screen>
+    <ApprovalReview
+      request={request}
+      destinations={destinations}
+      choices={choices}
+      busy={busy}
+      error={error}
+      onChange={setChoices}
+      onApprove={() => void approve()}
+      onDeny={() => void deny()}
+      onBack={props.onBack}
+    />
   );
 }
 

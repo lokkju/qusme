@@ -108,7 +108,8 @@ describe('insert panel shortcut', { timeout: 30_000 }, () => {
     ]);
     expect(list[0]?.extra).toEqual({ color: 'teal' });
     await until(() => offer() === undefined);
-    expect(q.syncRequests()).toBe(1);
+    // One when the list opened (spec 11.4), one after the add.
+    expect(q.syncRequests()).toBe(2);
     render(null, root);
     q.close();
   });

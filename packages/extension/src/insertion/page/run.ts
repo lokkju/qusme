@@ -183,10 +183,9 @@ export function createPageApi(env: PageEnv): PageApi {
     ): Promise<PageOutcome> => {
       const ran = [...tried, 'clipboard' as const];
       const written = await env.writeClipboard(value);
-      if (!written && !request.clipboardFallback) {
-        showFailure('clipboard_denied');
-        return failed('clipboard_denied', ran);
-      }
+      // The caller tells the user: the resolved path's own failure notice, or `finish` after a
+      // click into the field.
+      if (!written && !request.clipboardFallback) return failed('clipboard_denied', ran);
       // The user may paste into another field than the one resolved; each field is judged
       // against what it held when it took focus.
       const before = new Map<EditableTarget, string>([[target, readBack(target)]]);

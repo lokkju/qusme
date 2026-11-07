@@ -4,11 +4,12 @@
  */
 import type { SiteAccount } from '@qusme/nostr';
 import { browser } from 'wxt/browser';
+import { badgeUpdater, changesBadge } from '../badge.ts';
 import { PICKER_COMMAND } from '../commands.ts';
 import { type KeyStore, SESSION_ARMED, SESSION_DRAFTS, SESSION_INSERTION } from '../keyStore.ts';
 import { readDraftCache } from '../sync/state.ts';
 import type { InsertionUiDeps } from '../ui/insert.tsx';
-import { readArmed, readInsertionState } from './armed.ts';
+import { readArmed } from './armed.ts';
 import type { SiteDefinitionSource } from './definitions.ts';
 import { MENU_CHOOSE, MENU_INSERT, menuItem } from './menu.ts';
 import { INSERT_MESSAGE, RETRY_RECORD_MESSAGE } from './messages.ts';
@@ -113,10 +114,15 @@ export function installInsertion(
   const service = new InsertionService({ store, definitions, page: scriptingPageRunner });
   const accessKeys = import.meta.env.FIREFOX === true;
 
-  const updateBadge = async () => {
-    const { unrecorded } = await readInsertionState(store.session);
-    await browser.action.setBadgeText({ text: unrecorded.length > 0 ? '!' : '' });
-  };
+  // The badge follows the drafts, the insertion bookkeeping, pending revocations and the lock:
+  // every sync, insert, dismissal, lock and unlock writes one of them (spec 11.4).
+  const updateBadge = badgeUpdater(store, browser.action);
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (changesBadge(changes, area)) void updateBadge();
+  });
+  browser.runtime.onStartup.addListener(() => void updateBadge());
+  browser.runtime.onInstalled.addListener(() => void updateBadge());
+  void updateBadge();
 
   let rebuilding = Promise.resolve();
   const rebuildMenu = () => {
@@ -197,9 +203,9 @@ export function installInsertion(
     let work: Promise<unknown> | undefined;
     const pick = sender.tab?.id === undefined ? undefined : readPickMessage(message);
     if (sender.tab === undefined && type === INSERT_MESSAGE) {
-      const tabId = (message as { tabId?: unknown }).tabId;
-      if (typeof tabId !== 'number') return false;
-      work = service.insert({ tabId, method: 'extension_popup' });
+      const { tabId, d } = message as { tabId?: unknown; d?: unknown };
+      if (typeof tabId !== 'number' || typeof d !== 'string') return false;
+      work = service.insertChosen(tabId, d);
     } else if (sender.tab === undefined && type === RETRY_RECORD_MESSAGE) {
       work = service.retryUnrecorded();
     } else if (sender.tab?.id !== undefined && pick !== undefined) {
@@ -245,8 +251,8 @@ export function browserInsertionUiDeps(definitions: SiteDefinitionSource): Inser
       return { id: tab.id, url: tab.url };
     },
     detectAccounts,
-    insert: (tabId) =>
-      browser.runtime.sendMessage({ type: INSERT_MESSAGE, tabId }) as Promise<InsertResponse>,
+    insert: (tabId, d) =>
+      browser.runtime.sendMessage({ type: INSERT_MESSAGE, tabId, d }) as Promise<InsertResponse>,
     retryRecord: () =>
       browser.runtime.sendMessage({ type: RETRY_RECORD_MESSAGE }) as Promise<{
         remaining: number;
