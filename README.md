@@ -36,7 +36,7 @@ pnpm -C packages/entry-worker dev                # wrangler dev, local D1
 pnpm -C packages/entry-node dev                  # Node on :8787, SQLite in ./qusme.db
 ```
 
-`wrangler dev` reads secrets from `packages/entry-worker/.dev.vars` (`QUSME_AGENT_KEY_SECRET=...`). The Node entrypoint reads `QUSME_AGENT_KEY_SECRET`, `QUSME_DB_PATH` and `PORT` from the environment; its `dev` script fills in a throwaway secret when none is set. `QUSME_AGENT_KEY_SECRET` is 32 random bytes in standard base64 (`openssl rand -base64 32`); both entrypoints refuse to start without one, or with anything else.
+`wrangler dev` reads secrets from `packages/entry-worker/.dev.vars` (`QUSME_AGENT_KEY_SECRET=...`). The Worker routes by Host, so locally put `QUSME_PUBLIC_ORIGIN=http://localhost:8787` in `.dev.vars` for the service, or `QUSME_SITE_ORIGIN=http://localhost:8787` for the landing site; any other host gets a 404. The Node entrypoint reads `QUSME_AGENT_KEY_SECRET`, `QUSME_DB_PATH` and `PORT` from the environment; its `dev` script fills in a throwaway secret when none is set. `QUSME_AGENT_KEY_SECRET` is 32 random bytes in standard base64 (`openssl rand -base64 32`); both entrypoints refuse to start without one, or with anything else.
 
 The clients:
 
@@ -49,15 +49,15 @@ A schema change is an edit to `packages/store-sql/src/schema.ts` followed by `pn
 
 ## Deploying
 
-The service is served at `https://app.qus.me`, with MCP at `/mcp`, from Cloudflare Workers. The Node entrypoint and its image are for self-hosting and local development.
+The service is served at `https://app.qus.me`, with MCP at `/mcp`, from Cloudflare Workers. The same Worker serves the landing site and privacy policy (`site/`, static files) at `https://qus.me` as Workers static assets, routing by Host: `qus.me` gets the site, `www.qus.me` redirects to it, `app.qus.me` gets the service and never the site, and any other host gets a 404. The Node entrypoint and its image are for self-hosting and local development.
 
 ### Workers
 
-The Worker is the `qusme` script on Cloudflare. The Pulumi stack in [lokkju/infra](https://github.com/lokkju/infra) owns the script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET`, and the deploy token and account id this repo deploys with (the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Actions secrets). This repo owns the code and the migrations.
+The Worker is the `qusme` script on Cloudflare. The Pulumi stack in [lokkju/infra](https://github.com/lokkju/infra) owns the script's existence, its custom domains `app.qus.me` and `qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET`, and the deploy token and account id this repo deploys with (the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Actions secrets). This repo owns the code and the migrations.
 
 `.github/workflows/deploy.yml` ships the code on every merge to `main` that touches the Worker or anything it builds from (`packages/core`, `packages/nostr`, `packages/store-sql`, `packages/entry-worker`, `registry/`, the lockfile and workspace files, the pinned tools and the workflow itself), and by hand (`workflow_dispatch`). It applies pending D1 migrations, then runs `wrangler deploy`, which replaces the script's code and keeps its secrets. One deploy runs at a time; a newer one waits. CI runs `wrangler deploy --dry-run` on every PR.
 
-`wrangler.jsonc` declares no routes or custom domains and sets `workers_dev` to `false`, because Pulumi attaches app.qus.me. A change to the domain, the database, a binding or a secret is a change in lokkju/infra first.
+`wrangler.jsonc` declares no routes or custom domains and sets `workers_dev` to `false`, because Pulumi attaches app.qus.me and qus.me. The `assets` block keeps `main`: an assets-only deploy would upload a version with no bindings and drop the Worker's secrets. A change to the domain, the database, a binding or a secret is a change in lokkju/infra first.
 
 `/healthz` reports the deployed commit. Releases of the service will be CalVer (`vYYYY.MM.DD[.N]`) once release automation exists.
 

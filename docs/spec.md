@@ -404,7 +404,7 @@ The service retains no submission plaintext after publishing. For each published
 
 ### 8.5 Portability
 
-The service is a `createApp(deps)` Hono factory using only Web-standard APIs, with thin Workers and Node entrypoints, as in v0.1. For development it runs on the operator's homelab through the Node entrypoint, behind a Cloudflare tunnel at `app.qus.me`; Workers remains a supported target at the same hostname. Its own state is small:
+The service is a `createApp(deps)` Hono factory using only Web-standard APIs, with thin Workers and Node entrypoints, as in v0.1. For development it runs on the operator's homelab through the Node entrypoint, behind a Cloudflare tunnel at `app.qus.me`; Workers remains a supported target at the same hostname. On Workers the same script also serves the static landing site and privacy policy at `qus.me` (`site/`), routing by Host so the service answers only on `app.qus.me` and the site never does. Its own state is small:
 
 - OAuth clients (cached Client ID Metadata Documents), authorization codes and tokens (hashed, with expiry);
 - pending authorizations (8.2: short code, client id, PKCE challenge, scopes, minted agent key id, a keyed hash of the client IP for the per-IP cap, `expires_at`);

@@ -26,6 +26,13 @@ export interface Env {
   QUSME_AGENT_KEY_VERSION?: string;
   /** The secret of the version before it, only during a rotation. */
   QUSME_AGENT_KEY_SECRET_PREVIOUS?: string;
+  /**
+   * The landing site's origin (https://qus.me); a plain var in wrangler.jsonc. Requests for its
+   * host, or for www. in front of it, get the static site; unset, no host serves the site.
+   */
+  QUSME_SITE_ORIGIN?: string;
+  /** The static assets binding over `site/` (wrangler.jsonc `assets`). */
+  ASSETS?: Fetcher;
   /** The service-wide daily create_draft ceiling; a plain var in wrangler.jsonc. */
   QUSME_DAILY_DRAFT_CEILING?: string;
   /**
@@ -59,35 +66,100 @@ const bindingUnavailable = (binding: string) => {
   console.warn(`ratelimit_binding_unavailable name=${binding}`);
 };
 
-export default {
-  fetch(request, env, ctx) {
-    const app = createApp({
-      version: __QUSME_VERSION__,
-      db: openD1(env.DB),
-      agentKeys: agentKeyRingFromEnv({ ...env }),
-      publicOrigin: env.QUSME_PUBLIC_ORIGIN,
-      // A ceiling that is not a whole number throws, so a misconfigured deploy refuses requests
-      // instead of running without its cost bound.
-      limits: {
-        rateLimiter: createBindingRateLimiter(
-          { ...env },
-          { fallback: fallbackLimiter, onUnavailable: bindingUnavailable }
+/**
+ * Headers on every landing site response. The site is static HTML, one stylesheet, self-hosted
+ * fonts and one script file, so the CSP allows only same-origin styles, fonts, images and scripts
+ * and nothing inline.
+ */
+export const SITE_HEADERS: Readonly<Record<string, string>> = {
+  'Content-Security-Policy': [
+    "default-src 'none'",
+    "script-src 'self'",
+    "style-src 'self'",
+    "font-src 'self'",
+    "img-src 'self'",
+    "connect-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join('; '),
+  'Strict-Transport-Security': 'max-age=31536000',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+};
+
+const hostOf = (origin: string | undefined): string | undefined => {
+  if (!origin) return undefined;
+  try {
+    return new URL(origin).host;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Serves the landing site from the assets binding, with the site's security headers. */
+async function serveSite(request: Request, assets: Fetcher): Promise<Response> {
+  const asset = await assets.fetch(request);
+  const response = new Response(asset.body, asset);
+  for (const [name, value] of Object.entries(SITE_HEADERS)) response.headers.set(name, value);
+  return response;
+}
+
+const notFound = () =>
+  new Response('Not found\n', { status: 404, headers: { 'Content-Type': 'text/plain' } });
+
+/** The qus.me service (packages/core) for one request. */
+function serveApi(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {
+  const app = createApp({
+    version: __QUSME_VERSION__,
+    db: openD1(env.DB),
+    agentKeys: agentKeyRingFromEnv({ ...env }),
+    publicOrigin: env.QUSME_PUBLIC_ORIGIN,
+    // A ceiling that is not a whole number throws, so a misconfigured deploy refuses requests
+    // instead of running without its cost bound.
+    limits: {
+      rateLimiter: createBindingRateLimiter(
+        { ...env },
+        { fallback: fallbackLimiter, onUnavailable: bindingUnavailable }
+      ),
+      config: {
+        draftsPerDayCeiling: limitFromEnv(
+          env.QUSME_DAILY_DRAFT_CEILING,
+          'QUSME_DAILY_DRAFT_CEILING',
+          DEFAULT_LIMITS.draftsPerDayCeiling
         ),
-        config: {
-          draftsPerDayCeiling: limitFromEnv(
-            env.QUSME_DAILY_DRAFT_CEILING,
-            'QUSME_DAILY_DRAFT_CEILING',
-            DEFAULT_LIMITS.draftsPerDayCeiling
-          ),
-        },
       },
-      mcp: {
-        registry,
-        // Pubkeys only (spec 8.4): a tool went ahead on the grant without the submitters list.
-        notice: (n) => console.warn(`${n.event} agent=${n.agentPubkey} queue=${n.queuePubkey}`),
-      },
-    });
-    return app.fetch(request, env, ctx);
+    },
+    mcp: {
+      registry,
+      // Pubkeys only (spec 8.4): a tool went ahead on the grant without the submitters list.
+      notice: (n) => console.warn(`${n.event} agent=${n.agentPubkey} queue=${n.queuePubkey}`),
+    },
+  });
+  return app.fetch(request, env, ctx);
+}
+
+export default {
+  // Routes by Host: the service's origin (QUSME_PUBLIC_ORIGIN, app.qus.me) gets the API exactly as
+  // before, the site's origin (QUSME_SITE_ORIGIN, qus.me) gets the static site, www. in front of
+  // it redirects there, and any other host gets a 404. The site never answers on app.qus.me and the
+  // API never answers on qus.me. wrangler.jsonc sets assets.run_worker_first, so every request
+  // comes through here, assets included.
+  fetch(request, env, ctx) {
+    const host = new URL(request.url).host;
+    if (host === hostOf(env.QUSME_PUBLIC_ORIGIN)) return serveApi(request, env, ctx);
+    const siteHost = hostOf(env.QUSME_SITE_ORIGIN);
+    if (siteHost !== undefined && host === siteHost) {
+      return env.ASSETS ? serveSite(request, env.ASSETS) : notFound();
+    }
+    if (siteHost !== undefined && host === `www.${siteHost}`) {
+      const url = new URL(request.url);
+      return Response.redirect(new URL(url.pathname + url.search, env.QUSME_SITE_ORIGIN).href, 301);
+    }
+    return notFound();
   },
 
   // The cron trigger in wrangler.jsonc: delete expired service state (spec 8.5) and, while the
