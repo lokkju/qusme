@@ -23,6 +23,23 @@ The service is the OAuth 2.1 authorization server for its own MCP endpoint (spec
 
 A request to `/mcp` without a valid token gets 401 with `WWW-Authenticate: Bearer resource_metadata="https://app.qus.me/.well-known/oauth-protected-resource/mcp", scope="drafts:submit"`, which is where an MCP client starts. The metadata, token, revocation and `/mcp` endpoints answer CORS from any origin, so browser-based clients such as MCP Inspector can use them; none of them uses cookies.
 
+## Limits
+
+The OAuth routes carry their share of the service's limits (spec 8.5, "Limits"; the numbers are in `packages/core/src/limits.ts`):
+
+| Route | Limit | Over the limit |
+|---|---|---|
+| `GET /authorize` | 10 a minute per client IP; at most 5 undecided authorizations open per IP and 500 in all | 429 HTML page with `Retry-After` |
+| `GET /authorize/:id`, `GET /authorize/:id/status` | 60 a minute per client IP (the page polls every 2 s) | 429, HTML for the page and JSON for the poll |
+| `POST /token`, `POST /revoke` | 20 a minute per client IP, the two together | 429 JSON with `Retry-After`, with CORS headers |
+| `/device/*` | 30 a minute per queue key, after the NIP-98 check | 429 JSON with `Retry-After` |
+| `GET /device/authorizations/:code`, `POST .../approve` | 10 agents per queue | 409 `agent_limit_reached` with `max_agents` |
+| `/mcp` | 30 a minute per agent key and 60 per queue | tool error `rate_limited` on a tool call, 429 otherwise |
+
+On Workers these limits are the Workers Rate Limiting bindings, counted per Cloudflare location. If a binding is missing or unusable, the Worker counts that limit in memory per isolate and logs `ratelimit_binding_unavailable name=<binding>` once per isolate, and if a binding call throws, the request goes through; the open-authorization and agent caps are counted in D1 and refuse the request if counting fails. A JSON 429 has the body `{"error": "rate_limited", "error_description", "retry_after"}`. The open-authorization caps are checked before the client's metadata document is fetched, and `Retry-After` is when the first open authorization expires. The agent cap is checked at the fetch, so no key is minted for a queue that is full, and again at approval, for requests fetched before it filled; revoking an agent makes room. The client IP is `CF-Connecting-IP`; the pending authorization stores an HMAC-SHA-256 of it under a key derived from the service secret, never the address.
+
+Request bodies are capped before any handler reads them: 8 KiB on `/token` and `/revoke`, 4 KiB on the device routes, 256 KiB on `/mcp` (413), and URLs at 8 KiB (414).
+
 ## The flow
 
 1. The client fetches the protected resource metadata, then the authorization server metadata, and sends the browser to `/authorize` with `client_id` (its metadata document's URL), `redirect_uri`, `code_challenge` and `code_challenge_method=S256`, `state`, `resource=https://app.qus.me/mcp` and `scope=drafts:submit`.

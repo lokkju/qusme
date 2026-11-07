@@ -61,6 +61,16 @@ The Worker is the `qusme` script on Cloudflare. The Pulumi stack in [lokkju/infr
 
 `/healthz` reports the deployed commit. Releases of the service will be CalVer (`vYYYY.MM.DD[.N]`) once release automation exists.
 
+### Limits
+
+The service rate-limits its own routes and caps what it will spend (spec 8.5, "Limits"), on top of the per-IP rule at Cloudflare's edge that lokkju/infra owns. The numbers live in `packages/core/src/limits.ts`: `RATE_CLASSES` for the rate limits, `TIERS` for what each queue gets (one tier, `free`, for now), and `DEFAULT_LIMITS` for the service-wide caps.
+
+- Rate limits go through the Workers Rate Limiting binding on Workers, one `ratelimits` entry in `wrangler.jsonc` per rate class with the same limit and period (a test fails if they drift apart), and through an in-memory counter on Node. The binding needs no Cloudflare resource created ahead of the deploy; its `namespace_id` is a number we pick. A binding the account or deploy doesn't provide falls back to in-memory counting in each isolate, with one `ratelimit_binding_unavailable name=<binding>` warning per isolate, so the Worker keeps serving.
+- The caps (open authorizations per IP and in all, agents per queue, drafts per queue per day, and the service-wide daily draft ceiling) are counted in D1 or the SQLite file and refuse the request if counting fails.
+- `QUSME_DAILY_DRAFT_CEILING` sets the service-wide ceiling: a plain var in `wrangler.jsonc` on Workers (2000), the environment on Node (2000 when unset). Anything but a whole number stops the service from starting; 0 refuses every draft.
+
+A client over a limit gets 429 with `Retry-After`; an agent gets the MCP tool error `rate_limited` or `quota_exhausted`, with `retry_after` in seconds.
+
 ### Rotating the agent key secret
 
 `QUSME_AGENT_KEY_SECRET` encrypts every agent key at rest (spec 6.2), and each key records the version of the secret it is under. Losing the secret loses every agent key, so the old one stays configured until every key has moved. To rotate from version N to N+1:

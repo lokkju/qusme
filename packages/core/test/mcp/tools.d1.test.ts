@@ -43,7 +43,9 @@ mcpToolsSuite('D1 (Miniflare)', () => ({
   async fresh() {
     // oauth_clients and agent_keys cascade to everything that refers to them.
     await d1.batch(
-      ['agent_keys', 'oauth_clients', 'nip98_replays'].map((t) => d1.prepare(`DELETE FROM ${t}`))
+      ['agent_keys', 'oauth_clients', 'nip98_replays', 'usage_counters'].map((t) =>
+        d1.prepare(`DELETE FROM ${t}`)
+      )
     );
     const db = openD1(d1 as unknown as Parameters<typeof openD1>[0]);
     return { db, store: createStore(db) };

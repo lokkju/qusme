@@ -16,6 +16,7 @@ const config = {
   agentKeys: createAgentKeyRing({ secret: SECRET }),
   version: 'v-test',
   publicOrigin: 'https://app.qus.me',
+  draftsPerDayCeiling: 2000,
 };
 
 describe('the Node entrypoint', () => {
@@ -50,6 +51,27 @@ describe('the Node entrypoint', () => {
     expect(() =>
       configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET, QUSME_AGENT_KEY_SECRET_PREVIOUS: SECRET })
     ).toThrow(/QUSME_AGENT_KEY_VERSION of 2 or more/);
+  });
+
+  it('reads the daily draft ceiling, refusing to start with a malformed one', () => {
+    expect(configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET }).draftsPerDayCeiling).toBe(2000);
+    expect(
+      configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET, QUSME_DAILY_DRAFT_CEILING: '50' })
+        .draftsPerDayCeiling
+    ).toBe(50);
+    expect(() =>
+      configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET, QUSME_DAILY_DRAFT_CEILING: 'many' })
+    ).toThrow(/QUSME_DAILY_DRAFT_CEILING/);
+  });
+
+  it('rate-limits pairing lookups per client IP in memory', async () => {
+    const app = buildApp(config);
+    const lookup = () =>
+      app.request('/pair/0000-0000', { headers: { 'CF-Connecting-IP': '203.0.113.7' } });
+    for (let i = 0; i < 10; i++) expect((await lookup()).status).toBe(404);
+    const over = await lookup();
+    expect(over.status).toBe(429);
+    expect(Number(over.headers.get('Retry-After'))).toBeGreaterThan(0);
   });
 
   it('defaults the version to dev', () => {

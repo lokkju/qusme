@@ -22,6 +22,13 @@
       "when": 1793651449904,
       "tag": "0002_binding_storage_relays",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793975614163,
+      "tag": "0003_service_limits",
+      "breakpoints": true
     }
   ]
 }

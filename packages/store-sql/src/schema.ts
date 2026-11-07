@@ -12,6 +12,7 @@ import {
   customType,
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -105,6 +106,12 @@ export const pendingAuthorizations = sqliteTable(
     agentKeyId: text('agent_key_id').references(() => agentKeys.id, { onDelete: 'set null' }),
     /** The queue whose device fetched it (the NIP-98 signer). */
     queuePubkey: text('queue_pubkey'),
+    /**
+     * Keyed hash (HMAC-SHA-256 under a key derived from the service secret) of the IP address that
+     * started the authorization, for the open-authorizations-per-IP cap. Never the address itself;
+     * gone with the row when it is swept.
+     */
+    clientIpHash: text('client_ip_hash'),
     createdAt: integer('created_at').notNull(),
     expiresAt: integer('expires_at').notNull(),
   },
@@ -112,6 +119,7 @@ export const pendingAuthorizations = sqliteTable(
     uniqueIndex('pending_authorizations_user_code_idx').on(t.userCode),
     index('pending_authorizations_expires_idx').on(t.expiresAt),
     index('pending_authorizations_agent_key_idx').on(t.agentKeyId),
+    index('pending_authorizations_client_ip_idx').on(t.clientIpHash, t.expiresAt),
   ]
 );
 
@@ -205,7 +213,28 @@ export const submissionReceipts = sqliteTable(
   },
   (t) => [
     index('submission_receipts_agent_created_idx').on(t.agentKeyId, t.createdAt),
+    index('submission_receipts_queue_created_idx').on(t.queuePubkey, t.createdAt),
     index('submission_receipts_expires_idx').on(t.expiresAt),
+  ]
+);
+
+/**
+ * Exact counters for service-wide caps (the global daily create_draft ceiling): one row per scope
+ * and window, reserved with a single conditional upsert so concurrent requests cannot pass the
+ * limit, and released when the counted action fails.
+ */
+export const usageCounters = sqliteTable(
+  'usage_counters',
+  {
+    scope: text('scope').notNull(),
+    /** Start of the counting window, unix seconds (00:00 UTC for a daily cap). */
+    windowStart: integer('window_start').notNull(),
+    count: integer('count').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.scope, t.windowStart] }),
+    index('usage_counters_expires_idx').on(t.expiresAt),
   ]
 );
 

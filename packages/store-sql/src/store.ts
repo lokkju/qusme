@@ -7,7 +7,22 @@
  *
  * `now` is always passed in (unix seconds), so reads of TTL rows filter on it and tests control it.
  */
-import { and, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  min,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type { QusmeDb } from './db.ts';
 import {
   agentKeys,
@@ -20,6 +35,7 @@ import {
   pairingSessions,
   pendingAuthorizations,
   submissionReceipts,
+  usageCounters,
 } from './schema.ts';
 
 export type OAuthClient = typeof oauthClients.$inferSelect;
@@ -40,6 +56,13 @@ export type PairingSession = typeof pairingSessions.$inferSelect;
 export type NewPairingSession = typeof pairingSessions.$inferInsert;
 export type HostedQueue = typeof hostedQueues.$inferSelect;
 export type NewHostedQueue = typeof hostedQueues.$inferInsert;
+export type UsageCounter = typeof usageCounters.$inferSelect;
+
+/** How many rows are open and when the first of them closes (undefined when none is open). */
+export interface OpenCount {
+  count: number;
+  earliestExpiry: number | undefined;
+}
 
 /** Rows `sweepExpired` deleted, per table. */
 export interface SweepResult {
@@ -51,6 +74,7 @@ export interface SweepResult {
   submissionReceipts: number;
   pairingSessions: number;
   nip98Replays: number;
+  usageCounters: number;
 }
 
 /** Hex SHA-256 of a secret (an OAuth code or token), the form those tables store. Web Crypto. */
@@ -234,6 +258,26 @@ export function createStore(db: QusmeDb) {
         .returning();
       return out;
     },
+    /**
+     * Live authorizations not yet decided (`pending` or `fetched`), all of them or only those
+     * started from one client IP hash, for the open-authorization caps.
+     */
+    async countOpen(now: number, clientIpHash?: string): Promise<OpenCount> {
+      const [row] = await db
+        .select({ n: count(), first: min(pendingAuthorizations.expiresAt) })
+        .from(pendingAuthorizations)
+        .where(
+          and(
+            live(now),
+            inArray(pendingAuthorizations.status, ['pending', 'fetched']),
+            clientIpHash === undefined
+              ? undefined
+              : eq(pendingAuthorizations.clientIpHash, clientIpHash)
+          )
+        )
+        .all();
+      return { count: row?.n ?? 0, earliestExpiry: row?.first ?? undefined };
+    },
     async delete(id: string): Promise<boolean> {
       const out = await db
         .delete(pendingAuthorizations)
@@ -347,6 +391,21 @@ export function createStore(db: QusmeDb) {
     async get(agentKeyId: string): Promise<Binding | undefined> {
       return db.select().from(bindings).where(eq(bindings.agentKeyId, agentKeyId)).get();
     },
+    /** How many unrevoked bindings a queue has, leaving out `exceptAgentKeyId` if given. */
+    async countByQueue(queuePubkey: string, exceptAgentKeyId?: string): Promise<number> {
+      const [row] = await db
+        .select({ n: count() })
+        .from(bindings)
+        .where(
+          and(
+            eq(bindings.queuePubkey, queuePubkey),
+            isNull(bindings.revokedAt),
+            exceptAgentKeyId === undefined ? undefined : ne(bindings.agentKeyId, exceptAgentKeyId)
+          )
+        )
+        .all();
+      return row?.n ?? 0;
+    },
     /** Unrevoked bindings to a queue. */
     async listByQueue(queuePubkey: string): Promise<Binding[]> {
       return db
@@ -457,6 +516,20 @@ export function createStore(db: QusmeDb) {
         )
         .all();
       return rows.length;
+    },
+    /** Submissions to a queue since `since`, for the per-queue daily cap. */
+    async countByQueueSince(queuePubkey: string, since: number): Promise<number> {
+      const [row] = await db
+        .select({ n: count() })
+        .from(submissionReceipts)
+        .where(
+          and(
+            eq(submissionReceipts.queuePubkey, queuePubkey),
+            gte(submissionReceipts.createdAt, since)
+          )
+        )
+        .all();
+      return row?.n ?? 0;
     },
     async delete(giftWrapId: string): Promise<boolean> {
       const out = await db
@@ -611,6 +684,55 @@ export function createStore(db: QusmeDb) {
     },
   };
 
+  const usageCountersRepo = {
+    /**
+     * Counts one use against `scope` in the window starting at `windowStart`, unless the window
+     * already holds `limit`: one conditional upsert, so concurrent callers never pass the limit.
+     * Returns the new count, or undefined when the limit is reached (or is below 1).
+     */
+    async reserve(
+      scope: string,
+      windowStart: number,
+      limit: number,
+      expiresAt: number
+    ): Promise<number | undefined> {
+      if (!(limit >= 1)) return undefined;
+      const [out] = await db
+        .insert(usageCounters)
+        .values({ scope, windowStart, count: 1, expiresAt })
+        .onConflictDoUpdate({
+          target: [usageCounters.scope, usageCounters.windowStart],
+          set: { count: sql`${usageCounters.count} + 1` },
+          setWhere: lt(usageCounters.count, limit),
+        })
+        .returning({ count: usageCounters.count });
+      return out?.count;
+    },
+    /** Gives back one use reserved for an action that did not happen. */
+    async release(scope: string, windowStart: number): Promise<void> {
+      await db
+        .update(usageCounters)
+        .set({ count: sql`${usageCounters.count} - 1` })
+        .where(
+          and(
+            eq(usageCounters.scope, scope),
+            eq(usageCounters.windowStart, windowStart),
+            gt(usageCounters.count, 0)
+          )
+        )
+        .run();
+    },
+    /** The count so far in a window; 0 when nothing was reserved. */
+    async get(scope: string, windowStart: number): Promise<number> {
+      const row = await db
+        .select({ count: usageCounters.count })
+        .from(usageCounters)
+        .where(and(eq(usageCounters.scope, scope), eq(usageCounters.windowStart, windowStart)))
+        .get();
+      return row?.count ?? 0;
+    },
+  };
+
   /** True when no hosted_queues row holds this pubkey. */
   function notExists(queuePubkey: string) {
     return sql`not exists (select 1 from ${hostedQueues} where ${hostedQueues.queuePubkey} = ${queuePubkey})`;
@@ -632,44 +754,50 @@ export function createStore(db: QusmeDb) {
       .delete(agentKeys)
       .where(inArray(agentKeys.id, orphanedKeys))
       .returning({ id: agentKeys.id });
-    const count = async (rows: Promise<unknown[]> | unknown[]) => (await rows).length;
+    const deleted = async (rows: Promise<unknown[]> | unknown[]) => (await rows).length;
     return {
       agentKeys: keys.length,
-      pendingAuthorizations: await count(
+      pendingAuthorizations: await deleted(
         db
           .delete(pendingAuthorizations)
           .where(lte(pendingAuthorizations.expiresAt, now))
           .returning({ id: pendingAuthorizations.id })
       ),
-      oauthCodes: await count(
+      oauthCodes: await deleted(
         db
           .delete(oauthCodes)
           .where(lte(oauthCodes.expiresAt, now))
           .returning({ id: oauthCodes.codeHash })
       ),
-      oauthTokens: await count(
+      oauthTokens: await deleted(
         db
           .delete(oauthTokens)
           .where(lte(oauthTokens.expiresAt, now))
           .returning({ id: oauthTokens.tokenHash })
       ),
-      submissionReceipts: await count(
+      submissionReceipts: await deleted(
         db
           .delete(submissionReceipts)
           .where(lte(submissionReceipts.expiresAt, now))
           .returning({ id: submissionReceipts.giftWrapId })
       ),
-      pairingSessions: await count(
+      pairingSessions: await deleted(
         db
           .delete(pairingSessions)
           .where(lte(pairingSessions.expiresAt, now))
           .returning({ id: pairingSessions.code })
       ),
-      nip98Replays: await count(
+      nip98Replays: await deleted(
         db
           .delete(nip98Replays)
           .where(lte(nip98Replays.expiresAt, now))
           .returning({ id: nip98Replays.eventId })
+      ),
+      usageCounters: await deleted(
+        db
+          .delete(usageCounters)
+          .where(lte(usageCounters.expiresAt, now))
+          .returning({ scope: usageCounters.scope })
       ),
     };
   }
@@ -685,6 +813,7 @@ export function createStore(db: QusmeDb) {
     pairingSessions: pairingSessionsRepo,
     nip98Replays: nip98ReplaysRepo,
     hostedQueues: hostedQueuesRepo,
+    usageCounters: usageCountersRepo,
     sweepExpired,
   };
 }

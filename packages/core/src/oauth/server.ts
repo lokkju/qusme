@@ -25,6 +25,14 @@ import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
 import type { AgentKeyRing } from '../agentKeyRing.ts';
 import { createAgentKeyCustody } from '../agentKeys.ts';
+import {
+  BODY_LIMITS,
+  createServiceLimits,
+  limitByIp,
+  limitByQueue,
+  type RateClassName,
+  type ServiceLimits,
+} from '../limits.ts';
 import { type Nip98Env, nip98Auth, parsePublicOrigin } from '../nip98.ts';
 import {
   ClientMetadataError,
@@ -83,6 +91,8 @@ export interface OAuthOptions extends OAuthOverrides {
   db: QusmeDb;
   agentKeys: AgentKeyRing;
   publicOrigin: string;
+  /** Rate limits, caps and tiers (spec 8.5, "Limits"); in-memory defaults when left out. */
+  limits?: ServiceLimits;
 }
 
 /** What the bearer middleware resolves a token to: the agent key and the queue it is bound to. */
@@ -143,6 +153,15 @@ function htmlPage(c: Context, page: Page, status: 200 | 400 | 404 = 200) {
   return c.html(page.html, status, page.headers);
 }
 
+/** A 429 page with Retry-After, for the routes a browser opens. */
+function htmlTooMany(c: Context, retryAfter: number, message: string) {
+  const seconds = Math.max(1, Math.ceil(retryAfter));
+  const page = messagePage('Too many requests', `${message} Try again in ${seconds} seconds.`);
+  return c.html(page.html, 429, { ...page.headers, 'Retry-After': String(seconds) });
+}
+
+const CLIENT_IP_INFO = new TextEncoder().encode('qus.me client-ip hash v1');
+
 const noStore = { 'Cache-Control': 'no-store', Pragma: 'no-cache' };
 
 export function createOAuth(options: OAuthOptions) {
@@ -157,6 +176,40 @@ export function createOAuth(options: OAuthOptions) {
   const store: Store = createStore(options.db);
   const custody = createAgentKeyCustody(store, options.agentKeys);
   const requireNip98 = nip98Auth({ publicOrigin: origin, replays: store.nip98Replays });
+  const limits = options.limits ?? createServiceLimits({ now });
+
+  /**
+   * The client IP as stored for the per-IP pending cap: HMAC-SHA-256 under a key derived from the
+   * current service secret, so the table never holds an address. A secret rotation changes the
+   * hashes, which only lets an IP's authorizations from before it go uncounted for their last
+   * minutes.
+   */
+  let ipKey: Promise<CryptoKey> | undefined;
+  async function clientIpHash(ip: string): Promise<string> {
+    ipKey ??= options.agentKeys
+      .hkdfKey(options.agentKeys.currentVersion)
+      .then((base) =>
+        crypto.subtle.deriveKey(
+          { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: CLIENT_IP_INFO },
+          base,
+          { name: 'HMAC', hash: 'SHA-256', length: 256 },
+          false,
+          ['sign']
+        )
+      );
+    const mac = await crypto.subtle.sign('HMAC', await ipKey, new TextEncoder().encode(ip));
+    return Array.from(new Uint8Array(mac), (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /** Rate-limits a page a browser opens, answering with an HTML 429. */
+  const limitPage = (rateClass: RateClassName) =>
+    createMiddleware(async (c, next) => {
+      const decision = await limits.limiter.limit(rateClass, limits.clientIp(c));
+      if (!decision.ok) {
+        return htmlTooMany(c, decision.retryAfter, 'Too many requests from this address.');
+      }
+      await next();
+    });
 
   const authorizationServerMetadata = {
     issuer,
@@ -317,7 +370,7 @@ export function createOAuth(options: OAuthOptions) {
 
   // --- Authorization endpoint ------------------------------------------------------------------
 
-  routes.get('/authorize', async (c) => {
+  routes.get('/authorize', limitPage('ip_authorize'), async (c) => {
     const t = now();
     const params = singleParams(new URL(c.req.url).searchParams);
     if (params instanceof OAuthError) {
@@ -325,6 +378,25 @@ export function createOAuth(options: OAuthOptions) {
     }
     const clientId = params.client_id;
     if (!clientId) return htmlPage(c, messagePage('Invalid request', 'client_id is missing'), 400);
+    // The open-authorization caps, before the client's metadata document is fetched. Each open
+    // one expires on its own (10 minutes), so Retry-After is when the first of them does.
+    const ipHash = await clientIpHash(limits.clientIp(c));
+    const fromIp = await store.pendingAuthorizations.countOpen(t, ipHash);
+    if (fromIp.count >= limits.config.pendingPerIp) {
+      return htmlTooMany(
+        c,
+        (fromIp.earliestExpiry ?? t + lifetimes.pendingAuthorization) - t,
+        'Too many authorizations are waiting for approval from this address.'
+      );
+    }
+    const everywhere = await store.pendingAuthorizations.countOpen(t);
+    if (everywhere.count >= limits.config.pendingGlobal) {
+      return htmlTooMany(
+        c,
+        (everywhere.earliestExpiry ?? t + lifetimes.pendingAuthorization) - t,
+        'qus.me has too many authorizations waiting for approval right now.'
+      );
+    }
     let client: Awaited<ReturnType<typeof loadClient>>;
     try {
       client = await loadClient(clientId, t);
@@ -382,6 +454,7 @@ export function createOAuth(options: OAuthOptions) {
           scopes: scopes.join(' '),
           resource,
           status: 'pending',
+          clientIpHash: ipHash,
           createdAt: t,
           expiresAt: t + lifetimes.pendingAuthorization,
         });
@@ -395,7 +468,7 @@ export function createOAuth(options: OAuthOptions) {
     return c.redirect(`/authorize/${id}`, 303);
   });
 
-  routes.get('/authorize/:id/status', async (c) => {
+  routes.get('/authorize/:id/status', limitByIp(limits, 'ip_poll'), async (c) => {
     const r = await resolvePending(c.req.param('id'), now());
     const body =
       r.status === 'redirect'
@@ -404,7 +477,7 @@ export function createOAuth(options: OAuthOptions) {
     return c.json(body, 200, { ...noStore, 'Referrer-Policy': 'no-referrer' });
   });
 
-  routes.get('/authorize/:id', async (c) => {
+  routes.get('/authorize/:id', limitPage('ip_poll'), async (c) => {
     const id = c.req.param('id');
     const r = await resolvePending(id, now());
     if (r.status === 'redirect') return c.redirect(r.redirect, 302);
@@ -443,6 +516,8 @@ export function createOAuth(options: OAuthOptions) {
 
   routes.use('/token', publicCors);
   routes.use('/revoke', publicCors);
+  routes.use('/token', limitByIp(limits, 'ip_token'));
+  routes.use('/revoke', limitByIp(limits, 'ip_token'));
 
   async function formParams(c: Context): Promise<Record<string, string> | OAuthError> {
     const type = c.req.header('Content-Type') ?? '';
@@ -450,7 +525,9 @@ export function createOAuth(options: OAuthOptions) {
       return new OAuthError('invalid_request', 'expected application/x-www-form-urlencoded');
     }
     const text = await c.req.text();
-    if (text.length > 16 * 1024) return new OAuthError('invalid_request', 'request too large');
+    if (text.length > BODY_LIMITS.oauthForm) {
+      return new OAuthError('invalid_request', 'request too large');
+    }
     return singleParams(new URLSearchParams(text));
   }
 
@@ -564,6 +641,7 @@ export function createOAuth(options: OAuthOptions) {
 
   const device = new Hono<Nip98Env>();
   device.use('*', requireNip98);
+  device.use('*', limitByQueue(limits));
 
   const deviceError = (
     c: Context,
@@ -613,6 +691,9 @@ export function createOAuth(options: OAuthOptions) {
       if (!key) return deviceError(c, 404, 'not_found', 'no such pending authorization');
       return c.json(await describe(row, key.pubkey), 200, noStore);
     }
+    // Refused before a key is minted when the queue has no room for another agent.
+    const full = await agentLimitReached(pubkey);
+    if (full) return full(c);
     const key = await custody.mint({ clientId: row.clientId, now: t });
     const fetched = await store.pendingAuthorizations.markFetched(
       row.id,
@@ -632,10 +713,27 @@ export function createOAuth(options: OAuthOptions) {
     return c.json(await describe(fetched, key.pubkey), 200, noStore);
   });
 
+  /** A 409 maker when the queue already has its tier's most agents, or undefined. */
+  async function agentLimitReached(queuePubkey: string, exceptAgentKeyId?: string) {
+    const tier = await limits.tierFor(queuePubkey);
+    const bound = await store.bindings.countByQueue(queuePubkey, exceptAgentKeyId);
+    if (bound < tier.maxAgents) return undefined;
+    return (c: Context) =>
+      c.json(
+        {
+          error: 'agent_limit_reached',
+          error_description: `this queue already has ${tier.maxAgents} agents; revoke one before approving another`,
+          max_agents: tier.maxAgents,
+        },
+        409,
+        noStore
+      );
+  }
+
   async function readJson(c: Context): Promise<Record<string, unknown> | undefined> {
     try {
       const text = await c.req.text();
-      if (text.length > 16 * 1024) return undefined;
+      if (text.length > BODY_LIMITS.default) return undefined;
       const value: unknown = JSON.parse(text);
       return typeof value === 'object' && value !== null && !Array.isArray(value)
         ? (value as Record<string, unknown>)
@@ -712,6 +810,8 @@ export function createOAuth(options: OAuthOptions) {
       );
     }
 
+    const full = await agentLimitReached(pubkey, agentKeyId);
+    if (full) return full(c);
     const client = await store.oauthClients.get(row.clientId);
     // The binding first, so a browser that sees the approval finds it; undone if the decision
     // loses (the request expired or was decided meanwhile). A binding left by an approval that
@@ -848,7 +948,7 @@ export function createOAuth(options: OAuthOptions) {
     maxAge: 600,
   });
 
-  return { routes, requireBearer, mcpCors, resource, issuer };
+  return { routes, requireBearer, mcpCors, resource, issuer, limits };
 }
 
 export type OAuth = ReturnType<typeof createOAuth>;

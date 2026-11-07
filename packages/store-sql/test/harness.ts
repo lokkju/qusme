@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sql } from 'drizzle-orm';
 import type { QusmeDb, Store } from '../src/index.ts';
 import { migrationsFolder } from '../src/sqlite.ts';
 
@@ -23,4 +24,9 @@ export function migrationStatements(): string[][] {
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
   );
+}
+
+/** Renames a table, for tests that need a query on it to fail on either driver. */
+export async function renameTable(db: QusmeDb, from: string, to: string): Promise<void> {
+  await db.run(sql.raw(`alter table ${from} rename to ${to}`));
 }
