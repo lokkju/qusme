@@ -1,7 +1,7 @@
 name: ci
 
-# Install, typecheck, lint, test and build every package. Runs on the homelab
-# GARM runners (lokkju/infra) while the repo is private.
+# Install, typecheck, lint, test and build every package, on GitHub-hosted
+# runners: the repo is public, and self-hosted runners never serve public repos.
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: homelab
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
