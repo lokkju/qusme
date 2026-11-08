@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { compareSiteVersions } from '@qusme/nostr';
 import { createStore, hashSecret } from '@qusme/store-sql';
 import { openD1 } from '@qusme/store-sql/d1';
 import { build } from 'esbuild';
@@ -116,12 +117,17 @@ for (const withBindings of [true, false]) {
         'list_submissions',
       ]);
       const registry = await rpc('tools/call', { name: 'list_registry', arguments: {} });
+      // The bundled snapshot moves with every registry bump, so the version is only a floor.
+      const listed = registry.result.structuredContent as { sites: { version: string }[] };
+      expect(
+        compareSiteVersions(listed.sites[0]?.version ?? '', '2026.11.2')
+      ).toBeGreaterThanOrEqual(0);
       expect(registry.result.structuredContent).toEqual({
         sites: [
           {
             id: 'x',
             name: 'X',
-            version: '2026.11.1',
+            version: expect.any(String),
             match: ['https://x.com/*', 'https://twitter.com/*'],
             fields: [
               {
