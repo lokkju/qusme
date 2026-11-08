@@ -7,6 +7,14 @@ import { OPTIONAL_HOST_PERMISSIONS, PERMISSIONS } from './src/permissions.ts';
 export default defineConfig({
   manifestVersion: 3,
   vite: () => ({ plugins: [preact(), tailwindcss()] }),
+  zip: {
+    name: 'qusme',
+    // AMO reviewers rebuild from the sources zip, and the build needs the
+    // workspace packages (@qusme/nostr), the lockfile and the root config, so
+    // the zip is taken from the repository root rather than this package.
+    sourcesRoot: '../..',
+    excludeSources: ['**/node_modules/**', '**/.output/**', '**/.wxt/**', '**/dist/**', '**/*.db'],
+  },
   manifest: ({ browser }) => ({
     name: 'qus.me',
     description: 'Insert queued drafts into fields on the page you are on.',

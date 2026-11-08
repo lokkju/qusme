@@ -1,0 +1,185 @@
+name: release-extension
+
+# Releases the browser extension (packages/extension) by hand: computes the
+# CalVer version, builds and zips Chrome and Firefox, submits them to the
+# Chrome Web Store and Firefox Add-ons with `wxt submit`, and publishes a
+# GitHub release `extension-v<version>` with the zips. The `release`
+# environment needs lokkju's approval and admits main only. The version is
+# written into package.json inside the job and never committed back.
+# packages/extension/README.md, "Releasing".
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check store credentials with `wxt submit --dry-run`; upload nothing, make no release
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: release-extension
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DRY_RUN_INPUT: ${{ inputs.dry_run }}
+    steps:
+      - name: Refuse a ref other than main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases run from main only, not $GITHUB_REF"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # node and pnpm at the versions pinned in .mise/config.toml
+      - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+        with:
+          version: 2026.9.18
+
+      # Today's UTC date as YYYY.M.D, then .1, .2 and so on past any release or
+      # tag that already has it. Draft releases count, so a run whose
+      # submission failed leaves its version taken.
+      - name: Compute version
+        id: version
+        run: |
+          set -euo pipefail
+          current=$(jq -r .version packages/extension/package.json)
+          base=$(date -u +%Y.%-m.%-d)
+          releases=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName')
+          tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/extension-v" --jq '.[].ref | ltrimstr("refs/tags/")')
+          taken=$(printf '%s\n%s\n' "$releases" "$tags")
+          version=$base
+          n=0
+          while grep -qxF "extension-v$version" <<<"$taken"; do
+            n=$((n + 1))
+            version="$base.$n"
+          done
+          highest=$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -n 1)
+          if [ "$version" = "$current" ] || [ "$highest" != "$version" ]; then
+            echo "::error::Version $version is not greater than package.json's $current"
+            exit 1
+          fi
+          echo "Releasing $version (package.json has $current)"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+      - name: Set package.json version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          file=packages/extension/package.json
+          jq --arg v "$VERSION" '.version = $v' "$file" >"$file.tmp"
+          mv "$file.tmp" "$file"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter "@qusme/extension..." run typecheck
+
+      - name: Test
+        run: pnpm exec vitest run --project @qusme/extension --project @qusme/nostr
+
+      - name: Zip
+        id: zip
+        working-directory: packages/extension
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          pnpm exec wxt zip
+          pnpm exec wxt zip -b firefox
+          dir="$PWD/.output"
+          for kind in chrome firefox sources; do
+            zip="$dir/qusme-$VERSION-$kind.zip"
+            test -f "$zip" || { echo "::error::Missing $zip"; exit 1; }
+            echo "$kind=$zip" >>"$GITHUB_OUTPUT"
+          done
+
+      # A draft first, so the zips are attached before any store sees them.
+      # It is published after the submission succeeds.
+      - name: Create draft release
+        if: inputs.dry_run != true
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CHROME_ZIP_PATH: ${{ steps.zip.outputs.chrome }}
+          FIREFOX_ZIP_PATH: ${{ steps.zip.outputs.firefox }}
+          SOURCES_ZIP_PATH: ${{ steps.zip.outputs.sources }}
+        run: |
+          set -euo pipefail
+          gh release create "extension-v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "Extension $VERSION" \
+            --notes "Browser extension $VERSION, built from $GITHUB_SHA." \
+            "$CHROME_ZIP_PATH" "$FIREFOX_ZIP_PATH" "$SOURCES_ZIP_PATH"
+
+      # A store whose secrets aren't all set is skipped with a notice. Chrome
+      # uses the Web Store API v2 with a service account; v1.1 (client id,
+      # secret and refresh token) shut down on 2026-10-15.
+      - name: Submit to stores
+        working-directory: packages/extension
+        env:
+          CHROME_ZIP_PATH: ${{ steps.zip.outputs.chrome }}
+          FIREFOX_ZIP_PATH: ${{ steps.zip.outputs.firefox }}
+          SOURCES_ZIP_PATH: ${{ steps.zip.outputs.sources }}
+          CHROME_API_VERSION: v2
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          missing() {
+            local out=() name
+            for name in "$@"; do
+              [ -n "${!name}" ] || out+=("$name")
+            done
+            echo "${out[*]}"
+          }
+          args=()
+          stores=()
+          gaps=$(missing CHROME_EXTENSION_ID CHROME_PUBLISHER_ID CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL CHROME_SERVICE_ACCOUNT_PRIVATE_KEY)
+          if [ -z "$gaps" ]; then
+            args+=(--chrome-zip "$CHROME_ZIP_PATH")
+            stores+=("Chrome Web Store")
+          else
+            echo "::notice::Skipping the Chrome Web Store: unset $gaps"
+          fi
+          gaps=$(missing FIREFOX_EXTENSION_ID FIREFOX_JWT_ISSUER FIREFOX_JWT_SECRET)
+          if [ -z "$gaps" ]; then
+            args+=(--firefox-zip "$FIREFOX_ZIP_PATH" --firefox-sources-zip "$SOURCES_ZIP_PATH")
+            stores+=("Firefox Add-ons")
+          else
+            echo "::notice::Skipping Firefox Add-ons: unset $gaps"
+          fi
+          if [ "${#args[@]}" -eq 0 ]; then
+            echo "::error::No store has all of its secrets set; nothing to submit"
+            exit 1
+          fi
+          if [ "$DRY_RUN_INPUT" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          echo "Submitting to: ${stores[*]}"
+          pnpm exec wxt submit "${args[@]}"
+
+      - name: Publish release
+        if: inputs.dry_run != true
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release edit "extension-v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false
