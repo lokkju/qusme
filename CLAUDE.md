@@ -18,7 +18,7 @@ pnpm -C packages/store-sql generate          # new migration after a schema chan
 pnpm -C packages/entry-worker build          # wrangler deploy --dry-run
 ```
 
-CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on the `homelab` self-hosted runners; its build includes `wrangler deploy --dry-run`, which keeps the Workers entrypoint from rotting. `.github/workflows/image.yml` builds the entry-node image on `homelab-build`. Never switch a job to GitHub-hosted runners.
+CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on GitHub-hosted runners (`ubuntu-24.04`, pinned rather than `ubuntu-latest`); its build includes `wrangler deploy --dry-run`, which keeps the Workers entrypoint from rotting. The repo is public, so never put a job on self-hosted runners.
 
 ## Layout
 
@@ -26,7 +26,7 @@ CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on
 - `packages/nostr`: event builders and parsers shared by the service, extension and PWA.
 - `packages/store-sql`: Drizzle schema (`src/schema.ts`) and the generated migrations in `migrations/`. Never edit a migration that has been merged; generate a new one.
 - `packages/entry-worker`: Workers entrypoint and `wrangler.jsonc`.
-- `packages/entry-node`: Node entrypoint and Dockerfile. `image.yml` pushes the image to zot (`registry.lab.lokkju.com/builds/qusme`) only; never to ghcr.io.
+- `packages/entry-node`: Node entrypoint, for local development and the SQLite tests. Nothing builds or publishes an image of it.
 - `packages/extension`: WXT. Its permissions are exactly `activeTab`, `scripting`, `contextMenus`, `storage`, `alarms` (spec 11.2, `src/permissions.ts`, tested). No host permissions, no `tabs`.
 - `packages/pwa`: Preact, Vite, Tailwind v4 with the CSS-first `@theme` in `src/index.css`.
 
@@ -34,11 +34,11 @@ Workspace packages export TypeScript source directly (`"exports": "./src/index.t
 
 ## Deploy model
 
-Workers first: app.qus.me is the `qusme` Worker. `deploy.yml` ships the code on every push to `main` that touches the Worker's packages, `registry/`, the lockfile and workspace files, `.mise/config.toml` or the workflow itself (and by hand): D1 migrations, then `wrangler deploy`, one run at a time. A new package the Worker imports goes into its `paths` list too. The Node entrypoint and the image `image.yml` builds are for self-hosting and local development; the homelab no longer runs them.
+Workers first: app.qus.me is the `qusme` Worker. `deploy.yml` ships the code on every push to `main` that touches the Worker's packages, `registry/`, the lockfile and workspace files, `.mise/config.toml` or the workflow itself (and by hand): D1 migrations, then `wrangler deploy`, one run at a time. A new package the Worker imports goes into its `paths` list too. The Node entrypoint is for local development; nothing deploys it.
 
 ## What lokkju/infra owns and what this repo owns
 
-lokkju/infra's Pulumi stack owns the `qusme` Worker script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET` and the deploy token (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`). lokkju/infra also owns the registry credentials (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD` from `build_repos`) and the runners. This repo owns the code and the migrations, and its deploy workflow ships them on merge to `main`.
+lokkju/infra's Pulumi stack owns the `qusme` Worker script's existence, its custom domain `app.qus.me`, the D1 database `qusme`, the Worker secret `QUSME_AGENT_KEY_SECRET` and the deploy token (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`). This repo owns the code and the migrations, and its deploy workflow ships them on merge to `main`.
 
 - Never declare `routes`, `route`, custom domains or a `workers_dev` route for app.qus.me in `wrangler.jsonc`. Keep `workers_dev: false`.
 - Never set or rotate secrets with `wrangler secret`; that is a lokkju/infra change.
