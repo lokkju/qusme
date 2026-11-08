@@ -1,8 +1,9 @@
 // The qus.me service on Cloudflare Workers.
 //
-// lokkju/infra's Pulumi stack owns this Worker's custom domain (app.qus.me), its D1 database and
-// its secrets; this file owns the code. Never declare routes, custom domains or a workers.dev
-// route here: app.qus.me is attached by Pulumi, and a route declared here would fight it.
+// lokkju/infra's Pulumi stack owns this Worker's custom domains (app.qus.me for the service, qus.me
+// for the landing site), its D1 database and its secrets; this file owns the code. Never declare
+// routes, custom domains or a workers.dev route here: the hostnames are attached by Pulumi, and a
+// route declared here would fight them. src/index.ts routes by Host between the two.
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "qusme",
@@ -18,6 +19,9 @@
   // The origin clients sign NIP-98 requests for (the u tag). Not a secret.
   "vars": {
     "QUSME_PUBLIC_ORIGIN": "https://app.qus.me",
+    // The landing site's origin. Requests for this host get site/ (www. in front of it redirects
+    // here); requests for QUSME_PUBLIC_ORIGIN's host get the service; any other host gets a 404.
+    "QUSME_SITE_ORIGIN": "https://qus.me",
     // The most create_draft calls the whole service accepts per UTC day (spec 8.5, "Limits"), so
     // a bug or abuse cannot pass a known cost. A whole number; 0 refuses every draft.
     "QUSME_DAILY_DRAFT_CEILING": "2000"
@@ -55,6 +59,17 @@
       "simple": { "limit": 30, "period": 60 }
     }
   ],
+  // The landing site (site/ at the repo root), served through the ASSETS binding. `main` stays:
+  // an assets-only deploy uploads a version with no bindings and drops the Worker's secrets.
+  // run_worker_first sends every request through src/index.ts, which serves assets only on the
+  // site's host, so app.qus.me never answers with a landing page.
+  "assets": {
+    "directory": "../../site",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
   "d1_databases": [
     {
       "binding": "DB",
