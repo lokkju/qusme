@@ -14,7 +14,7 @@ A pnpm workspace, laid out as in section 8.5 of the spec:
 | `packages/nostr` | Event builders and parsers shared by the service, extension and PWA. NIP-44 encryption, NIP-49 `ncryptsec` and NIP-59 gift wraps so far, behind a `Signer` interface |
 | `packages/store-sql` | Drizzle schema for the service's own state and its SQL migrations, with drivers for D1 (`@qusme/store-sql/d1`) and a SQLite file (`@qusme/store-sql/sqlite`) |
 | `packages/entry-worker` | The Cloudflare Workers entrypoint and `wrangler.jsonc` |
-| `packages/entry-node` | The Node entrypoint (`@hono/node-server`, better-sqlite3) and a Dockerfile |
+| `packages/entry-node` | The Node entrypoint (`@hono/node-server`, better-sqlite3), for local development |
 | `packages/extension` | The browser extension (WXT, Chrome and Firefox MV3) |
 | `packages/pwa` | The mobile PWA (Preact, Vite, Tailwind v4) |
 
@@ -83,9 +83,11 @@ Only one previous version is held, so finish a rotation before starting the next
 
 ### Self-hosting (Node)
 
-`packages/entry-node` serves the same app with a SQLite file in place of D1. `.github/workflows/image.yml` builds `packages/entry-node/Dockerfile` on the `homelab-build` runner and, on every push to `main` (or by hand), pushes it to zot as `registry.lab.lokkju.com/builds/qusme`, tagged with the full and the short commit SHA; the job summary has the digest. Pull requests that touch the image's packages build it without pushing. lokkju/infra provides the registry credentials (`REGISTRY_HOST`, `REGISTRY_USER`, `REGISTRY_PASSWORD`, from its `build_repos`). The homelab no longer runs the image. Images go to zot only, never to ghcr.io.
+`packages/entry-node` serves the same app with a SQLite file in place of D1, for local development and the SQLite tests. There is no published image; anyone self-hosting runs the entrypoint under Node 24 with `QUSME_AGENT_KEY_SECRET` (and optionally `QUSME_VERSION`, which `/healthz` reports) in its environment.
 
-To build it locally: `docker build -f packages/entry-node/Dockerfile --build-arg QUSME_VERSION=$(git rev-parse --short HEAD) .`, then `docker run -e QUSME_AGENT_KEY_SECRET=... -p 8787:8787 <image>` serves `/healthz` on :8787.
+## CI
+
+`.github/workflows/ci.yml` runs install, typecheck, lint, test and build on GitHub-hosted runners (`ubuntu-24.04`), and `deploy.yml` deploys the Worker on the same runners. GitHub never passes secrets to workflows run from forks, so a fork's pull request gets CI but can't deploy.
 
 ## License
 

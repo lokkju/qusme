@@ -1,0 +1,36 @@
+# @qusme/extension
+
+The qus.me browser extension: WXT, Preact and Tailwind v4, Manifest V3 for Chrome and Firefox. Run it with `pnpm -C packages/extension dev` (Chrome) or `dev:firefox`.
+
+## Building from source
+
+The Firefox sources zip is the whole repository less `node_modules`, tests and build output, because the extension builds from the workspace packages (`@qusme/nostr`) and the root lockfile. With Node 24 and pnpm (the version in the root `package.json`'s `packageManager`), from the unzipped root:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm -C packages/extension exec wxt build -b firefox   # output in packages/extension/.output/firefox-mv3
+```
+
+## Releasing
+
+Run the `release-extension` workflow from main (Actions, "release-extension", "Run workflow"). It waits for lokkju's approval on the `release` environment, which admits main only. It then:
+
+1. picks the version: today's UTC date as `YYYY.M.D` with no leading zeros (`2026.11.8`), or `2026.11.8.1`, `.2` and so on when a release or tag `extension-v<version>` already exists. It refuses a version that isn't greater than the one in `package.json`;
+2. writes that version into `package.json` inside the job only; main keeps the version it has, and nothing is committed back;
+3. typechecks, tests, and runs `wxt zip` and `wxt zip -b firefox` (Chrome zip, Firefox zip, sources zip);
+4. creates a draft GitHub release `extension-v<version>` with the three zips;
+5. runs `wxt submit` for each store whose secrets are all set, skipping the others with a notice;
+6. publishes the draft.
+
+Tick `dry_run` to run `wxt submit --dry-run` instead, which checks the store credentials, uploads nothing and makes no release. A submission that fails leaves the draft in place and its version taken; the next run moves on to the next suffix, or you can delete the draft first.
+
+The secrets live on the `release` environment:
+
+| Store | Secrets |
+| --- | --- |
+| Chrome Web Store (API v2) | `CHROME_EXTENSION_ID`, `CHROME_PUBLISHER_ID`, `CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL`, `CHROME_SERVICE_ACCOUNT_PRIVATE_KEY` |
+| Firefox Add-ons | `FIREFOX_EXTENSION_ID`, `FIREFOX_JWT_ISSUER`, `FIREFOX_JWT_SECRET` |
+
+Chrome uses the Web Store API v2 with a service account, because API v1.1 (client id, client secret and refresh token) shut down on 2026-10-15. `wxt submit init` walks through creating the service account and finding the publisher id.
+
+`wxt submit` only updates an item that already exists in a store. The first Chrome Web Store upload was made by hand in the developer dashboard, and so is the first listing in any new store.

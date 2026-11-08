@@ -43,7 +43,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv): NodeConfig {
   return {
     dbPath: env.QUSME_DB_PATH ?? './qusme.db',
     agentKeys: agentKeyRingFromEnv(env),
-    // Baked into the image at build time (the Dockerfile's QUSME_VERSION build argument).
+    // Whatever the environment sets; /healthz reports it.
     version: env.QUSME_VERSION ?? 'dev',
     publicOrigin: env.QUSME_PUBLIC_ORIGIN ?? DEFAULT_PUBLIC_ORIGIN,
     draftsPerDayCeiling: limitFromEnv(

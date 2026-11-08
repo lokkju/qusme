@@ -1,6 +1,7 @@
 import { bytesToHex } from '@noble/hashes/utils.js';
 import {
   buildDraftWrap,
+  compareSiteVersions,
   createLocalSigner,
   type Destination,
   type FieldValue,
@@ -176,12 +177,15 @@ describe('effective definitions (10.2)', () => {
   });
 
   it('holds the X definition in the bundled snapshot', () => {
-    expect(definitionSource().official('x')).toMatchObject({
+    const x = definitionSource().official('x');
+    expect(x).toMatchObject({
       id: 'x',
-      version: '2026.11.1',
       match: ['https://x.com/*', 'https://twitter.com/*'],
       fields: [{ name: 'text', constraints: { maxLength: 280, counter: 'twitter-text' } }],
     });
+    const { version, fields } = x as { version: string; fields: { inject: string[] }[] };
+    expect(compareSiteVersions(version, '2026.11.2')).toBeGreaterThanOrEqual(0);
+    expect(fields[0]?.inject[0]).toBe('insertText');
     expect(definitionSource().official('mastodon')).toBeUndefined();
   });
 

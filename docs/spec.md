@@ -86,7 +86,7 @@ Device linking, a candidate in v0.2, is not proposed: pairing adopts NIP-AB (8.3
 v1 goals:
 
 - End-to-end encrypted draft storage on ordinary Nostr relays (9.1), with an optional relay profile that also hides the queue's metadata (9.2).
-- A qus.me service deployable unchanged to Cloudflare Workers or to Docker/Node, providing MCP, agent key custody, pairing, and agent authorization.
+- A qus.me service deployable unchanged to Cloudflare Workers or to Node, providing MCP, agent key custody, pairing, and agent authorization.
 - A single-codebase browser extension for Chrome and Firefox (Manifest V3) that inserts a user-selected draft into a page field with no standing access to any site.
 - A mobile PWA that is a full paired device.
 - A maintained, separately licensed registry of site definitions, published as signed Nostr events.
@@ -428,7 +428,7 @@ packages/
   nostr/         Event builders and parsers for the kinds in section 7; NIP-44/49/59 helpers
   store-sql/     Drizzle schema for service state; D1 and SQLite drivers
   entry-worker/  Workers entrypoint
-  entry-node/    Node entrypoint; Dockerfile; optional bundled relay in compose
+  entry-node/    Node entrypoint
   extension/     WXT project
   pwa/           Mobile client
 registry/        Site definitions (separate repo, separate license)
