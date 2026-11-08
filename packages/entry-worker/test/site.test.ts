@@ -73,11 +73,14 @@ describe('routing by Host', () => {
     expect(csp).not.toMatch(/https?:/);
   });
 
-  it('serves the privacy policy and a 404 page on qus.me', async () => {
+  it('serves the privacy policy, the terms and a 404 page on qus.me', async () => {
     const { get } = setup();
     const privacy = await get('https://qus.me/privacy');
     expect(privacy.status).toBe(200);
     expect(await privacy.text()).toContain('<h1>Privacy policy</h1>');
+    const terms = await get('https://qus.me/terms');
+    expect(terms.status).toBe(200);
+    expect(await terms.text()).toContain('<h1>Terms of use</h1>');
     const missing = await get('https://qus.me/no-such-page');
     expect(missing.status).toBe(404);
     expect(await missing.text()).toContain('Page not found');
@@ -102,6 +105,8 @@ describe('routing by Host', () => {
     expect(await root.text()).not.toContain('Drafts wait in line');
     const privacy = await get('https://app.qus.me/privacy');
     expect(await privacy.text()).not.toContain('Privacy policy');
+    const terms = await get('https://app.qus.me/terms');
+    expect(await terms.text()).not.toContain('Terms of use');
     expect(binding.calls).toEqual([]);
   });
 
@@ -162,7 +167,7 @@ function fileFor(path: string): string | undefined {
 
 describe('site pages', () => {
   it('has the pages the Worker serves', () => {
-    expect(PAGES.sort()).toEqual(['404.html', 'index.html', 'privacy.html']);
+    expect(PAGES.sort()).toEqual(['404.html', 'index.html', 'privacy.html', 'terms.html']);
   });
 
   it.each(PAGES)('%s: every link and asset resolves', (page) => {
@@ -215,5 +220,18 @@ describe('site pages', () => {
     expect(html).toContain('mailto:info@qus.me');
     expect(html).toContain('datetime="2026-11-07"');
     expect(html).not.toMatch(/\[draft|to be reviewed/i);
+  });
+
+  it('the terms name the contact address and their date, and no draft marker', () => {
+    const html = read('terms.html');
+    expect(html).toContain('mailto:info@qus.me');
+    expect(html).toContain('datetime="2026-11-08"');
+    expect(html).not.toMatch(/\[draft|to be reviewed/i);
+  });
+
+  it.each(PAGES)('%s: the footer links the privacy policy and the terms', (page) => {
+    const footer = read(page).split('<footer')[1] ?? '';
+    expect(footer).toMatch(/href="\/privacy"/);
+    expect(footer).toMatch(/href="\/terms"/);
   });
 });
