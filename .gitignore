@@ -11,3 +11,6 @@ dist/
 *.db-shm
 *.tsbuildinfo
 coverage/
+
+# wxt submit init writes store credentials here
+.env.submit
