@@ -1,6 +1,6 @@
 # Public relays for qus.me queues
 
-Spike for [#38](https://github.com/lokkju/qusme/issues/38): can a qus.me queue run on ordinary public Nostr relays, which ones, and what changes in the spec if it does. Results are from 2026-10-27, against `docs/spec.md` v0.3.
+Spike for [#38](https://github.com/lokkju/qusme/issues/38): can a qus.me queue run on ordinary public Nostr relays, which ones, and what changes in the spec if it does. Results are from 2026-10-27, against `docs/spec.md` v0.3; the 2026-11-09 recheck below changes the storage recommendation.
 
 ## Method
 
@@ -108,9 +108,15 @@ What bounds it, in order of how much each changes:
 
 Pairing works on every relay that accepts kind 24134: auth.nostr1.com (both ephemeral keys authenticate as themselves, which NIP-AB never asks for but the keys can do), nos.lol, relay.primal.net, relay.ditto.pub and relay.nostr.net. Each delivered the message live to the `p`-tagged subscriber within the three-second window. inbox.nostr.wine refuses the kind. Section 9.1 rule 4 exists only because the qus.me relay restricts everything else; on ordinary relays it is unnecessary. The `nostrpair://` URI should list the queue's storage relays, all of which carry it, and not the inbox relay, which may refuse the kind.
 
+## 2026-11-09: nos.lol stopped accepting writes
+
+nos.lol (still strfry 1.1.3) now silently drops writes. An EVENT gets no OK, NOTICE or CLOSED, whether it comes from the registry publisher key or from a freshly generated key; the test event was a kind 31234 with a one-hour NIP-40 expiration. relay.ditto.pub and relay.primal.net both answered OK true to the same event, and relay.primal.net serves the registry's events back on REQ. The registry publisher's relay list was already relay.primal.net plus relay.ditto.pub (lokkju/qusme-registry#11, #12).
+
+So relay.primal.net replaces nos.lol as a recommended storage relay, in the extension's suggested storage relays and in the registry fallback relays. The 2026-10-27 results above are left as they were measured, including relay.primal.net's inconsistent NIP-40 handling in that run, which this recheck did not retest. Queues created with nos.lol keep it; [#101](https://github.com/lokkju/qusme/issues/101) is how they move off it.
+
 ## Recommended relays for development
 
-- Storage (the queue's kind 10013): `wss://nos.lol` and `wss://relay.ditto.pub`. Both honored every check that matters for storage; relay.ditto.pub also honors recipient deletion and accepts larger events. `wss://relay.primal.net` is a reasonable third, with the NIP-40 inconsistency above.
+- Storage (the queue's kind 10013): `wss://relay.primal.net` and `wss://relay.ditto.pub` (since 2026-11-09). Both accepted every kind; relay.ditto.pub also honors recipient deletion and NIP-40 consistently, and accepts larger events. The 2026-10-27 recommendation was nos.lol and relay.ditto.pub, with relay.primal.net as a reasonable third; nos.lol is out because it no longer accepts writes (above).
 - Inbox (the grant's `inbox`): `wss://auth.nostr1.com`, the only free relay tested that restricts gift wrap reads to the recipient.
 - Pairing: the storage relays.
 - Local and CI: a strfry built from master, whose default config restricts 1059 reads, so tests do not depend on public relays' uptime or policy.
