@@ -3,11 +3,11 @@
   "publisher": "144986dabaeeb884d105f2da2cac0008b3eb408bab0447a39894f87b7d94f54c",
   "relayList": {
     "kind": 10002,
-    "created_at": 1793861870,
+    "created_at": 1794262816,
     "tags": [
       [
         "r",
-        "wss://nos.lol"
+        "wss://relay.primal.net"
       ],
       [
         "r",
@@ -16,8 +16,8 @@
     ],
     "content": "",
     "pubkey": "144986dabaeeb884d105f2da2cac0008b3eb408bab0447a39894f87b7d94f54c",
-    "id": "47a9b7bb3489da76a302721d41134f67d7e06e4796204b97b815f552c7528b57",
-    "sig": "85990bd0f78aa418e63dfdd6e739a938c3a5583c6a630aae447dbac826b294f09727089e0ecfe5af1a7cc4b26c7c73552d656de3637b8efb8fa93f5be32c365b"
+    "id": "6499841a69c35705448db4437af98fbc0b1b4bab583d439bf80209ca49390266",
+    "sig": "214d5651378a102aee9bac5ea27cb78b08b1692647c77a40a3e08d1d2bfdf33ebd5cc56da6c67c5adc63a150476311233f44838160095188cdaee9c8c49de612"
   },
   "siteDefinitions": [
     {

@@ -78,7 +78,7 @@ describe('the pinned registry publisher', () => {
     expect(REGISTRY_PUBLISHER).toBe(
       '144986dabaeeb884d105f2da2cac0008b3eb408bab0447a39894f87b7d94f54c'
     );
-    expect(REGISTRY_FALLBACK_RELAYS).toEqual(['wss://nos.lol', 'wss://relay.ditto.pub']);
+    expect(REGISTRY_FALLBACK_RELAYS).toEqual(['wss://relay.primal.net', 'wss://relay.ditto.pub']);
   });
 
   it('matches the committed snapshot', () => {
