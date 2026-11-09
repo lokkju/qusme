@@ -32,8 +32,7 @@
 <h1 class="display" id="hero-title">Drafts wait in line. You post them.</h1>
 <p class="lede">qus.me collects drafts from you and from AI agents like Claude, and keeps them in a queue only your devices can read. When you're ready, press Alt+Q in a post box, pick a draft, change it if you like, and click Post yourself. qus.me never posts anything.</p>
 <div class="actions">
-<a class="button button-primary" href="[Chrome Web Store link]">Add to Chrome</a>
-<a class="button button-secondary" href="[Firefox Add-ons link]">Add to Firefox</a>
+<a class="button button-primary" href="#install">Install</a>
 <span class="note">Free while in beta.</span>
 </div>
 </section>
@@ -112,9 +111,36 @@
 <div class="stack">
 <h2 class="title" id="install-title">Get qus.me</h2>
 <p class="muted">The extension holds your key and shows your queue. Install it first, then connect Claude.</p>
+<p>The extension is in review at the Chrome Web Store and Firefox Add-ons. Until it's listed, install it from the latest release on GitHub, which has a zip for each browser.</p>
+<!--
+  Store listings. Once they're live, replace the release button, the steps and the paragraph
+  above with two buttons, and put the same pair back in the hero in place of its Install button:
+    Add to Chrome:  chromewebstore.google.com/detail/<extension ID>
+    Add to Firefox: addons.mozilla.org/firefox/addon/<listing slug>/
+  Both need the https scheme, an entry in EXTERNAL and the CSP test's allowed hosts in
+  packages/entry-worker/test/site.test.ts.
+-->
 <div class="actions">
-<a class="button button-primary" href="[Chrome Web Store link]">Add to Chrome</a>
-<a class="button button-secondary" href="[Firefox Add-ons link]">Add to Firefox</a>
+<a class="button button-primary" href="https://github.com/lokkju/qusme/releases?q=extension-v">Latest release on GitHub</a>
+</div>
+<div class="grid grid-2">
+<div class="card">
+<h3>Chrome</h3>
+<ol class="list">
+<li>Download the Chrome zip and unzip it.</li>
+<li>Open <code>chrome://extensions</code> and turn on Developer mode.</li>
+<li>Click Load unpacked and pick the unzipped folder.</li>
+</ol>
+</div>
+<div class="card">
+<h3>Firefox</h3>
+<ol class="list">
+<li>Download the Firefox zip.</li>
+<li>Open <code>about:debugging</code> and choose This Firefox.</li>
+<li>Click Load Temporary Add-on and pick the zip.</li>
+</ol>
+<p class="muted">Firefox keeps a temporary add-on only until it restarts. A signed build comes with the Firefox Add-ons listing.</p>
+</div>
 </div>
 <p class="note">Free while in beta.</p>
 </div>
