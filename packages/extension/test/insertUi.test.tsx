@@ -176,7 +176,7 @@ describe('draft list (11.5)', () => {
     expect(html).toContain('1 insertion not recorded on the relays yet.');
     expect(html).toContain('4 junk discarded');
     expect(html).toContain('2 waiting for the next sync');
-    expect(html).toContain('rotate the inbox key');
+    expect(html).toContain('revoke it under Agents');
     expect(html).toContain('rotated to a new key');
     expect(html).toContain('&lt;b>relay&lt;/b> refused');
   });

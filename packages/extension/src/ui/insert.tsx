@@ -3,12 +3,15 @@
  * and detected account) and "Elsewhere". On open it asks the background to sync, reads the active
  * tab (activeTab) and runs the read-only account detection there. Each row expands to its full
  * text and has an Insert button that inserts it in one click; "Arm for right-click" keeps the
- * context menu path. Draft selection happens here, in extension origin: only the inserted draft's
- * text ever reaches the page. Every draft string is a JSX text child, which Preact sets as text.
+ * context menu path. Each row can also be edited and dismissed (spec 7.1), and a dismissal or an
+ * insertion can be undone from the status line for as long as the popup stays open (UX audit
+ * 5.5, 6.5). Draft selection happens here, in extension origin: only the inserted draft's text
+ * ever reaches the page. Every draft string is a JSX text child, which Preact sets as text.
  */
 import type { SiteAccount } from '@qusme/nostr';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { addDestination } from '../agents/destinations.ts';
+import { dismissDraft, editDraft, restoreDraft } from '../drafts/manage.ts';
 import { type ArmedDraft, arm, disarm, readArmed, readInsertionState } from '../insertion/armed.ts';
 import { definitionSource, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import { type DestinationOffer, destinationOffers, registrySitesOn } from '../insertion/detect.ts';
@@ -23,7 +26,7 @@ import type { KeyStore } from '../keyStore.ts';
 import type { SetupDeps } from '../setup/deps.ts';
 import { readDraftCache, readSyncState, type SyncSummary } from '../sync/state.ts';
 import { messageOf } from './app.tsx';
-import { Button } from './components.tsx';
+import { Button, inputClass } from './components.tsx';
 import { firstLine, SyncNote } from './drafts.tsx';
 
 /** What the panel needs from the browser; absent in tests of the rest of the popup. */
@@ -104,6 +107,16 @@ interface ViewProps {
   onArm(entry: PageDraft): void;
   onDisarm(): void;
   onRetry(): void;
+  /** Saves new text for the row's draft; resolves true when saved, so the editor closes. */
+  onEdit?(entry: PageDraft, content: string): Promise<boolean>;
+  /** Archives the row's draft as dismissed. */
+  onDismiss?(entry: PageDraft): void;
+  /** An Undo for the status line: restores the draft just dismissed or inserted. */
+  onUndo?: (() => void) | undefined;
+  /** Opens the pairing screen, for the rotated-queue notice. */
+  onPair?: (() => void) | undefined;
+  /** Opens the agents screen, for the flood warning. */
+  onAgents?: (() => void) | undefined;
 }
 
 function DraftRow(props: {
@@ -115,19 +128,57 @@ function DraftRow(props: {
   busy: boolean;
   onInsert: (entry: PageDraft) => void;
   onArm: (entry: PageDraft) => void;
+  onEdit?: ((entry: PageDraft, content: string) => Promise<boolean>) | undefined;
+  onDismiss?: ((entry: PageDraft) => void) | undefined;
 }) {
   const { draft } = props.entry;
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<string | undefined>();
   const preview = firstLine(draft.content);
   // Expanding shows something only when the preview cut the text.
   const more = preview !== draft.content.trim();
+  const header = (
+    <p class="text-ink/70 text-xs">
+      {draft.site}
+      {props.showAccount && ` / ${draft.account}`} · {draft.field}
+      {draft.source !== undefined && ` · from ${draft.source.label ?? 'an agent'}`}
+    </p>
+  );
+  if (editing !== undefined && props.onEdit !== undefined) {
+    const save = props.onEdit;
+    const id = `edit-${draft.d}`;
+    return (
+      <li class="rounded border border-accent p-2" data-draft={draft.d}>
+        {header}
+        <label for={id} class="sr-only">
+          Draft text
+        </label>
+        <textarea
+          id={id}
+          class={`${inputClass} mt-1 min-h-24`}
+          value={editing}
+          onInput={(e) => setEditing(e.currentTarget.value)}
+        />
+        <div class="mt-2 flex justify-end gap-2">
+          <Button variant="plain" class="px-2 py-1 text-sm" onClick={() => setEditing(undefined)}>
+            Cancel
+          </Button>
+          <Button
+            class="px-3 py-1 text-sm"
+            disabled={props.busy || editing.trim() === '' || editing === draft.content}
+            onClick={async () => {
+              if (await save(props.entry, editing)) setEditing(undefined);
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </li>
+    );
+  }
   return (
     <li class="rounded border border-ink/20 p-2" data-draft={draft.d}>
-      <p class="text-ink/70 text-xs">
-        {draft.site}
-        {props.showAccount && ` / ${draft.account}`} · {draft.field}
-        {draft.source !== undefined && ` · from ${draft.source.label ?? 'an agent'}`}
-      </p>
+      {header}
       {open ? (
         <p class="mt-1 whitespace-pre-wrap break-words text-sm">{draft.content}</p>
       ) : (
@@ -142,6 +193,26 @@ function DraftRow(props: {
             onClick={() => setOpen(!open)}
           >
             {open ? 'Less' : 'Show all'}
+          </button>
+        )}
+        {props.onEdit !== undefined && (
+          <button
+            type="button"
+            class={`${more ? '' : 'mr-auto '}text-xs underline`}
+            disabled={props.busy}
+            onClick={() => setEditing(draft.content)}
+          >
+            Edit
+          </button>
+        )}
+        {props.onDismiss !== undefined && (
+          <button
+            type="button"
+            class="text-xs underline"
+            disabled={props.busy}
+            onClick={() => props.onDismiss?.(props.entry)}
+          >
+            Dismiss
           </button>
         )}
         {props.armed ? (
@@ -190,6 +261,8 @@ export function InsertView(props: ViewProps) {
       busy={props.busy}
       onInsert={props.onInsert}
       onArm={props.onArm}
+      onEdit={props.onEdit}
+      onDismiss={props.onDismiss}
     />
   );
   return (
@@ -276,6 +349,14 @@ export function InsertView(props: ViewProps) {
       {props.status !== undefined && (
         <p role="status" class="text-sm">
           {props.status}
+          {props.onUndo !== undefined && (
+            <>
+              {' '}
+              <button type="button" class="underline" disabled={props.busy} onClick={props.onUndo}>
+                Undo
+              </button>
+            </>
+          )}
         </p>
       )}
       {props.unrecorded > 0 && (
@@ -287,7 +368,9 @@ export function InsertView(props: ViewProps) {
           </button>
         </p>
       )}
-      {props.last !== undefined && <SyncNote summary={props.last} />}
+      {props.last !== undefined && (
+        <SyncNote summary={props.last} onPair={props.onPair} onAgents={props.onAgents} />
+      )}
     </div>
   );
 }
@@ -300,8 +383,10 @@ export function InsertView(props: ViewProps) {
 export function InsertPanel(props: {
   store: KeyStore;
   deps?: InsertionUiDeps | undefined;
-  /** For the sync on open and the add-destination shortcut. */
+  /** For the sync on open, the add-destination shortcut and changing drafts. */
   setup?: SetupDeps;
+  onPair?: () => void;
+  onAgents?: () => void;
 }) {
   const { store, deps, setup } = props;
   const [tab, setTab] = useState<{ id: number; url: string } | undefined>();
@@ -316,6 +401,8 @@ export function InsertPanel(props: {
   const [busy, setBusy] = useState(false);
   const [offers, setOffers] = useState<DestinationOffer[]>([]);
   const [pickerShortcut, setPickerShortcut] = useState<string | undefined>();
+  // The draft the status line can bring back: just dismissed, or just inserted and recorded.
+  const [undoable, setUndoable] = useState<string | undefined>();
   // The tab and the detected accounts are read once per popup open.
   const tabRef = useRef<Promise<{ id: number; url: string } | undefined> | undefined>(undefined);
   const detectedRef = useRef<
@@ -417,6 +504,7 @@ export function InsertPanel(props: {
 
   const onArm = async (entry: PageDraft) => {
     setStatus(undefined);
+    setUndoable(undefined);
     setArmed(await arm(store.session, entry.draft, Math.floor(Date.now() / 1000)));
   };
   const onDisarm = async () => {
@@ -429,6 +517,7 @@ export function InsertPanel(props: {
     if (deps === undefined || tab === undefined) return;
     setBusy(true);
     setStatus(undefined);
+    setUndoable(undefined);
     const { content } = entry.draft;
     try {
       const response = await deps.insert(tab.id, entry.draft.d);
@@ -446,6 +535,7 @@ export function InsertPanel(props: {
         );
       } else {
         setStatus(insertMessage(response, deps.pasteShortcut));
+        if (response.state === 'inserted' && response.recorded) setUndoable(entry.draft.d);
       }
     } catch (error) {
       setStatus(`The insertion failed: ${(error as Error)?.message ?? String(error)}`);
@@ -473,6 +563,39 @@ export function InsertPanel(props: {
       await load();
     }
   };
+  // Edit, dismiss and undo change the draft on every storage relay, so they need the setup deps.
+  const change = async (action: () => Promise<string>, undo?: string): Promise<boolean> => {
+    if (setup === undefined) return false;
+    setBusy(true);
+    setStatus(undefined);
+    setUndoable(undefined);
+    try {
+      setStatus(await action());
+      setUndoable(undo);
+      return true;
+    } catch (error) {
+      setStatus(messageOf(error));
+      return false;
+    } finally {
+      setBusy(false);
+      await load();
+    }
+  };
+  const onEdit = (entry: PageDraft, content: string) =>
+    change(async () => {
+      await editDraft(entry.draft.d, content, setup as SetupDeps, deps?.definitions);
+      return 'Saved.';
+    });
+  const onDismiss = (entry: PageDraft) =>
+    void change(async () => {
+      await dismissDraft(entry.draft.d, setup as SetupDeps);
+      return 'Dismissed. It is in Archived drafts.';
+    }, entry.draft.d);
+  const onUndo = (d: string) =>
+    void change(async () => {
+      await restoreDraft(d, setup as SetupDeps);
+      return 'Restored.';
+    });
   const onRetry = async () => {
     if (deps === undefined) return;
     const result = await deps.retryRecord();
@@ -499,6 +622,10 @@ export function InsertPanel(props: {
       onArm={(e) => void onArm(e)}
       onDisarm={() => void onDisarm()}
       onRetry={() => void onRetry()}
+      {...(setup !== undefined && { onEdit, onDismiss })}
+      onUndo={undoable === undefined ? undefined : () => onUndo(undoable)}
+      onPair={props.onPair}
+      onAgents={props.onAgents}
     />
   );
 }

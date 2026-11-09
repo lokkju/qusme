@@ -37,6 +37,12 @@ const PERIOD_LABELS: Record<QuotaPeriod, string> = {
   month: 'per month',
 };
 
+const PERIOD_NOW: Record<QuotaPeriod, string> = {
+  day: 'Today',
+  week: 'This week',
+  month: 'This month',
+};
+
 const shortNpub = (pubkey: string): string => {
   const npub = npubEncode(pubkey);
   return `${npub.slice(0, 12)}…${npub.slice(-6)}`;
@@ -563,6 +569,12 @@ export function AgentItem(props: {
           {agent.grant.destinations.length === 1 ? '' : 's'}
           {agent.grant.allow_new_destinations && ', may propose new ones'}, up to{' '}
           {agent.grant.quota.max_submissions} {PERIOD_LABELS[agent.grant.quota.period]}
+        </p>
+      )}
+      {agent.grant !== undefined && agent.counts !== undefined && (
+        <p class="text-ink/70 text-xs" data-agent-counts>
+          {PERIOD_NOW[agent.grant.quota.period]}: {agent.counts.accepted} accepted
+          {agent.counts.discarded > 0 && `, ${agent.counts.discarded} discarded`}
         </p>
       )}
       {!agent.listed && (
