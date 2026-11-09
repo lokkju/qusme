@@ -17,7 +17,7 @@ export interface Nip98Options {
   /**
    * The origin clients reach the service at, such as `https://app.qus.me`. The URL a request was
    * signed for is this origin plus the request's path and query. Scheme and host never come from
-   * the request: behind the Cloudflare tunnel and Traefik the Node server sees neither, and
+   * the request: a Node server behind a reverse proxy sees neither, and
    * forwarded headers are whatever the last hop chose to send.
    */
   publicOrigin: string;

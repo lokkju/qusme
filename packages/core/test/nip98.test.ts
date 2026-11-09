@@ -15,7 +15,7 @@ const key = Uint8Array.from(
 const signer = createLocalSigner(key);
 const NOW = 1_761_400_000;
 const ORIGIN = 'https://app.qus.me';
-// What the Node server sees behind the tunnel and Traefik: its own address, not app.qus.me.
+// What a Node server behind a reverse proxy sees: its own address, not app.qus.me.
 const INTERNAL = 'http://10.42.0.17:8787';
 const BODY = JSON.stringify({ uri: 'nostrpair://example' });
 

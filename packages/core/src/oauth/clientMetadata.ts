@@ -51,8 +51,8 @@ const fail = (message: string): never => {
  * Hosts the service never fetches from or connects to: IP literals (a public service has no reason
  * to be named by address, and this closes every private range at once), single-label names, and
  * names under suffixes reserved for local networks. DNS can still point a public name at a private
- * address; on Workers fetch cannot reach private addresses, and on the homelab the pod's egress
- * policy is what stops that.
+ * address; on Workers fetch cannot reach private addresses, and elsewhere only an egress policy
+ * stops that.
  */
 export function isBlockedHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, '');
