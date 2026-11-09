@@ -1,14 +1,39 @@
 name: release-extension
 
-# Releases the browser extension (packages/extension) by hand: computes the
-# CalVer version, builds and zips Chrome and Firefox, submits them to the
-# Chrome Web Store and Firefox Add-ons with `wxt submit`, and publishes a
-# GitHub release `extension-v<version>` with the zips. The `release`
-# environment needs lokkju's approval and admits main only. The version is
-# written into package.json inside the job and never committed back.
+# Releases the browser extension (packages/extension): computes the CalVer
+# version, builds and zips Chrome and Firefox, submits them to the Chrome Web
+# Store and Firefox Add-ons with `wxt submit`, and publishes a GitHub release
+# `extension-v<version>` with the zips. It runs on every push to main that
+# changes what ships in the extension, and by hand. Either way the `release`
+# job waits for lokkju's approval on the `release` environment, which admits
+# main only. A newer run cancels an older one still waiting for approval; an
+# approved release is never cancelled. The version is written into
+# package.json inside the job and never committed back.
 # packages/extension/README.md, "Releasing".
 
 on:
+  push:
+    branches: [main]
+    # What ships in the extension: its own sources, the one workspace package
+    # it bundles (@qusme/nostr; @qusme/core and @qusme/store-sql are test-only
+    # devDependencies), the registry snapshot it bundles, the toolchain and
+    # lockfile, and this workflow. Tests, scripts and Markdown don't ship.
+    # Keep in step with SHIP_PATHSPEC in the plan job.
+    paths:
+      - packages/extension/**
+      - packages/nostr/**
+      - registry/snapshot.json
+      - pnpm-lock.yaml
+      - package.json
+      - pnpm-workspace.yaml
+      - .npmrc
+      - tsconfig.base.json
+      - .mise/config.toml
+      - .github/workflows/release-extension.yml
+      - "!packages/extension/test/**"
+      - "!packages/nostr/test/**"
+      - "!packages/nostr/scripts/**"
+      - "!**/*.md"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -18,14 +43,101 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: release-extension
-  cancel-in-progress: false
-
 jobs:
+  # Runs before the approval gate: cancels older runs that haven't started
+  # releasing, and lists the commits this run would ship in its summary, so
+  # the approver sees what they're approving.
+  plan:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Workflow-level concurrency can't do this: a job waiting for approval
+      # holds its concurrency group like a running one, so cancel-in-progress
+      # would also kill an approved release in the middle of `wxt submit`, and
+      # without it the old waiting run keeps the group. A run whose release
+      # job is running or done is left alone; anything earlier (queued,
+      # planning, waiting for approval, pending) is cancelled.
+      - name: Cancel older runs waiting for approval
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          older=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release-extension.yml --limit 100 \
+            --json databaseId,number,status \
+            --jq ".[] | select(.status != \"completed\" and .number < $GITHUB_RUN_NUMBER) | .databaseId")
+          for id in $older; do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" \
+              --jq '[.jobs[] | select(.name == "release") | .status][0] // "none"')
+            case "$state" in
+              in_progress | completed)
+                echo "Run $id is releasing ($state); leaving it" ;;
+              *)
+                echo "::notice::Cancelling run $id (release job: $state); this run replaces it"
+                gh run cancel "$id" --repo "$GITHUB_REPOSITORY" || echo "::warning::Could not cancel run $id" ;;
+            esac
+          done
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Summarize what would ship
+        env:
+          # on.push.paths as a git pathspec
+          SHIP_PATHSPEC: >-
+            packages/extension packages/nostr registry/snapshot.json
+            pnpm-lock.yaml package.json pnpm-workspace.yaml .npmrc
+            tsconfig.base.json .mise/config.toml
+            .github/workflows/release-extension.yml
+            :(exclude)packages/extension/test :(exclude)packages/nostr/test
+            :(exclude)packages/nostr/scripts :(exclude,glob)**/*.md
+        run: |
+          set -euo pipefail
+          read -ra pathspec <<<"$SHIP_PATHSPEC"
+          last=$(git tag --list 'extension-v*' --sort=-v:refname | head -n 1)
+          short=$(git rev-parse --short HEAD)
+          {
+            echo "### Extension release from $short"
+            echo
+            if [ -n "$last" ]; then
+              range="$last..HEAD"
+              echo "Last release: \`$last\`. Commits since then that change what ships:"
+            else
+              range=HEAD
+              echo "No \`extension-v*\` release yet. Commits that change what ships:"
+            fi
+            echo
+            total=$(git rev-list --count --no-merges "$range" -- "${pathspec[@]}")
+            if [ "$total" -eq 0 ]; then
+              echo "None."
+            else
+              git log --no-merges --max-count=50 --format='- %h %s (%an)' "$range" -- "${pathspec[@]}"
+              if [ "$total" -gt 50 ]; then
+                echo "- and $((total - 50)) more"
+              fi
+            fi
+            echo
+            if [ -n "$last" ]; then
+              echo "[Full diff]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$last...$GITHUB_SHA)"
+              echo
+            fi
+            echo "The version is picked after approval: today's UTC date, with a suffix if that date is taken."
+          } >>"$GITHUB_STEP_SUMMARY"
+
   release:
+    needs: plan
     runs-on: ubuntu-24.04
     environment: release
+    # One release at a time, so two can't pick the same version. A newer run
+    # waits here (pending) until the running one finishes; older waiting runs
+    # are cancelled by the plan job.
+    concurrency:
+      group: release-extension
+      cancel-in-progress: false
     permissions:
       contents: write
     env:

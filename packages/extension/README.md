@@ -13,9 +13,13 @@ pnpm -C packages/extension exec wxt build -b firefox   # output in packages/exte
 
 ## Releasing
 
-Run the `release-extension` workflow from main (Actions, "release-extension", "Run workflow"). It waits for lokkju's approval on the `release` environment, which admits main only. It then:
+The `release-extension` workflow runs on every push to main that changes what ships in the extension: `packages/extension`, `packages/nostr` (the one workspace package it bundles), `registry/snapshot.json`, the lockfile, the root `package.json`, `pnpm-workspace.yaml`, `.npmrc`, `tsconfig.base.json`, `.mise/config.toml` and the workflow itself. A push that touches only tests, `packages/nostr/scripts` or Markdown files doesn't start one. You can also run it by hand from main (Actions, "release-extension", "Run workflow").
 
-1. picks the version: today's UTC date as `YYYY.M.D` with no leading zeros (`2026.11.8`), or `2026.11.8.1`, `.2` and so on when a release or tag `extension-v<version>` already exists. It refuses a version that isn't greater than the one in `package.json`;
+Every run starts with a `plan` job, which lists in the run's summary the commits since the last `extension-v*` tag that change what ships, with a link to the full diff, so you can see what you're approving. The `release` job then waits for lokkju's approval on the `release` environment, which admits main only. Nothing ships without that approval; to skip a release, reject the run or leave it waiting.
+
+A newer run replaces an older one that hasn't been approved: its `plan` job cancels every older run whose `release` job hasn't started, so only the newest push waits for approval, and approving it ships everything before it too. An approved release is never cancelled; a run that arrives while one is releasing waits until it finishes. A newer push also cancels a manual run (a `dry_run` included) that is still waiting. Once approved, the `release` job:
+
+1. picks the version at that moment, not when the run started: today's UTC date as `YYYY.M.D` with no leading zeros (`2026.11.8`), or `2026.11.8.1`, `.2` and so on when a release or tag `extension-v<version>` already exists. It refuses a version that isn't greater than the one in `package.json`;
 2. writes that version into `package.json` inside the job only; main keeps the version it has, and nothing is committed back;
 3. typechecks, tests, and runs `wxt zip` and `wxt zip -b firefox` (Chrome zip, Firefox zip, sources zip);
 4. creates a draft GitHub release `extension-v<version>` with the three zips;
