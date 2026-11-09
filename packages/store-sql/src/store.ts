@@ -560,7 +560,6 @@ export function createStore(db: QusmeDb) {
           set: {
             queuePubkey: row.queuePubkey,
             uri: row.uri,
-            attempts: row.attempts ?? 0,
             createdAt: row.createdAt,
             expiresAt: row.expiresAt,
           },
@@ -584,15 +583,6 @@ export function createStore(db: QusmeDb) {
         .from(pairingSessions)
         .where(and(eq(pairingSessions.code, code), pairingLive(now)))
         .get();
-    },
-    /** Counts a fetch attempt against the code; returns the new count, or undefined if none. */
-    async recordAttempt(code: string, now: number): Promise<number | undefined> {
-      const [out] = await db
-        .update(pairingSessions)
-        .set({ attempts: sql`${pairingSessions.attempts} + 1` })
-        .where(and(eq(pairingSessions.code, code), pairingLive(now)))
-        .returning({ attempts: pairingSessions.attempts });
-      return out?.attempts;
     },
     /** Deletes and returns the session in one statement: the code works once (spec 8.3 step 3). */
     async take(code: string, now: number): Promise<PairingSession | undefined> {

@@ -1,7 +1,7 @@
 # qus.me: Specification
 
 *Draft v0.4, 2026-10-27. Supersedes v0.3.*
-*Revised 2026-11-09: the service runs on Cloudflare Workers and the homelab deployment is retired (8.5, 9.3).*
+*Revised 2026-11-09: the service runs on Cloudflare Workers and the homelab deployment is retired (8.5, 9.3); pairing sessions no longer store an attempt count (8.5).*
 
 ## 1. Summary
 
@@ -412,7 +412,7 @@ The service is a `createApp(deps)` Hono factory using only Web-standard APIs, wi
 - agent keys (encrypted, with a key version so the service secret can rotate);
 - bindings of agent keys to queue pubkeys and the queues' storage relays;
 - submission receipts (agent key id, queue pubkey, gift wrap id, created at; no content), for `list_submissions` and quota (8.4);
-- pairing sessions (8.3: code, `nostrpair://` URI, queue pubkey, attempt count, `expires_at`);
+- pairing sessions (8.3: code, `nostrpair://` URI, queue pubkey, `expires_at`);
 - recently seen NIP-98 event ids, for replay protection;
 - queues registered for the hosted relay (9.2);
 - usage counters for service-wide caps (the daily `create_draft` ceiling), one row per day.

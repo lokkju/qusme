@@ -250,8 +250,6 @@ export const pairingSessions = sqliteTable(
     queuePubkey: text('queue_pubkey').notNull(),
     /** The NIP-AB URI, including the source's ephemeral pubkey and session secret. */
     uri: text('uri').notNull(),
-    /** Fetch attempts against this code, for the per-code rate limit. */
-    attempts: integer('attempts').notNull().default(0),
     createdAt: integer('created_at').notNull(),
     expiresAt: integer('expires_at').notNull(),
   },

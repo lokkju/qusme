@@ -102,7 +102,6 @@ export function pairingSuite(driver: string, setup: () => { fresh(): Promise<Qus
         code,
         queuePubkey,
         uri: source.uri,
-        attempts: 0,
         createdAt: NOW,
         expiresAt: NOW + PAIRING_CODE_TTL_SECONDS,
       });

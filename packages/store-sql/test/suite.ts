@@ -639,12 +639,8 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
           expiresAt,
         });
 
-      it('counts attempts and is taken once', async () => {
-        const created = await session('0123ABCD');
-        expect(created.attempts).toBe(0);
-        expect(await h.store.pairingSessions.recordAttempt('0123ABCD', NOW)).toBe(1);
-        expect(await h.store.pairingSessions.recordAttempt('0123ABCD', NOW)).toBe(2);
-        expect(await h.store.pairingSessions.recordAttempt('ZZZZZZZZ', NOW)).toBeUndefined();
+      it('is taken once', async () => {
+        await session('0123ABCD');
         const taken = await h.store.pairingSessions.take('0123ABCD', NOW);
         expect(taken?.uri).toMatch(/^nostrpair:\/\//);
         expect(await h.store.pairingSessions.take('0123ABCD', NOW)).toBeUndefined();
@@ -678,7 +674,7 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
           },
           NOW + 120
         );
-        expect(replaced).toMatchObject({ queuePubkey: pk(101), uri: 'nostrpair://c', attempts: 0 });
+        expect(replaced).toMatchObject({ queuePubkey: pk(101), uri: 'nostrpair://c' });
         expect((await h.store.pairingSessions.get('0123ABCD', NOW + 121))?.uri).toBe(
           'nostrpair://c'
         );
@@ -689,7 +685,6 @@ export function storeSuite(driver: string, setup: () => { fresh(): Promise<Harne
         expect(await h.store.pairingSessions.get('0123ABCD', NOW + 119)).toBeDefined();
         expect(await h.store.pairingSessions.get('0123ABCD', NOW + 120)).toBeUndefined();
         expect(await h.store.pairingSessions.take('0123ABCD', NOW + 120)).toBeUndefined();
-        expect(await h.store.pairingSessions.recordAttempt('0123ABCD', NOW + 120)).toBeUndefined();
         expect(await h.store.pairingSessions.delete('0123ABCD')).toBe(true);
       });
     });
