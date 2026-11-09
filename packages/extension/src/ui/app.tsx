@@ -79,7 +79,13 @@ export function App(props: {
       />
     );
   } else if (route === 'agents' && status.state === 'unlocked') {
-    body = <AgentsScreen deps={deps} onBack={home} />;
+    body = (
+      <AgentsScreen
+        deps={deps}
+        source={props.insertion?.definitions ?? definitionSource()}
+        onBack={home}
+      />
+    );
   } else if (route === 'archive' && status.state === 'unlocked') {
     body = <ArchiveScreen deps={deps} onBack={home} />;
   } else if (
