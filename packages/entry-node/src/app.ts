@@ -28,7 +28,7 @@ export interface NodeConfig {
   registry?: { snapshot: unknown; publisher: string };
 }
 
-/** Where the service is served in production, behind the Cloudflare tunnel and Traefik. */
+/** The origin NIP-98 requests are signed for when QUSME_PUBLIC_ORIGIN is unset: the production Worker's. */
 export const DEFAULT_PUBLIC_ORIGIN = 'https://app.qus.me';
 
 /** How often the Node entrypoint sweeps expired service state, as the Workers cron does. */

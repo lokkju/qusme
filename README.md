@@ -49,7 +49,7 @@ A schema change is an edit to `packages/store-sql/src/schema.ts` followed by `pn
 
 ## Deploying
 
-The service is served at `https://app.qus.me`, with MCP at `/mcp`, from Cloudflare Workers. The same Worker serves the landing site and privacy policy (`site/`, static files) at `https://qus.me` as Workers static assets, routing by Host: `qus.me` gets the site, `www.qus.me` redirects to it, `app.qus.me` gets the service and never the site, and any other host gets a 404. The Node entrypoint and its image are for self-hosting and local development.
+The service is served at `https://app.qus.me`, with MCP at `/mcp`, from Cloudflare Workers. The same Worker serves the landing site and privacy policy (`site/`, static files) at `https://qus.me` as Workers static assets, routing by Host: `qus.me` gets the site, `www.qus.me` redirects to it, `app.qus.me` gets the service and never the site, and any other host gets a 404. The Node entrypoint is for local development; nothing deploys it.
 
 ### Workers
 
@@ -76,14 +76,14 @@ A client over a limit gets 429 with `Retry-After`; an agent gets the MCP tool er
 `QUSME_AGENT_KEY_SECRET` encrypts every agent key at rest (spec 6.2), and each key records the version of the secret it is under. Losing the secret loses every agent key, so the old one stays configured until every key has moved. To rotate from version N to N+1:
 
 1. Set `QUSME_AGENT_KEY_SECRET_PREVIOUS` to the current secret, `QUSME_AGENT_KEY_SECRET` to a new one, and `QUSME_AGENT_KEY_VERSION` to N+1 (unset means 1, so the first rotation sets it to 2). New keys are encrypted under N+1 at once, and keys still under N keep working.
-2. Re-encrypt. On Workers the five-minute cron runs a pass while `QUSME_AGENT_KEY_SECRET_PREVIOUS` is set. On Node, `pnpm -C packages/entry-node rotate-agent-keys` (in the image, `node packages/entry-node/src/rotateAgentKeys.ts`) does it once with the server's environment and prints the count and the ids of any key it could not move; the server also runs a pass every five minutes under the same condition.
+2. Re-encrypt. On Workers the five-minute cron runs a pass while `QUSME_AGENT_KEY_SECRET_PREVIOUS` is set. On Node, `pnpm -C packages/entry-node rotate-agent-keys` does it once with the server's environment and prints the count and the ids of any key it could not move; the server also runs a pass every five minutes under the same condition.
 3. When a pass reports nothing left to move and no failures, remove `QUSME_AGENT_KEY_SECRET_PREVIOUS`. Revoked keys have no ciphertext and are never re-encrypted.
 
-Only one previous version is held, so finish a rotation before starting the next. On Workers the secrets are Pulumi's Worker secrets in lokkju/infra, and each new variable is a change there first. A self-hosted Node server takes them from its environment.
+Only one previous version is held, so finish a rotation before starting the next. On Workers the secrets are Pulumi's Worker secrets in lokkju/infra, and each new variable is a change there first. The Node entrypoint takes them from its environment.
 
-### Self-hosting (Node)
+### Node (local development)
 
-`packages/entry-node` serves the same app with a SQLite file in place of D1, for local development and the SQLite tests. There is no published image; anyone self-hosting runs the entrypoint under Node 24 with `QUSME_AGENT_KEY_SECRET` (and optionally `QUSME_VERSION`, which `/healthz` reports) in its environment.
+`packages/entry-node` serves the same app with a SQLite file in place of D1, for local development and the SQLite tests. Nothing builds an image of it or deploys it. It runs under Node 24 with `QUSME_AGENT_KEY_SECRET` (and optionally `QUSME_VERSION`, which `/healthz` reports) in its environment.
 
 ## CI
 

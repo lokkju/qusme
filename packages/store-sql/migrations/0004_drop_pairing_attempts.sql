@@ -1,0 +1,1 @@
+ALTER TABLE `pairing_sessions` DROP COLUMN `attempts`;

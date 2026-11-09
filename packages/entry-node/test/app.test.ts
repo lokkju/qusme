@@ -95,7 +95,7 @@ describe('the Node entrypoint', () => {
       method: 'POST',
       body,
     });
-    // The request as the Node server sees it behind Traefik: its own host and plain http.
+    // The request as a Node server behind a reverse proxy sees it: its own host and plain http.
     const send = () =>
       app.request('http://qusme.qusme.svc:8787/rotate', {
         method: 'POST',

@@ -1,6 +1,7 @@
 # qus.me: Specification
 
 *Draft v0.4, 2026-10-27. Supersedes v0.3.*
+*Revised 2026-11-09: the service runs on Cloudflare Workers and the homelab deployment is retired (8.5, 9.3); pairing sessions no longer store an attempt count (8.5).*
 
 ## 1. Summary
 
@@ -40,7 +41,7 @@ The HTTP broker and its SQL draft store are gone; drafts live on a Nostr relay. 
 - A field value is capped at 32 KiB of plaintext (7.1, 8.4).
 - The `qus.me/` `d`-tag prefix is recorded as a deliberate choice (7.2).
 - Pairing (8.3) corrected after the NIP-AB review ([#26](https://github.com/lokkju/qusme/issues/26)): the claim that mismatched SAS codes stop a compromised service is replaced with the real property; the URI lists up to three storage relays; `complete` is sent once the key is stored, before the passphrase prompt; the payload is buffered until the transcript hash checks and the user confirms the SAS; `qusme_relays` is checked against the queue's kind 10013; the pairing connection authenticates as the ephemeral key; `payload_type` `"nsec"` is sent and a raw `nsec` refused; the ephemeral-event retention of ordinary relays is noted. A typed-code session sends the recovery backup as the payload.
-- The service runs on the homelab through the Node entrypoint for development, at `app.qus.me`; Workers remains supported at the same hostname (8.5, 9.3).
+- The service runs on the homelab through the Node entrypoint for development, at `app.qus.me`; Workers remains supported at the same hostname (8.5, 9.3). Superseded 2026-11-05: the service runs on Workers, and the homelab no longer runs it (section 17).
 
 ## 2. NIPs
 
@@ -404,21 +405,21 @@ The service retains no submission plaintext after publishing. For each published
 
 ### 8.5 Portability
 
-The service is a `createApp(deps)` Hono factory using only Web-standard APIs, with thin Workers and Node entrypoints, as in v0.1. For development it runs on the operator's homelab through the Node entrypoint, behind a Cloudflare tunnel at `app.qus.me`; Workers remains a supported target at the same hostname. On Workers the same script also serves the static landing site and privacy policy at `qus.me` (`site/`), routing by Host so the service answers only on `app.qus.me` and the site never does. Its own state is small:
+The service is a `createApp(deps)` Hono factory using only Web-standard APIs, with thin Workers and Node entrypoints, as in v0.1. It runs on Cloudflare Workers: one Worker, `qusme`, serves the service at `app.qus.me` and the static landing site and privacy policy at `qus.me` (`site/`), routing by Host so the service answers only on `app.qus.me` and the site never does. Its state is the D1 database `qusme`. lokkju/infra's Pulumi stack owns the script, its custom domains, the database, the Worker secret and the deploy token; this repo's deploy workflow applies pending migrations and deploys the code on every push to `main`. The Node entrypoint, with a SQLite file in place of D1, is for local development and the SQLite tests, and nothing deploys it. On the Workers Free plan a request gets 10 ms of CPU, which is what bounds the proof of work `create_draft` can mine for a grant's `min_pow` (7.4). The service's own state is small:
 
 - OAuth clients (cached Client ID Metadata Documents), authorization codes and tokens (hashed, with expiry);
 - pending authorizations (8.2: short code, client id, PKCE challenge, scopes, minted agent key id, a keyed hash of the client IP for the per-IP cap, `expires_at`);
 - agent keys (encrypted, with a key version so the service secret can rotate);
 - bindings of agent keys to queue pubkeys and the queues' storage relays;
 - submission receipts (agent key id, queue pubkey, gift wrap id, created at; no content), for `list_submissions` and quota (8.4);
-- pairing sessions (8.3: code, `nostrpair://` URI, queue pubkey, attempt count, `expires_at`);
+- pairing sessions (8.3: code, `nostrpair://` URI, queue pubkey, `expires_at`);
 - recently seen NIP-98 event ids, for replay protection;
 - queues registered for the hosted relay (9.2);
 - usage counters for service-wide caps (the daily `create_draft` ceiling), one row per day.
 
 Tokens don't store a queue pubkey. A token is bound to its agent key, and the queue comes from that key's binding, so a rotation rebind (6.1) is one update to the binding and every token follows it. A submission receipt carries its own `expires_at`, set no earlier than both the gift wrap's NIP-40 expiration and the end of the quota period it counts toward, so `list_submissions` shows a submission for as long as the wrap can exist and the quota count (7.4) never loses a receipt early.
 
-Requests that devices sign with NIP-98 are checked against the configured public origin (`https://app.qus.me`) plus the request's path and query, never against the `Host` or forwarded headers, since behind the tunnel the Node server sees neither. The service holds each accepted event id until the event's 60-second window has passed and refuses it again until then.
+Requests that devices sign with NIP-98 are checked against the configured public origin (`https://app.qus.me`) plus the request's path and query, never against the `Host` or forwarded headers, which a proxy in front of the service can rewrite. The service holds each accepted event id until the event's 60-second window has passed and refuses it again until then.
 
 SQLite on both targets (D1 on Workers, a SQLite file on Node). Rows with a TTL carry an `expires_at` column, every read filters on it, and a sweep deletes expired rows. Nothing lives in KV: KV's free-tier write limit is account-wide and small, and every pairing step is a write. Nostr publishing uses outbound websockets, available on both runtimes.
 
@@ -491,7 +492,7 @@ Over the baseline, this profile adds author-only reads, submitter-gated gift wra
 
 ### 9.3 Deployment
 
-A self-hosted relay meeting 9.2: strfry or nostr-rs-relay with a write-policy plugin implementing it, bundled in the service's compose file. Workers: a Workers or Durable Objects relay implementation if one meets 9.2 (to be evaluated). The relay software for the hosted relay depends on that evaluation. The service itself runs on the homelab through the Node entrypoint for development, with Workers supported at the same hostname (8.5).
+A self-hosted relay meeting 9.2: strfry or nostr-rs-relay with a write-policy plugin implementing it. Workers: a Workers or Durable Objects relay implementation if one meets 9.2 (to be evaluated). The relay software for the hosted relay depends on that evaluation. The service itself runs on Cloudflare Workers (8.5).
 
 ## 10. Site registry
 
@@ -731,7 +732,7 @@ Content is end-to-end encrypted on every relay: values, sites, accounts, fields,
 - 2026-10-27: the queue key's `ncryptsec` uses NIP-49 `log_n` 18. The recovery backup is readable by anyone who knows the relay URL and queue npub (6.1, 9.2), so the cost sets how fast an attacker can guess passphrases offline, against how long unlocking takes on a phone. One unlock measured 1.28 s at 18 on a Node 24 server (0.32 s at 16, 5.2 s at 20); phones are slower, and a device unlocks once per session (6.1; [#40](https://github.com/lokkju/qusme/issues/40)).
 - 2026-10-27: v1 runs on ordinary relays under the baseline profile, with storage relays and an inbox relay (9.1). v0.3's relay rules become the optional qus.me relay profile, met by the paid, account-gated hosted relay (9.2; [#38](https://github.com/lokkju/qusme/issues/38), [#39](https://github.com/lokkju/qusme/issues/39)).
 - 2026-10-27: the published recovery backup is encrypted with a device-generated 128-bit recovery code that the user stores; the passphrase protects only the local copy. Recovery needs the relay URL, npub, and recovery code, and rotation issues a new code. A passphrase-only backup is an option on the qus.me relay profile only (6.1, 9.2). Since the published copy no longer depends on the passphrase, the `log_n` 18 choice above now weighs only the local copy and the passphrase-only option.
-- 2026-10-27: for development the service runs on the homelab through the Node entrypoint, behind the tunnel at `app.qus.me`; Workers remains a supported target at the same hostname (8.5, 9.3).
+- 2026-10-27: for development the service runs on the homelab through the Node entrypoint, behind the tunnel at `app.qus.me`; Workers remains a supported target at the same hostname (8.5, 9.3). Superseded 2026-11-05 by the Workers deployment below.
 - 2026-10-27: gift wraps are addressed to a separate inbox key, rotatable without the queue key (6.4; `docs/relays.md`).
 - 2026-10-27: a field value is at most 32 KiB of plaintext, so its draft wrap fits default strfry's 64 KiB event limit (7.1).
 - 2026-10-27: the `qus.me/` `d`-tag prefix stays, as NIP-78's application identifier (7.2).
@@ -740,3 +741,4 @@ Content is end-to-end encrypted on every relay: values, sites, accounts, fields,
 - 2026-11-05: the registry publisher key lists `wss://nos.lol` and `wss://relay.ditto.pub` (read and write) in its NIP-65 relay list, also sent to the indexer `wss://purplepag.es`; builds bundle that list and fall back to the same two relays without it (10.3; lokkju/qusme-registry).
 - 2026-11-05: a grant's destinations carry the destination's `override`, since the service cannot read the settings and validates against the effective definition (7.4, 8.4); the service mines `min_pow` up to 24 bits and refuses a grant asking for more (7.4; [#9](https://github.com/lokkju/qusme/issues/9)).
 - 2026-11-05: accounts compare normalized everywhere (no leading `@` or surrounding whitespace, case-folded unless the definition sets `account.caseSensitive`), at the service, at ingestion, in pending destination ids and on devices; devices store the account as written, minus the `@` (10.1; [#72](https://github.com/lokkju/qusme/issues/72)).
+- 2026-11-05: the service runs on Cloudflare Workers, as the `qusme` Worker that also serves the landing site at `qus.me`, with the D1 database `qusme`, deployed by this repo on every push to `main`; lokkju/infra owns the script, domains, database, secret and deploy token. The homelab deployment is retired, and the Node entrypoint is for local development only; its container image and the workflow that built it were removed ([#84](https://github.com/lokkju/qusme/pull/84)). The Workers Free plan's 10 ms of CPU per request bounds the proof of work the service can mine (7.4, 8.5; [#66](https://github.com/lokkju/qusme/issues/66)).
