@@ -186,7 +186,8 @@ describe('effective definitions (10.2)', () => {
     const { version, fields } = x as { version: string; fields: { inject: string[] }[] };
     expect(compareSiteVersions(version, '2026.11.2')).toBeGreaterThanOrEqual(0);
     expect(fields[0]?.inject[0]).toBe('insertText');
-    expect(definitionSource().official('mastodon')).toBeUndefined();
+    expect(definitionSource().official('mastodon')?.id).toBe('mastodon');
+    expect(definitionSource().official('nope')).toBeUndefined();
   });
 
   it('finds the draft field through its destination, by id or by site and account', () => {
