@@ -152,9 +152,11 @@ const refs = (html: string) =>
   [...html.matchAll(/\s(?:href|src)="([^"]*)"/g)].map((m) => m[1] ?? '');
 const ids = (html: string) => new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
 
-// Known placeholders, kept until the store listings exist; listed here so they can't multiply.
-const PLACEHOLDERS = new Set(['[Chrome Web Store link]', '[Firefox Add-ons link]']);
-const EXTERNAL = new Set(['https://github.com/lokkju/qusme', 'mailto:info@qus.me']);
+const EXTERNAL = new Set([
+  'https://github.com/lokkju/qusme',
+  'https://github.com/lokkju/qusme/releases?q=extension-v',
+  'mailto:info@qus.me',
+]);
 
 /** The file a same-origin path is served from (html_handling auto-trailing-slash). */
 function fileFor(path: string): string | undefined {
@@ -173,7 +175,7 @@ describe('site pages', () => {
   it.each(PAGES)('%s: every link and asset resolves', (page) => {
     const html = read(page);
     for (const ref of refs(html)) {
-      if (PLACEHOLDERS.has(ref) || EXTERNAL.has(ref)) continue;
+      if (EXTERNAL.has(ref)) continue;
       if (ref.startsWith('#')) {
         expect(ids(html).has(ref.slice(1)), `${page}: ${ref}`).toBe(true);
         continue;
@@ -183,6 +185,15 @@ describe('site pages', () => {
       const target = fileFor(path === '' ? '/' : path);
       expect(target, `${page}: ${ref}`).toBeDefined();
       if (fragment && target) expect(ids(read(target)).has(fragment), `${page}: ${ref}`).toBe(true);
+    }
+  });
+
+  it.each(PAGES)('%s: no empty or placeholder href', (page) => {
+    const hrefs = [...read(page).matchAll(/\shref="([^"]*)"/g)].map((m) => m[1] ?? '');
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) {
+      expect(href.trim(), `${page}: empty href`).not.toBe('');
+      expect(href, `${page}: placeholder href ${href}`).not.toContain('[');
     }
   });
 
