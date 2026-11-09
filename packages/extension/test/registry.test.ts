@@ -91,10 +91,15 @@ function source(
 }
 
 describe('the bundled registry', () => {
-  it('verifies against the production key and holds the X definition', () => {
+  it('verifies against the production key and holds the bundled definitions', () => {
     expect(BUNDLED_REGISTRY.rejected).toEqual([]);
-    expect(BUNDLED_REGISTRY.definitions.map((d) => d.definition.id)).toEqual(['x']);
-    const x = BUNDLED_REGISTRY.definitions[0]?.definition;
+    expect(BUNDLED_REGISTRY.definitions.map((d) => d.definition.id)).toEqual([
+      'bsky',
+      'linkedin',
+      'mastodon',
+      'x',
+    ]);
+    const x = BUNDLED_REGISTRY.definitions.find((d) => d.definition.id === 'x')?.definition;
     expect(compareSiteVersions(x?.version ?? '', '2026.11.2')).toBeGreaterThanOrEqual(0);
     expect(x?.fields[0]?.inject[0]).toBe('insertText');
   });

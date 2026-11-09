@@ -167,6 +167,11 @@ describe('destinations screen', { timeout: 30_000 }, () => {
     await until(() => root.textContent?.includes('X / alt') === true);
     button(root, 'Add a destination')?.click();
     await until(() => button(root, 'Detect from this tab') !== undefined);
+    // The form opens on the first site by name; detection reads the chosen one.
+    const site = root.querySelector<HTMLSelectElement>('#destination-site') as HTMLSelectElement;
+    site.value = 'x';
+    site.dispatchEvent(new Event('change', { bubbles: true }));
+    await until(() => root.querySelector<HTMLSelectElement>('#destination-site')?.value === 'x');
     button(root, 'Detect from this tab')?.click();
     const account = () => root.querySelector<HTMLInputElement>('#destination-account');
     await until(() => account()?.value === 'lokkju');

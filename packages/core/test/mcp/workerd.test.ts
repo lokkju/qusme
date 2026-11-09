@@ -118,24 +118,22 @@ for (const withBindings of [true, false]) {
       ]);
       const registry = await rpc('tools/call', { name: 'list_registry', arguments: {} });
       // The bundled snapshot moves with every registry bump, so the version is only a floor.
-      const listed = registry.result.structuredContent as { sites: { version: string }[] };
-      expect(
-        compareSiteVersions(listed.sites[0]?.version ?? '', '2026.11.2')
-      ).toBeGreaterThanOrEqual(0);
-      expect(registry.result.structuredContent).toEqual({
-        sites: [
+      const listed = registry.result.structuredContent as {
+        sites: { id: string; version: string }[];
+      };
+      expect(listed.sites.map((s) => s.id)).toEqual(['bsky', 'linkedin', 'mastodon', 'x']);
+      const x = listed.sites.find((s) => s.id === 'x');
+      expect(compareSiteVersions(x?.version ?? '', '2026.11.2')).toBeGreaterThanOrEqual(0);
+      expect(x).toEqual({
+        id: 'x',
+        name: 'X',
+        version: expect.any(String),
+        match: ['https://x.com/*', 'https://twitter.com/*'],
+        fields: [
           {
-            id: 'x',
-            name: 'X',
-            version: expect.any(String),
-            match: ['https://x.com/*', 'https://twitter.com/*'],
-            fields: [
-              {
-                name: 'text',
-                label: 'Post text',
-                constraints: { maxLength: 280, counter: 'twitter-text' },
-              },
-            ],
+            name: 'text',
+            label: 'Post text',
+            constraints: { maxLength: 280, counter: 'twitter-text' },
           },
         ],
       });

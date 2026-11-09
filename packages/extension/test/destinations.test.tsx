@@ -446,7 +446,7 @@ describe('destinations screen', () => {
     });
     // X has fixed hosts: no patterns field, no override unless typed.
     const x = siteChoices(source);
-    expect(addInput({ ...emptyAdd(x), account: 'me' }, x)).toMatchObject({
+    expect(addInput({ ...emptyAdd(x), choice: 'x', account: 'me' }, x)).toMatchObject({
       site: 'x',
       needsMatch: false,
       override: null,
