@@ -3,7 +3,13 @@
  * service. Labels come from the queue's own submitters list; client names and hosts come from the
  * service, which got them from each client's metadata document.
  */
-import { type AgentGrant, createLocalSigner, type Destination } from '@qusme/nostr';
+import {
+  type AgentGrant,
+  createLocalSigner,
+  type Destination,
+  type QuotaCount,
+  quotaPeriodStart,
+} from '@qusme/nostr';
 import { SetupError } from '../setup/deps.ts';
 import {
   type PendingRevocation,
@@ -24,6 +30,11 @@ export interface AgentRow {
   binding?: Binding;
   grant?: AgentGrant;
   /**
+   * Its submissions devices counted in the grant's current quota period, from the settings'
+   * `quota_counts` (7.2, 11.4); absent without a grant.
+   */
+  counts?: { accepted: number; discarded: number };
+  /**
    * Revoked on this device, but the service has not confirmed it yet (11.8): shown as "finishing
    * with qus.me" with a Retry.
    */
@@ -36,6 +47,21 @@ export interface AgentsView {
   pending: Destination[];
   /** Why the service's list is missing, when it was asked and failed. */
   bindingsError?: string;
+}
+
+/**
+ * What the devices accepted and discarded in the grant's current period. A record from an earlier
+ * period counts nothing now: the next ingestion clears it (11.4).
+ */
+export function countsInPeriod(
+  count: QuotaCount | undefined,
+  grant: Pick<AgentGrant, 'quota'>,
+  now: number
+): { accepted: number; discarded: number } {
+  if (count === undefined || count.period_start < quotaPeriodStart(grant.quota.period, now)) {
+    return { accepted: 0, discarded: 0 };
+  }
+  return { accepted: count.accepted.length, discarded: count.discarded.length };
 }
 
 /** Listed submitters joined with the service's bindings, and the pending destinations. */
@@ -71,7 +97,14 @@ export async function loadAgents(
     const binding = bindings.find((b) => b.agentPubkey === agentPubkey);
     if (binding !== undefined) row.binding = binding;
     const grant = snapshot.grants.get(agentPubkey)?.grant;
-    if (grant !== undefined) row.grant = grant;
+    if (grant !== undefined) {
+      row.grant = grant;
+      row.counts = countsInPeriod(
+        snapshot.settings?.content.quota_counts[agentPubkey],
+        grant,
+        deps.now?.() ?? Math.floor(Date.now() / 1000)
+      );
+    }
     view.agents.push(row);
   }
   for (const binding of bindings) {

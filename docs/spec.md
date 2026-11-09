@@ -608,6 +608,8 @@ The `inserted` tag's method is `extension_popup`, `extension_context_menu` or `e
 
 Draft selection happens in extension origin (the popup) or in the extension's isolated world (the picker, which renders the list in its closed shadow root, out of reach of the page's scripts); the full value of no draft other than the inserted one enters the page. Draft text is rendered with `textContent`, never as HTML, since agent-supplied content is untrusted.
 
+Each row of the popup's list can also be edited or dismissed, and an "Archived drafts" view lists inserted and dismissed drafts, newest first, each with Restore. All three republish the wrap with the same `d` (7.1), rebuilt from the newest version on the storage relays, and, like the destination changes of 11.8, need every storage relay to answer the read and accept the new wrap. An edit refuses empty text and text over the 32 KiB cap, keeps the status and every other tag, and recomputes the `validation` tag against the draft's field when the effective definition has one, or drops it. Dismissing sets `archived:dismissed` and disarms the draft if it was armed; restoring sets `active` and keeps the `inserted` tags. After a dismissal, or an insertion that was recorded, the status line offers Undo, which restores that draft, until the popup closes.
+
 The toolbar badge shows the number of active drafts, updated after every sync, insertion and dismissal, in a distinct colour when something needs the user (a pending destination, a revocation qus.me has not confirmed, an insertion not yet recorded), and is cleared while the queue is locked (operator decision 2026-11-06).
 
 ### 11.6 Injection strategies
