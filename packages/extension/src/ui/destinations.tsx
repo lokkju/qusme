@@ -22,6 +22,7 @@ import {
 import type { SiteDefinitionSource } from '../insertion/definitions.ts';
 import { type DetectDeps, type Detection, detectForSite } from '../insertion/detect.ts';
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
+import { ShareOffer } from './agents.tsx';
 import { messageOf } from './app.tsx';
 import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
 
@@ -437,6 +438,8 @@ export function DestinationsScreen(props: {
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState<string>();
+  // A destination just added, offered to the agents that could use it (UX audit 3.2).
+  const [shared, setShared] = useState<Destination | undefined>();
 
   const load = useCallback(async () => {
     try {
@@ -453,6 +456,7 @@ export function DestinationsScreen(props: {
     setBusy(label);
     setError(undefined);
     setNotice(undefined);
+    setShared(undefined);
     try {
       const message = await action();
       setMode({ mode: 'list' });
@@ -517,6 +521,7 @@ export function DestinationsScreen(props: {
               definitions,
               deps
             );
+            setShared(added);
             return `Added ${added.label}.`;
           })
         }
@@ -609,6 +614,17 @@ export function DestinationsScreen(props: {
         <p role="status" class="mt-3 text-sm">
           {notice}
         </p>
+      )}
+      {shared !== undefined && mode.mode === 'list' && (
+        <ShareOffer
+          deps={deps}
+          destination={shared}
+          source={definitions}
+          onDone={(message) => {
+            setShared(undefined);
+            if (message !== undefined) setNotice(message);
+          }}
+        />
       )}
     </Screen>
   );

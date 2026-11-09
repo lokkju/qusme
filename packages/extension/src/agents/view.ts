@@ -45,6 +45,8 @@ export interface AgentsView {
   agents: AgentRow[];
   /** Destinations agents proposed, waiting for the user (7.2). */
   pending: Destination[];
+  /** Confirmed destinations: what a grant can share and a pending one can merge into. */
+  confirmed: Destination[];
   /** Why the service's list is missing, when it was asked and failed. */
   bindingsError?: string;
 }
@@ -70,11 +72,11 @@ export async function loadAgents(
   options: { withService: boolean }
 ): Promise<AgentsView> {
   const snapshot = await withQueue(deps, (session) => readQueue(session));
+  const destinations = snapshot.destinations?.content.destinations ?? [];
   const view: AgentsView = {
     agents: [],
-    pending: (snapshot.destinations?.content.destinations ?? []).filter(
-      (d) => d.status === 'pending'
-    ),
+    pending: destinations.filter((d) => d.status === 'pending'),
+    confirmed: destinations.filter((d) => d.status === 'confirmed'),
   };
   let bindings: Binding[] = [];
   if (options.withService) {

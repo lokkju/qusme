@@ -9,6 +9,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { createAgentKeyRing, createApp, type RelayPublisher, type RelayReader } from '@qusme/core';
 import {
+  buildAgentGrant,
   buildDestinations,
   buildSettings,
   createLocalSigner,
@@ -45,7 +46,17 @@ import {
   sharesNothing,
 } from '../src/agents/approve.ts';
 import { parseApprovalCode } from '../src/agents/code.ts';
-import { confirmPendingDestination, rejectPendingDestination } from '../src/agents/destinations.ts';
+import {
+  confirmPendingDestination,
+  mergePendingDestination,
+  rejectPendingDestination,
+} from '../src/agents/destinations.ts';
+import {
+  choicesFromGrant,
+  editGrant,
+  shareCandidates,
+  shareDestination,
+} from '../src/agents/grants.ts';
 import { readPendingRevocations } from '../src/agents/pendingRevocations.ts';
 import type { AgentDeps } from '../src/agents/queue.ts';
 import { type RevokeResult, revokeAgent } from '../src/agents/revoke.ts';
@@ -55,12 +66,15 @@ import { KeyStore, LOCAL_QUEUE, type QueueRecord, SESSION_UNLOCKED } from '../sr
 import { MemoryStorageArea } from '../src/storage.ts';
 import { syncOnce } from '../src/sync/engine.ts';
 import {
+  AgentItem,
   AgentsList,
   ApprovalDone,
   ApprovalReview,
+  EditGrantView,
   GrantForm,
   RequestSummary,
   revokeMessage,
+  ShareOfferView,
 } from '../src/ui/agents.tsx';
 import { INBOX, network, ORIGIN, STORAGE } from './helpers.ts';
 
@@ -908,6 +922,47 @@ describe('pending destinations', { timeout: 30_000 }, () => {
     );
   });
 
+  it('merges a pending destination into a confirmed one, moving its drafts', async () => {
+    const { h, pending } = await proposed();
+    await expect(mergePendingDestination(pending.id, pending.id, h.deps)).rejects.toThrow(
+      /another destination/
+    );
+    await expect(mergePendingDestination(X_ALT.id, X_LOKKJU.id, h.deps)).rejects.toThrow(
+      /no longer pending/
+    );
+    expect(await mergePendingDestination(pending.id, X_ALT.id, h.deps)).toEqual({ moved: 2 });
+    expect((await destinationsOnRelay(h)).map((d) => d.id)).toEqual([X_LOKKJU.id, X_ALT.id]);
+    expect(await draftsOnRelay(h)).toEqual([
+      { account: 'alt', status: 'active' },
+      { account: 'alt', status: 'active' },
+      { account: 'lokkju', status: 'active' },
+    ]);
+    // Each moved draft names the target by id, so it is listed and inserted as the target's.
+    for (const e of h.net.get(STORAGE[1] as string).events) {
+      if (e.kind !== KIND_DRAFT_WRAP) continue;
+      const parsed = await parseDraftWrap(e, h.queue);
+      if (!parsed.ok || parsed.value.deleted || parsed.value.draft.type !== 'field_value') continue;
+      const v = parsed.value.draft.value;
+      if (v.account === 'alt') expect(v.destination).toBe(X_ALT.id);
+    }
+    await expect(mergePendingDestination(pending.id, X_ALT.id, h.deps)).rejects.toThrow(
+      /no longer pending/
+    );
+  });
+
+  it('leaves a pending destination when its drafts cannot be moved', async () => {
+    const { h, pending } = await proposed();
+    h.net.get(STORAGE[1] as string).options.refuseKinds = [KIND_DRAFT_WRAP];
+    await expect(mergePendingDestination(pending.id, X_ALT.id, h.deps)).rejects.toThrow(
+      /stays pending/
+    );
+    expect((await destinationsOnRelay(h)).map((d) => d.status)).toEqual([
+      'confirmed',
+      'confirmed',
+      'pending',
+    ]);
+  });
+
   it('rejects a pending destination and dismisses only its drafts', async () => {
     const { h, pending } = await proposed();
     expect(await rejectPendingDestination(pending.id, h.deps)).toEqual({ dismissed: 2 });
@@ -917,6 +972,144 @@ describe('pending destinations', { timeout: 30_000 }, () => {
       { account: 'newcomer', status: 'archived:dismissed' },
       { account: 'newcomer', status: 'archived:dismissed' },
     ]);
+  });
+});
+
+describe('editing an agent grant', { timeout: 30_000 }, () => {
+  async function grantOn(h: Awaited<ReturnType<typeof harness>>, agent: string, url = STORAGE[0]) {
+    const event = newestOn(h.net, url as string, KIND_AGENT_GRANT, h.queuePubkey, agent);
+    const parsed = await parseAgentGrant(event, h.queue);
+    if (!parsed.ok) throw new Error('no grant');
+    return parsed.value;
+  }
+
+  it('republishes the grant and the label, and the agent can draft where it now may', async () => {
+    const h = await harness();
+    const one = await h.approved((c) => ({ ...c, label: 'Mine' }));
+    const pubkey = one.request.agentPubkey;
+    // A grant a newer build wrote: unknown keys, an extra tag and proof of work this form leaves.
+    const before = await grantOn(h, pubkey);
+    const newer = await buildAgentGrant(
+      h.queue,
+      pubkey,
+      {
+        ...before.grant,
+        min_pow: 1,
+        extra: { future: 'top' },
+        quota: { ...before.grant.quota, extra: { burst: 2 } },
+        destinations: before.grant.destinations.map((d) => ({ ...d, extra: { color: 'teal' } })),
+      },
+      { createdAt: before.createdAt + 1, extraTags: [['future', 'kept']] }
+    );
+    await publishTo(h.net, STORAGE, newer);
+    const agent = await h.connectAgent(one.page);
+    const draft = (account: string) => ({ site: 'x', account, field: 'text', value: 'hi' });
+    expect((await agent.call('create_draft', draft('alt'))).structuredContent?.error).toBe(
+      'destination_not_granted'
+    );
+
+    const view = await loadAgents(h.deps, { withService: false });
+    const row = view.agents[0] as (typeof view.agents)[number];
+    const start = choicesFromGrant(
+      'Mine',
+      row.grant as NonNullable<typeof row.grant>,
+      view.confirmed
+    );
+    expect(start.choices.destinations).toEqual([{ id: X_LOKKJU.id, fields: ['text'] }]);
+    expect(start.dropped).toEqual([]);
+    await editGrant(
+      pubkey,
+      {
+        ...start.choices,
+        label: 'Renamed',
+        destinations: [...start.choices.destinations, { id: X_ALT.id, fields: ['text'] }],
+        quota: { max_submissions: 9, period: 'week' },
+        submissionExpirationDays: 7,
+      },
+      h.deps
+    );
+
+    for (const url of STORAGE) {
+      const edited = await grantOn(h, pubkey, url);
+      expect(edited.grant).toMatchObject({
+        min_pow: 1,
+        extra: { future: 'top' },
+        quota: { max_submissions: 9, period: 'week', extra: { burst: 2 } },
+        submission_expiration_days: 7,
+        destinations: [
+          { site: 'x', account: 'lokkju', fields: ['text'], extra: { color: 'teal' } },
+          { site: 'x', account: 'alt', fields: ['text'], override: X_ALT.override },
+        ],
+      });
+      expect(edited.extraTags).toEqual([['future', 'kept']]);
+      const list = newestOn(h.net, url, KIND_SUBMITTERS, h.queuePubkey) as NostrEvent;
+      const parsed = await parseSubmittersList(list, h.queue);
+      expect(parsed.ok && parsed.value.labels[pubkey]).toMatchObject({ label: 'Renamed' });
+      expect(parsed.ok && parsed.value.submitters).toEqual([pubkey]);
+    }
+    expect(h.calls.filter((c) => c.method !== 'GET').map((c) => c.path)).not.toContain(
+      `/device/bindings/${pubkey}`
+    );
+    const listed = await agent.call('list_destinations');
+    expect(
+      ((listed.structuredContent?.destinations ?? []) as { account: string }[]).map(
+        (d) => d.account
+      )
+    ).toEqual(['lokkju', 'alt']);
+    await agent.client.close();
+  });
+
+  it('refuses to edit or share with a revoked agent, so revocation is never undone', async () => {
+    const h = await harness({ storage: { honorDeletion: false } });
+    const one = await h.approved((c) => ({ ...c, label: 'Mine' }));
+    const pubkey = one.request.agentPubkey;
+    const view = await loadAgents(h.deps, { withService: false });
+    const grant = view.agents[0]?.grant as NonNullable<(typeof view.agents)[number]['grant']>;
+    const { choices } = choicesFromGrant('Mine', grant, view.confirmed);
+    h.service.down = true;
+    const revoked = await revokeAgent(pubkey, h.deps);
+    expect(revoked.service).toBe('pending');
+    const grantsBefore = h.net
+      .get(STORAGE[0] as string)
+      .events.filter((e) => e.kind === KIND_AGENT_GRANT).length;
+    await expect(editGrant(pubkey, choices, h.deps)).rejects.toThrow(/revoked/);
+    await expect(shareDestination(X_ALT.id, [pubkey], h.deps)).rejects.toThrow(/revoked/);
+    expect(
+      h.net.get(STORAGE[0] as string).events.filter((e) => e.kind === KIND_AGENT_GRANT).length
+    ).toBe(grantsBefore);
+    const list = newestOn(h.net, STORAGE[0] as string, KIND_SUBMITTERS, h.queuePubkey);
+    const parsed = await parseSubmittersList(list, h.queue);
+    expect(parsed.ok && parsed.value.submitters).toEqual([]);
+    // The revocation still reaches the service once it is back.
+    h.service.down = false;
+    await syncOnce({
+      store: h.store,
+      socket: h.net.socket,
+      relayTimeoutMs: 500,
+      serviceOrigin: ORIGIN,
+      ...(h.deps.fetch !== undefined && { fetch: h.deps.fetch }),
+    });
+    expect(await readPendingRevocations(h.store)).toEqual([]);
+    expect(h.calls.some((c) => c.method === 'DELETE')).toBe(true);
+  });
+
+  it('shares a destination with the agents chosen, once', async () => {
+    const h = await harness();
+    const one = await h.approved((c) => ({ ...c, label: 'One' }));
+    const two = await h.approved((c) => ({ ...c, label: 'Two' }));
+    const view = await loadAgents(h.deps, { withService: false });
+    expect(shareCandidates(view.agents, X_ALT, h.deps.now?.() ?? 0).length).toBe(2);
+    expect(shareCandidates(view.agents, X_LOKKJU, 0)).toEqual([]);
+    expect(await shareDestination(X_ALT.id, [one.request.agentPubkey], h.deps)).toEqual([
+      one.request.agentPubkey,
+    ]);
+    expect(
+      (await grantOn(h, one.request.agentPubkey)).grant.destinations.map((d) => d.account)
+    ).toEqual(['lokkju', 'alt']);
+    expect(
+      (await grantOn(h, two.request.agentPubkey)).grant.destinations.map((d) => d.account)
+    ).toEqual(['lokkju']);
+    expect(await shareDestination(X_ALT.id, [one.request.agentPubkey], h.deps)).toEqual([]);
   });
 });
 
@@ -1053,6 +1246,7 @@ describe('agent screens', () => {
             },
           ],
           pending: [{ ...X_ALT, status: 'pending', label: '<em>x / new</em>' }],
+          confirmed: [X_LOKKJU],
         }}
       />
     );
@@ -1081,6 +1275,7 @@ describe('agent screens', () => {
             },
           ],
           pending: [],
+          confirmed: [],
         }}
       />
     );
@@ -1101,5 +1296,101 @@ describe('agent screens', () => {
     expect(pending).toMatch(/^Revoked on your devices; finishing with qus\.me…/);
     expect(pending).toContain('Claude may still look like it works');
     expect(pending).toContain('next sync, or press Retry');
+  });
+});
+
+describe('grant editing screens', () => {
+  const grant = {
+    inbox: INBOX,
+    inbox_pubkey: 'a'.repeat(64),
+    min_pow: 0,
+    destinations: [
+      { site: 'x', account: 'LOKKJU', fields: ['text'] },
+      { site: 'x', account: 'gone', fields: ['text'] },
+    ],
+    allow_new_destinations: true,
+    submission_expiration_days: 30,
+    quota: { max_submissions: 50, period: 'day' as const },
+    expires_at: null,
+  };
+  const row = { agentPubkey: 'b'.repeat(64), label: '<i>mine</i>', listed: true, grant };
+
+  it('maps the grant onto the destinations, by normalized account, and names what is gone', () => {
+    const start = choicesFromGrant('mine', grant, [X_LOKKJU, X_ALT]);
+    expect(start.choices).toMatchObject({
+      label: 'mine',
+      destinations: [{ id: X_LOKKJU.id, fields: ['text'] }],
+      allowNewDestinations: true,
+    });
+    expect(start.dropped.map((d) => d.account)).toEqual(['gone']);
+    const html = renderToString(
+      <EditGrantView
+        agent={row}
+        destinations={[X_LOKKJU, X_ALT]}
+        start={start}
+        choices={start.choices}
+        busy={undefined}
+        error={undefined}
+        onChange={() => {}}
+        onSave={() => {}}
+        onCancel={() => {}}
+      />
+    );
+    expect(html).toContain('&lt;i>mine&lt;/i>');
+    expect(html).toContain('x / gone');
+    expect(html).toContain('Save');
+  });
+
+  it('offers Edit access only to an authorized agent with a grant', () => {
+    const props = { busy: false, onRevoke: () => {}, onRetry: () => {}, onEdit: () => {} };
+    expect(renderToString(<AgentItem agent={row} {...props} />)).toContain('Edit access');
+    expect(
+      renderToString(<AgentItem agent={{ ...row, listed: false }} {...props} />)
+    ).not.toContain('Edit access');
+  });
+
+  it('offers merging a pending destination into a confirmed one', () => {
+    const html = renderToString(
+      <AgentsList
+        busy={false}
+        onRevoke={() => {}}
+        onRetry={() => {}}
+        onConfirm={() => {}}
+        onReject={() => {}}
+        onMerge={() => {}}
+        view={{ agents: [], pending: [{ ...X_ALT, status: 'pending' }], confirmed: [X_LOKKJU] }}
+      />
+    );
+    expect(html).toContain('Merge into an existing destination');
+  });
+
+  it('lists the agents a destination can be shared with, as text', () => {
+    const html = renderToString(
+      <ShareOfferView
+        destination={X_ALT}
+        candidates={[row]}
+        chosen={[]}
+        busy={false}
+        onToggle={() => {}}
+        onShare={() => {}}
+        onSkip={() => {}}
+      />
+    );
+    expect(html).toContain('Share X / alt with');
+    expect(html).toContain('&lt;i>mine&lt;/i>');
+    const none = renderToString(
+      <ShareOfferView
+        destination={X_ALT}
+        candidates={[]}
+        chosen={[]}
+        busy={false}
+        onToggle={() => {}}
+        onShare={() => {}}
+        onSkip={() => {}}
+      />
+    );
+    expect(none).toBe('');
+    const expired = { ...row, grant: { ...grant, expires_at: 10 } };
+    expect(shareCandidates([row, expired], X_ALT, 100)).toEqual([row]);
   });
 });

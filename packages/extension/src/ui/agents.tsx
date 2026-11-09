@@ -17,7 +17,18 @@ import {
   sharesNothing,
 } from '../agents/approve.ts';
 import { parseApprovalCode } from '../agents/code.ts';
-import { confirmPendingDestination, rejectPendingDestination } from '../agents/destinations.ts';
+import {
+  confirmPendingDestination,
+  mergePendingDestination,
+  rejectPendingDestination,
+} from '../agents/destinations.ts';
+import {
+  choicesFromGrant,
+  editGrant,
+  type GrantEditStart,
+  shareCandidates,
+  shareDestination,
+} from '../agents/grants.ts';
 import { finishRevocation } from '../agents/pendingRevocations.ts';
 import { NO_SERVICE_PERMISSION, type RevokeResult, revokeAgent } from '../agents/revoke.ts';
 import { type AuthorizationRequest, fetchAuthorization } from '../agents/service.ts';
@@ -27,6 +38,7 @@ import {
   loadAgents,
   loadShareableDestinations,
 } from '../agents/view.ts';
+import type { SiteDefinitionSource } from '../insertion/definitions.ts';
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
 import { messageOf } from './app.tsx';
 import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
@@ -521,6 +533,7 @@ export function AgentItem(props: {
   busy: boolean;
   onRevoke: (agent: AgentRow) => void;
   onRetry: (agent: AgentRow) => void;
+  onEdit?: ((agent: AgentRow) => void) | undefined;
 }) {
   const { agent } = props;
   const [confirming, setConfirming] = useState(false);
@@ -598,27 +611,49 @@ export function AgentItem(props: {
           </Button>
         </div>
       ) : (
-        <Button
-          variant="plain"
-          class="mt-2 px-2 py-1 text-sm"
-          disabled={props.busy}
-          onClick={() => setConfirming(true)}
-        >
-          Revoke…
-        </Button>
+        <div class="mt-2 flex gap-2">
+          {agent.listed && agent.grant !== undefined && props.onEdit !== undefined && (
+            <Button
+              variant="plain"
+              class="px-2 py-1 text-sm"
+              disabled={props.busy}
+              onClick={() => props.onEdit?.(agent)}
+            >
+              Edit access
+            </Button>
+          )}
+          <Button
+            variant="plain"
+            class="px-2 py-1 text-sm"
+            disabled={props.busy}
+            onClick={() => setConfirming(true)}
+          >
+            Revoke…
+          </Button>
+        </div>
       )}
     </li>
   );
 }
 
-/** A destination an agent proposed, with confirm and reject. */
+/**
+ * A destination an agent proposed, with confirm, reject, and merge into one of the confirmed
+ * destinations (the same account under another spelling, say).
+ */
 export function PendingItem(props: {
   destination: Destination;
+  /** Confirmed destinations it can merge into; none hides Merge. */
+  confirmed?: Destination[];
   busy: boolean;
   onConfirm: (d: Destination) => void;
   onReject: (d: Destination) => void;
+  onMerge?: ((d: Destination, into: Destination) => void) | undefined;
 }) {
   const { destination } = props;
+  const confirmed = props.confirmed ?? [];
+  const [merging, setMerging] = useState<string | undefined>();
+  const into = confirmed.find((d) => d.id === merging);
+  const selectId = `merge-${destination.id}`;
   return (
     <li class="rounded border border-ink/20 p-2">
       <p class="text-sm">{destination.label}</p>
@@ -642,6 +677,55 @@ export function PendingItem(props: {
           Reject and dismiss its drafts
         </Button>
       </div>
+      {props.onMerge !== undefined &&
+        confirmed.length > 0 &&
+        (merging === undefined ? (
+          <button
+            type="button"
+            class="mt-2 text-xs underline"
+            disabled={props.busy}
+            onClick={() => setMerging(confirmed[0]?.id)}
+          >
+            Merge into an existing destination…
+          </button>
+        ) : (
+          <div class="mt-2 rounded bg-ink/5 p-2">
+            <label for={selectId} class="font-medium text-xs">
+              Move its drafts to
+            </label>
+            <select
+              id={selectId}
+              class={`${inputClass} mt-1`}
+              value={merging}
+              onChange={(e) => setMerging(e.currentTarget.value)}
+            >
+              {confirmed.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+            <p class="mt-1 text-ink/70 text-xs">
+              Its drafts become drafts for the destination you choose, and it leaves the list.
+            </p>
+            <div class="mt-2 flex gap-2">
+              <Button
+                class="px-2 py-1 text-sm"
+                disabled={props.busy || into === undefined}
+                onClick={() => into !== undefined && props.onMerge?.(destination, into)}
+              >
+                Merge
+              </Button>
+              <Button
+                variant="plain"
+                class="px-2 py-1 text-sm"
+                onClick={() => setMerging(undefined)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ))}
     </li>
   );
 }
@@ -653,6 +737,8 @@ export function AgentsList(props: {
   onRetry: (agent: AgentRow) => void;
   onConfirm: (d: Destination) => void;
   onReject: (d: Destination) => void;
+  onMerge?: (d: Destination, into: Destination) => void;
+  onEdit?: (agent: AgentRow) => void;
 }) {
   const { view } = props;
   return (
@@ -667,9 +753,11 @@ export function AgentsList(props: {
               <PendingItem
                 key={d.id}
                 destination={d}
+                confirmed={view.confirmed}
                 busy={props.busy}
                 onConfirm={props.onConfirm}
                 onReject={props.onReject}
+                onMerge={props.onMerge}
               />
             ))}
           </ul>
@@ -690,6 +778,7 @@ export function AgentsList(props: {
                 busy={props.busy}
                 onRevoke={props.onRevoke}
                 onRetry={props.onRetry}
+                onEdit={props.onEdit}
               />
             ))}
           </ul>
@@ -705,13 +794,170 @@ export function AgentsList(props: {
   );
 }
 
+/** Editing an agent's access: the grant form, starting from its current grant (spec 7.4). */
+export function EditGrantView(props: {
+  agent: AgentRow;
+  destinations: Destination[];
+  start: GrantEditStart;
+  choices: ApprovalChoices;
+  busy: string | undefined;
+  error: string | undefined;
+  onChange: (choices: ApprovalChoices) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const { agent, choices } = props;
+  const name = agentName(agent);
+  const empty = sharesNothing(choices);
+  return (
+    <Screen title="Edit access" onBack={props.onCancel}>
+      <p class="mt-2 font-medium text-sm">{name}</p>
+      {agent.binding !== undefined && (
+        <p class="font-mono font-semibold text-xs">{agent.binding.clientHost}</p>
+      )}
+      {props.start.dropped.length > 0 && (
+        <p class="mt-2 text-ink/70 text-xs" data-dropped>
+          No longer among your destinations, so saving removes them from this agent:{' '}
+          {props.start.dropped.map((d) => `${d.site} / ${d.account}`).join(', ')}.
+        </p>
+      )}
+      <GrantForm destinations={props.destinations} choices={choices} onChange={props.onChange} />
+      {empty && <NothingSharedWarning name={choices.label.trim() || name} />}
+      <ErrorText message={props.error} />
+      <div class="mt-4 flex gap-2">
+        <Button onClick={props.onSave} disabled={props.busy !== undefined}>
+          {props.busy ?? (empty ? 'Save anyway' : 'Save')}
+        </Button>
+        <Button variant="plain" onClick={props.onCancel} disabled={props.busy !== undefined}>
+          Cancel
+        </Button>
+      </div>
+    </Screen>
+  );
+}
+
+/** The offer to share a destination just added or confirmed with agents (UX audit 3.2). */
+export function ShareOfferView(props: {
+  destination: Destination;
+  candidates: AgentRow[];
+  chosen: string[];
+  busy: boolean;
+  onToggle: (agentPubkey: string, on: boolean) => void;
+  onShare: () => void;
+  onSkip: () => void;
+}) {
+  if (props.candidates.length === 0) return null;
+  return (
+    <div class="mt-3 rounded border border-accent/40 bg-accent/5 p-2" data-share-offer>
+      <p class="font-medium text-sm">Share {props.destination.label} with</p>
+      <ul class="mt-1 flex flex-col gap-1">
+        {props.candidates.map((a) => (
+          <li key={a.agentPubkey}>
+            <label class="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={props.chosen.includes(a.agentPubkey)}
+                onChange={(e) => props.onToggle(a.agentPubkey, e.currentTarget.checked)}
+              />
+              <span>{agentName(a)}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div class="mt-2 flex gap-2">
+        <Button
+          class="px-2 py-1 text-sm"
+          disabled={props.busy || props.chosen.length === 0}
+          onClick={props.onShare}
+        >
+          Share
+        </Button>
+        <Button variant="plain" class="px-2 py-1 text-sm" onClick={props.onSkip}>
+          Not now
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Offers to share `destination` with the agents that could use it, and republishes their grants
+ * when the user picks some. Renders nothing when no agent could take it.
+ */
+export function ShareOffer(props: {
+  deps: SetupDeps;
+  destination: Destination;
+  source?: SiteDefinitionSource | undefined;
+  onDone: (message: string | undefined) => void;
+}) {
+  const { deps, destination, source } = props;
+  const [candidates, setCandidates] = useState<AgentRow[]>([]);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    let live = true;
+    loadAgents(deps, { withService: false })
+      .then((view) => {
+        if (!live) return;
+        const now = Math.floor(Date.now() / 1000);
+        setCandidates(shareCandidates(view.agents, destination, now, source));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [deps, destination, source]);
+  const share = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const changed = await shareDestination(destination.id, chosen, deps, source);
+      const names = candidates.filter((a) => changed.includes(a.agentPubkey)).map(agentName);
+      props.onDone(
+        names.length === 0 ? undefined : `Shared ${destination.label} with ${names.join(', ')}.`
+      );
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <ShareOfferView
+        destination={destination}
+        candidates={candidates}
+        chosen={chosen}
+        busy={busy}
+        onToggle={(pubkey, on) =>
+          setChosen(on ? [...chosen, pubkey] : chosen.filter((p) => p !== pubkey))
+        }
+        onShare={() => void share()}
+        onSkip={() => props.onDone(undefined)}
+      />
+      <ErrorText message={error} />
+    </>
+  );
+}
+
 /** The agents the queue authorizes and the destinations they proposed. */
-export function AgentsScreen(props: { deps: SetupDeps; onBack: () => void }) {
-  const { deps } = props;
+export function AgentsScreen(props: {
+  deps: SetupDeps;
+  source?: SiteDefinitionSource | undefined;
+  onBack: () => void;
+}) {
+  const { deps, source } = props;
   const [view, setView] = useState<AgentsView | undefined>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<
+    { agent: AgentRow; start: GrantEditStart; choices: ApprovalChoices } | undefined
+  >();
+  const [editBusy, setEditBusy] = useState<string>();
+  const [editError, setEditError] = useState<string>();
+  const [sharing, setSharing] = useState<Destination | undefined>();
 
   const load = useCallback(async () => {
     try {
@@ -728,6 +974,7 @@ export function AgentsScreen(props: { deps: SetupDeps; onBack: () => void }) {
     setBusy(true);
     setError(undefined);
     setNotice(undefined);
+    setSharing(undefined);
     try {
       setNotice(await action());
       await load();
@@ -755,13 +1002,64 @@ export function AgentsScreen(props: { deps: SetupDeps; onBack: () => void }) {
   const confirm = (d: Destination) =>
     run(async () => {
       await confirmPendingDestination(d.id, deps);
+      setSharing({ ...d, status: 'confirmed' });
       return `Confirmed ${d.label}.`;
     });
   const reject = (d: Destination) =>
     run(async () => {
-      const { dismissed } = await rejectPendingDestination(d.id, deps);
+      const { dismissed } = await rejectPendingDestination(d.id, deps, source);
       return `Removed ${d.label} and dismissed ${dismissed} draft${dismissed === 1 ? '' : 's'}.`;
     });
+  const merge = (d: Destination, into: Destination) =>
+    run(async () => {
+      const { moved } = await mergePendingDestination(d.id, into.id, deps, source);
+      return `Merged ${d.label} into ${into.label} and moved ${moved} draft${moved === 1 ? '' : 's'}.`;
+    });
+  const edit = (agent: AgentRow) => {
+    if (agent.grant === undefined || view === undefined) return;
+    const start = choicesFromGrant(
+      agent.label ?? agent.binding?.clientName ?? '',
+      agent.grant,
+      view.confirmed,
+      source
+    );
+    setNotice(undefined);
+    setError(undefined);
+    setEditError(undefined);
+    setSharing(undefined);
+    setEditing({ agent, start, choices: start.choices });
+  };
+  const save = async () => {
+    if (editing === undefined) return;
+    setEditBusy('Saving…');
+    setEditError(undefined);
+    try {
+      await editGrant(editing.agent.agentPubkey, editing.choices, deps);
+      setEditing(undefined);
+      setNotice(`Saved ${editing.choices.label.trim()}'s access.`);
+      await load();
+    } catch (e) {
+      setEditError(messageOf(e));
+    } finally {
+      setEditBusy(undefined);
+    }
+  };
+
+  if (editing !== undefined && view !== undefined) {
+    return (
+      <EditGrantView
+        agent={editing.agent}
+        destinations={view.confirmed}
+        start={editing.start}
+        choices={editing.choices}
+        busy={editBusy}
+        error={editError}
+        onChange={(choices) => setEditing({ ...editing, choices })}
+        onSave={() => void save()}
+        onCancel={() => setEditing(undefined)}
+      />
+    );
+  }
 
   return (
     <Screen title="Agents" onBack={props.onBack}>
@@ -774,12 +1072,28 @@ export function AgentsScreen(props: { deps: SetupDeps; onBack: () => void }) {
           onRetry={retry}
           onConfirm={confirm}
           onReject={reject}
+          onMerge={merge}
+          onEdit={edit}
         />
       )}
       {notice !== undefined && (
         <p role="status" class="mt-3 text-sm">
           {notice}
         </p>
+      )}
+      {sharing !== undefined && (
+        <ShareOffer
+          deps={deps}
+          destination={sharing}
+          source={source}
+          onDone={(message) => {
+            setSharing(undefined);
+            if (message !== undefined) {
+              setNotice(message);
+              void load();
+            }
+          }}
+        />
       )}
       <ErrorText message={error} />
     </Screen>

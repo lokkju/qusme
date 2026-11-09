@@ -225,6 +225,98 @@ export function removeDestination(
   );
 }
 
+/**
+ * Whether a draft, active or archived, was submitted for this pending destination: by its
+ * `destination` id, else by site and account.
+ */
+function proposedFor(
+  wrap: DraftWrap,
+  pending: Destination,
+  source: SiteDefinitionSource | undefined
+): FieldValue | undefined {
+  if (wrap.draft.type !== 'field_value') return undefined;
+  const value = wrap.draft.value;
+  if (value.destination !== undefined) return value.destination === pending.id ? value : undefined;
+  if (value.site !== pending.site) return undefined;
+  const rules = source && effectiveDefinition(source, pending.site, pending.override);
+  return sameAccount(pending.site, value.account, pending.account, rules) ? value : undefined;
+}
+
+/**
+ * Merges a pending destination into a confirmed one: each of its drafts, active or archived, is
+ * republished with the target's `destination` id, site and account, so it is listed, matched to
+ * pages and inserted as the target's; then the pending destination leaves the list. The drafts go
+ * first, as for a rejection, so a failure part way leaves it pending and the user can merge again.
+ * Resolves with the drafts moved.
+ */
+export async function mergePendingDestination(
+  pendingId: string,
+  targetId: string,
+  deps: AgentDeps,
+  source?: SiteDefinitionSource
+): Promise<{ moved: number }> {
+  if (pendingId === targetId) throw new SetupError('Choose another destination to merge into.');
+  const { pubkey, next, moved } = await withQueue(deps, async (session) => {
+    const snapshot = await readQueue(session, { drafts: true });
+    const pending = pendingOf(snapshot, pendingId);
+    const target = listOf(snapshot).find((d) => d.id === targetId);
+    if (target === undefined || target.status !== 'confirmed') {
+      throw new SetupError(
+        'That destination is no longer confirmed; another device may have changed it.'
+      );
+    }
+    const refusals: string[] = [];
+    const moved: { d: string; value: FieldValue; updatedAt: number }[] = [];
+    for (const wrap of snapshot.drafts) {
+      const value = proposedFor(wrap, pending, source);
+      if (value === undefined) continue;
+      const changed: FieldValue = {
+        ...value,
+        destination: target.id,
+        site: target.site,
+        account: target.account,
+      };
+      const event = await buildDraftWrap(session.queue, {
+        d: wrap.d,
+        draft: { type: 'field_value', value: changed },
+        createdAt: after(session.now, wrap.createdAt),
+      });
+      const refused = await publishAll(session, event);
+      if (refused.length > 0) refusals.push(...refused);
+      else moved.push({ d: wrap.d, value: changed, updatedAt: event.created_at });
+    }
+    if (refusals.length > 0) {
+      throw new SetupError(
+        `Some drafts for ${pending.label} could not be moved, so it stays pending: ${refusals.join('; ')}`
+      );
+    }
+    const next = listOf(snapshot).filter((d) => d.id !== pendingId);
+    await publishDestinations(session, snapshot, next);
+    return { pubkey: session.pubkey, next, moved };
+  });
+  await updateCache(deps, pubkey, next);
+  const cache = await readDraftCache(deps.store.session);
+  if (cache !== undefined && cache.queuePubkey === pubkey) {
+    const byD = new Map(moved.map((m) => [m.d, m]));
+    await writeDraftCache(deps.store.session, {
+      ...cache,
+      drafts: cache.drafts.map((d) => {
+        const m = byD.get(d.d);
+        return m === undefined
+          ? d
+          : {
+              ...d,
+              destination: targetId,
+              site: m.value.site,
+              account: m.value.account,
+              updatedAt: m.updatedAt,
+            };
+      }),
+    });
+  }
+  return { moved: moved.length };
+}
+
 /** Spec 10.1 and 10.2's checks on an override, as a user-facing error. */
 function checkedOverride(
   source: SiteDefinitionSource,
