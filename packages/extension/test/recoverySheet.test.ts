@@ -11,7 +11,7 @@ import {
   recoverySheetText,
 } from '../src/setup/recoverySheet.ts';
 
-const STORAGE = ['wss://nos.lol', 'wss://relay.ditto.pub'];
+const STORAGE = ['wss://relay.primal.net', 'wss://relay.ditto.pub'];
 const INBOX = ['wss://auth.nostr1.com'];
 const DATE = new Date('2026-11-06T12:00:00Z');
 

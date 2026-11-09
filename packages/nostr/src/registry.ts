@@ -39,11 +39,11 @@ export const REGISTRY_SNAPSHOT_FORMAT = 'qusme-registry-snapshot/1';
 
 /**
  * Where devices look for the publisher's relay list when the bundled snapshot has none: the
- * publisher's own relays (decided 2026-11-05), which are also spec 9.1's recommended storage
- * relays.
+ * publisher's own relays (decided 2026-11-05; relay.primal.net replaced nos.lol on 2026-11-09),
+ * which are also spec 9.1's recommended storage relays.
  */
 export const REGISTRY_FALLBACK_RELAYS: readonly string[] = [
-  'wss://nos.lol',
+  'wss://relay.primal.net',
   'wss://relay.ditto.pub',
 ];
 

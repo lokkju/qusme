@@ -22,7 +22,7 @@
 
 <main id="main" class="prose">
 <h1>Privacy policy</h1>
-<p class="updated">Last updated: <time datetime="2026-11-07">7 November 2026</time></p>
+<p class="updated">Last updated: <time datetime="2026-11-09">9 November 2026</time></p>
 
 <p class="summary">Your drafts are encrypted on your devices before they go anywhere. The relays that store them can't read them, the agents you connect can add to your queue but can't read it, and we don't run analytics, track you or sell data.</p>
 
@@ -40,7 +40,7 @@
 <p>When you create a queue, the extension shows you a recovery code and offers a recovery sheet. The extension doesn't keep the code. It publishes a backup of your queue's key to your relays, encrypted with the recovery code, so you can recover the queue on a new device. Anyone can fetch that backup from an ordinary relay, which is why it is locked with a long random code and not your passphrase. Keep the code and the sheet as carefully as a password.</p>
 
 <h2 id="relays">What the Nostr relays see</h2>
-<p>Your queue lives on Nostr relays, servers run by third parties that store and pass along messages. You choose them when you create your queue; the extension suggests wss://nos.lol and wss://relay.ditto.pub for storage and wss://auth.nostr1.com as the inbox where agent submissions arrive. Every draft is encrypted on your device before it is sent, so a relay receives only data it can't read.</p>
+<p>Your queue lives on Nostr relays, servers run by third parties that store and pass along messages. You choose them when you create your queue; the extension suggests wss://relay.primal.net and wss://relay.ditto.pub for storage and wss://auth.nostr1.com as the inbox where agent submissions arrive. Every draft is encrypted on your device before it is sent, so a relay receives only data it can't read.</p>
 <p>The relays can see:</p>
 <ul>
 <li>the encrypted events themselves;</li>

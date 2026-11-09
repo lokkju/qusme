@@ -29,7 +29,7 @@ import { checkPassphrase } from '../passphrase.ts';
 import { cleanRelayUrl, closeAll, openRelays, type SetupDeps, SetupError } from './deps.ts';
 
 /** Spec 9.1's recommendation: two storage relays and an inbox relay, all editable at setup. */
-export const DEFAULT_STORAGE_RELAYS = ['wss://nos.lol', 'wss://relay.ditto.pub'] as const;
+export const DEFAULT_STORAGE_RELAYS = ['wss://relay.primal.net', 'wss://relay.ditto.pub'] as const;
 export const DEFAULT_INBOX_RELAYS = ['wss://auth.nostr1.com'] as const;
 
 /** A queue being created. Held in memory by the setup screen until {@link finishCreate}. */
