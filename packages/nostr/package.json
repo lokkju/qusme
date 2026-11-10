@@ -9,7 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p . && tsc -p test && tsc -p scripts",
-    "relay-probe": "node scripts/relay-probe.ts"
+    "relay-probe": "node scripts/relay-probe.ts",
+    "pow-bench": "node scripts/pow-bench.ts"
   },
   "dependencies": {
     "@noble/curves": "2.0.1",
