@@ -5,6 +5,7 @@ import {
   createAgentKeyCustody,
   createApp,
   DEFAULT_LIMITS,
+  DEFAULT_MAX_POW,
   limitFromEnv,
 } from '@qusme/core';
 import { createStore } from '@qusme/store-sql';
@@ -21,6 +22,8 @@ export interface NodeConfig {
   publicOrigin: string;
   /** The service-wide daily create_draft ceiling (spec 8.5, "Limits"). */
   draftsPerDayCeiling: number;
+  /** The most NIP-13 proof of work create_draft mines, in bits (spec 7.4). */
+  maxPow: number;
   /**
    * Tests only: a registry snapshot and the key to pin for it, in place of the bundled
    * `registry/snapshot.json` and the production publisher key. Never read from the environment.
@@ -37,7 +40,8 @@ export const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 /**
  * Reads the Node entrypoint's settings from the environment. Throws, so the server refuses to
  * start, if QUSME_AGENT_KEY_SECRET is missing or not base64 of 32 bytes, or if
- * QUSME_DAILY_DRAFT_CEILING is set to anything but a whole number.
+ * QUSME_DAILY_DRAFT_CEILING or QUSME_MAX_POW is set to anything but a whole number (and
+ * QUSME_MAX_POW above 256 fails in buildApp).
  */
 export function configFromEnv(env: NodeJS.ProcessEnv): NodeConfig {
   return {
@@ -51,6 +55,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv): NodeConfig {
       'QUSME_DAILY_DRAFT_CEILING',
       DEFAULT_LIMITS.draftsPerDayCeiling
     ),
+    maxPow: limitFromEnv(env.QUSME_MAX_POW, 'QUSME_MAX_POW', DEFAULT_MAX_POW),
   };
 }
 
@@ -76,6 +81,7 @@ export function buildApp(config: NodeConfig, log: (line: string) => void = conso
     limits: { config: { draftsPerDayCeiling: config.draftsPerDayCeiling } },
     mcp: {
       registry,
+      maxPow: config.maxPow,
       // Pubkeys only (spec 8.4): a tool went ahead on the grant without the submitters list.
       notice: (n) => log(`${n.event} agent=${n.agentPubkey} queue=${n.queuePubkey}`),
     },
