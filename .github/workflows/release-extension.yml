@@ -3,7 +3,8 @@ name: release-extension
 # Releases the browser extension (packages/extension): computes the CalVer
 # version, builds and zips Chrome and Firefox, submits them to the Chrome Web
 # Store and Firefox Add-ons with `wxt submit`, and publishes a GitHub release
-# `extension-v<version>` with the zips. It runs on every push to main that
+# `extension-v<version>` with the zips. A Chrome Web Store that is still
+# reviewing an earlier version is a warning, not a failure. It runs on every push to main that
 # changes what ships in the extension, and by hand. Either way the `release`
 # job waits for lokkju's approval on the `release` environment, which admits
 # main only. A newer run cancels an older one still waiting for approval; an
@@ -220,7 +221,7 @@ jobs:
           done
 
       # A draft first, so the zips are attached before any store sees them.
-      # It is published after the submission succeeds.
+      # It is published once every store is submitted, skipped or busy.
       - name: Create draft release
         if: inputs.dry_run != true
         env:
@@ -238,9 +239,15 @@ jobs:
             --notes "Browser extension $VERSION, built from $GITHUB_SHA." \
             "$CHROME_ZIP_PATH" "$FIREFOX_ZIP_PATH" "$SOURCES_ZIP_PATH"
 
-      # A store whose secrets aren't all set is skipped with a notice. Chrome
-      # uses the Web Store API v2 with a service account; v1.1 (client id,
-      # secret and refresh token) shut down on 2026-10-15.
+      # Each store is submitted on its own `wxt submit`, so one store's result
+      # can't hide another's. A store whose secrets aren't all set is skipped
+      # with a notice. Chrome reviews one version at a time and answers
+      # NOT_UPDATEABLE ("You may not edit or publish an item that is in
+      # review") while an earlier version is still in review; that is "busy",
+      # a warning, and the release is still published. Any other failure
+      # fails the step. Chrome uses the Web Store API v2 with a service
+      # account; v1.1 (client id, secret and refresh token) shut down on
+      # 2026-10-15.
       - name: Submit to stores
         working-directory: packages/extension
         env:
@@ -264,31 +271,67 @@ jobs:
             done
             echo "${out[*]}"
           }
-          args=()
-          stores=()
-          gaps=$(missing CHROME_EXTENSION_ID CHROME_PUBLISHER_ID CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL CHROME_SERVICE_ACCOUNT_PRIVATE_KEY)
-          if [ -z "$gaps" ]; then
-            args+=(--chrome-zip "$CHROME_ZIP_PATH")
-            stores+=("Chrome Web Store")
-          else
-            echo "::notice::Skipping the Chrome Web Store: unset $gaps"
+          dry=()
+          if [ "$DRY_RUN_INPUT" = "true" ]; then
+            dry=(--dry-run)
           fi
-          gaps=$(missing FIREFOX_EXTENSION_ID FIREFOX_JWT_ISSUER FIREFOX_JWT_SECRET)
-          if [ -z "$gaps" ]; then
-            args+=(--firefox-zip "$FIREFOX_ZIP_PATH" --firefox-sources-zip "$SOURCES_ZIP_PATH")
-            stores+=("Firefox Add-ons")
-          else
-            echo "::notice::Skipping Firefox Add-ons: unset $gaps"
-          fi
-          if [ "${#args[@]}" -eq 0 ]; then
+          logs=$(mktemp -d)
+          results=()
+          attempted=0
+          failed=0
+          # submit <key> <store name> <secret names, space separated> <wxt submit flags...>
+          submit() {
+            local key=$1 name=$2 secrets=$3 gaps log status
+            shift 3
+            # shellcheck disable=SC2086 # the secret names are one word each
+            gaps=$(missing $secrets)
+            if [ -n "$gaps" ]; then
+              echo "::notice::Skipping $name: unset $gaps"
+              results+=("$name: skipped (unset $gaps)")
+              return
+            fi
+            attempted=$((attempted + 1))
+            log="$logs/$key.log"
+            echo "::group::Submitting to $name"
+            set +e
+            pnpm exec wxt submit "$@" "${dry[@]}" 2>&1 | tee "$log"
+            status=${PIPESTATUS[0]}
+            set -e
+            echo "::endgroup::"
+            if [ "$status" -eq 0 ]; then
+              results+=("$name: submitted")
+            elif [ "$key" = chrome ] && grep -qE 'NOT_UPDATEABLE|item that is in review' "$log"; then
+              echo "::warning::$name is busy: an earlier version is still in review, so this version was not submitted there. The next release submits it again; to ship this one sooner, upload its Chrome zip from the GitHub release in the developer dashboard once that review finishes."
+              results+=("$name: busy (an earlier version is in review)")
+            else
+              echo "::error::$name submission failed (exit $status); its output is in the \"Submitting to $name\" group above"
+              results+=("$name: failed (exit $status)")
+              failed=$((failed + 1))
+            fi
+          }
+          submit chrome "Chrome Web Store" \
+            "CHROME_EXTENSION_ID CHROME_PUBLISHER_ID CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL CHROME_SERVICE_ACCOUNT_PRIVATE_KEY" \
+            --chrome-zip "$CHROME_ZIP_PATH"
+          submit firefox "Firefox Add-ons" \
+            "FIREFOX_EXTENSION_ID FIREFOX_JWT_ISSUER FIREFOX_JWT_SECRET" \
+            --firefox-zip "$FIREFOX_ZIP_PATH" --firefox-sources-zip "$SOURCES_ZIP_PATH"
+          {
+            if [ "${#dry[@]}" -gt 0 ]; then
+              echo "### Store submissions (dry run)"
+            else
+              echo "### Store submissions"
+            fi
+            echo
+            printf -- '- %s\n' "${results[@]}"
+          } >>"$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "${results[@]}"
+          if [ "$attempted" -eq 0 ]; then
             echo "::error::No store has all of its secrets set; nothing to submit"
             exit 1
           fi
-          if [ "$DRY_RUN_INPUT" = "true" ]; then
-            args+=(--dry-run)
+          if [ "$failed" -gt 0 ]; then
+            exit 1
           fi
-          echo "Submitting to: ${stores[*]}"
-          pnpm exec wxt submit "${args[@]}"
 
       - name: Publish release
         if: inputs.dry_run != true
