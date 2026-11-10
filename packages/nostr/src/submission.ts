@@ -42,13 +42,18 @@ export interface Submission {
  * gift-wrapped to `recipientPubkey` (the grant's `inbox_pubkey`, 6.4) with a NIP-40 expiration
  * `submissionExpirationDays` (the grant's `submission_expiration_days`, default 30, at most 90)
  * from now and, when `pow` is above 0, that much NIP-13 work on the wrap's id (the grant's
- * `min_pow`).
+ * `min_pow`), hashing at most `powMaxBytes` of serialized wrap while mining it.
  */
 export async function buildSubmission(
   agent: Signer,
   recipientPubkey: string,
   value: SubmissionInput,
-  options: { submissionExpirationDays?: number; now?: number; pow?: number } = {}
+  options: {
+    submissionExpirationDays?: number;
+    now?: number;
+    pow?: number;
+    powMaxBytes?: number;
+  } = {}
 ): Promise<NostrEvent> {
   const days = options.submissionExpirationDays ?? DEFAULT_SUBMISSION_EXPIRATION_DAYS;
   if (!Number.isInteger(days) || days < 1 || days > MAX_SUBMISSION_EXPIRATION_DAYS) {
@@ -62,6 +67,7 @@ export async function buildSubmission(
   });
   const wrapOptions: GiftWrapOptions = { now, expiration: now + days * DAY };
   if (options.pow !== undefined) wrapOptions.pow = options.pow;
+  if (options.powMaxBytes !== undefined) wrapOptions.powMaxBytes = options.powMaxBytes;
   return giftWrap(rumor, agent, recipientPubkey, wrapOptions);
 }
 

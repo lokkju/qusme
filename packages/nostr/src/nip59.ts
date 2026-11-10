@@ -41,6 +41,11 @@ export interface GiftWrapOptions extends TimestampOptions {
    * absent for none.
    */
   pow?: number;
+  /**
+   * Most bytes of serialized wrap to hash while mining `pow`; unbounded when absent. Mining throws
+   * `PowBudgetExceeded` rather than go past it (spec 7.4).
+   */
+  powMaxBytes?: number;
 }
 
 export interface Unwrapped {
@@ -141,7 +146,11 @@ export function createGiftWrap(
       created_at: randomizedTimestamp(options),
     };
     if (options.pow !== undefined && options.pow > 0) {
-      const mined = minePow({ ...template, pubkey: getPublicKey(ephemeralKey) }, options.pow);
+      const mined = minePow(
+        { ...template, pubkey: getPublicKey(ephemeralKey) },
+        options.pow,
+        options.powMaxBytes === undefined ? {} : { maxBytes: options.powMaxBytes }
+      );
       template = { ...template, tags: mined.tags };
     }
     return finalizeEvent(template, ephemeralKey);
