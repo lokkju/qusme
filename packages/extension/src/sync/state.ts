@@ -3,14 +3,16 @@
  *
  * `storage.local` `qusme.sync` ({@link SyncState}): when the inbox was last read in full, the
  * gift wrap ids this device has handled (so junk is not reopened while it stays inside the
- * lookback), how many syncs in a row hit the cap, and the counts from the last sync. Ids and
- * counts only: nothing decrypted is written to `storage.local`.
+ * lookback), how many syncs in a row hit the cap, whether each storage relay accepts writes, and
+ * the counts from the last sync. Ids, urls, times and counts only: nothing decrypted is written to
+ * `storage.local`.
  *
  * `storage.session` `qusme.drafts` ({@link DraftCache}): the decrypted drafts from the last sync,
  * for the popup. Lock deletes it with the keys.
  */
 import type { Destination, DiscardReason, FieldValueStatus } from '@qusme/nostr';
 import { LOCAL_SYNC, SESSION_DRAFTS } from '../keyStore.ts';
+import type { DeadRelay, RelayHealthMap } from '../relays/health.ts';
 import type { StorageArea } from '../storage.ts';
 
 /** How long a handled wrap id is remembered: the longest submission expiration plus the lookback. */
@@ -38,6 +40,8 @@ export interface SyncSummary {
   errors: string[];
   /** The new queue pubkey when a rotation marker was found (6.1). */
   rotatedTo?: string;
+  /** Storage relays that accept none of the queue's writes (9.1), for the swap offer. */
+  deadRelays?: DeadRelay[];
 }
 
 export interface SyncState {
@@ -47,6 +51,8 @@ export interface SyncState {
   /** Gift wrap id to the unix time it was handled. */
   handled: Record<string, number>;
   cappedStreak: number;
+  /** Per storage relay: whether it accepts the queue's writes (`src/relays/health.ts`). */
+  relayHealth?: RelayHealthMap;
   last?: SyncSummary;
 }
 
