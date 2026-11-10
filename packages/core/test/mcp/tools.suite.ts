@@ -17,9 +17,11 @@ import {
   createAgentKeyCustody,
   createAgentKeyRing,
   createApp,
+  DEFAULT_MAX_POW,
   type LimitsOptions,
   type McpNotice,
   type McpOverrides,
+  POW_BYTES_PER_HASH,
   type RateClassName,
   type RateLimiter,
   TIERS,
@@ -727,21 +729,62 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
     });
 
     it('mines the proof of work the grant asks for, and refuses more than it allows', async () => {
-      const { client } = await granted({ min_pow: 8 });
+      const { client } = await granted({ min_pow: DEFAULT_MAX_POW });
       const res = await call(client, 'create_draft', draft('worked'));
       expect(res.isError).toBeFalsy();
       const wrap = inbox.published[0]?.event;
-      expect(powOf(wrap?.id ?? '')).toBeGreaterThanOrEqual(8);
-      expect(wrap?.tags.find((t) => t[0] === 'nonce')?.[2]).toBe('8');
+      expect(powOf(wrap?.id ?? '')).toBeGreaterThanOrEqual(DEFAULT_MAX_POW);
+      expect(wrap?.tags.find((t) => t[0] === 'nonce')?.[2]).toBe(String(DEFAULT_MAX_POW));
 
-      const greedy = await granted({ min_pow: 30 });
+      const greedy = await granted({ min_pow: 20 });
       const refused = await call(greedy.client, 'create_draft', draft('too much'));
+      expect(refused.isError).toBe(true);
       expect(refused.structuredContent).toMatchObject({
         error: 'grant_unusable',
-        min_pow: 30,
-        max_pow: 24,
+        min_pow: 20,
+        max_pow: DEFAULT_MAX_POW,
       });
+      const message = refused.content?.[0]?.text ?? '';
+      expect(message).toContain('20 bits');
+      expect(message).toContain(`at most ${DEFAULT_MAX_POW} bits`);
+      expect(message).toContain('Nothing was submitted');
       expect(inbox.published).toHaveLength(1);
+    });
+
+    it('mines more when the deployment raises maxPow', async () => {
+      app = makeApp({ maxPow: 8 });
+      const { client } = await granted({ min_pow: 8 });
+      const res = await call(client, 'create_draft', draft('worked harder'));
+      expect(res.isError).toBeFalsy();
+      expect(powOf(inbox.published[0]?.event.id ?? '')).toBeGreaterThanOrEqual(8);
+    });
+
+    it('refuses a wrap too large to mine within the budget, and gives back the reservation', async () => {
+      // A lenient value far over the field's length makes a wrap of about 18 KB: 2^5 hashes of it
+      // exceed the 2^5 × 8 KiB budget, so nothing is mined, published or counted.
+      const { client } = await granted({ min_pow: DEFAULT_MAX_POW });
+      const big = draft('y'.repeat(10_000), { lenient: true });
+      const refused = await call(client, 'create_draft', big);
+      expect(refused.isError).toBe(true);
+      expect(refused.structuredContent).toMatchObject({
+        error: 'pow_budget_exceeded',
+        min_pow: DEFAULT_MAX_POW,
+        max_pow: DEFAULT_MAX_POW,
+        budget_bytes: 2 ** DEFAULT_MAX_POW * POW_BYTES_PER_HASH,
+        hashes: 0,
+      });
+      expect(Number(refused.structuredContent?.wrap_bytes)).toBeGreaterThan(10_000);
+      expect(refused.content?.[0]?.text).toContain('A shorter value needs less work');
+      expect(inbox.published).toHaveLength(0);
+      const res = await call(client, 'create_draft', draft('short'));
+      expect(res.isError).toBeFalsy();
+      const listed = await call(client, 'list_submissions', {});
+      expect(listed.structuredContent?.submissions).toHaveLength(1);
+    });
+
+    it('refuses to start with a maxPow outside 0 to 256', () => {
+      expect(() => makeApp({ maxPow: 257 })).toThrow(/QUSME_MAX_POW/);
+      expect(() => makeApp({ maxPow: 1.5 })).toThrow(/QUSME_MAX_POW/);
     });
 
     it('refuses inbox relays the service will not connect to', async () => {

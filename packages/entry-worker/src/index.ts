@@ -6,6 +6,7 @@ import {
   createBindingRateLimiter,
   createMemoryRateLimiter,
   DEFAULT_LIMITS,
+  DEFAULT_MAX_POW,
   limitFromEnv,
   type RateLimitBinding,
 } from '@qusme/core';
@@ -35,6 +36,11 @@ export interface Env {
   ASSETS?: Fetcher;
   /** The service-wide daily create_draft ceiling; a plain var in wrangler.jsonc. */
   QUSME_DAILY_DRAFT_CEILING?: string;
+  /**
+   * The most NIP-13 proof of work create_draft mines for a grant's min_pow, in bits (spec 7.4); a
+   * plain var in wrangler.jsonc, sized to the plan's CPU limit per request.
+   */
+  QUSME_MAX_POW?: string;
   /**
    * The Workers Rate Limiting bindings in wrangler.jsonc, one per rate class (RATE_CLASSES).
    * Optional: a class whose binding is missing or unusable is counted in memory in this isolate.
@@ -135,6 +141,8 @@ function serveApi(request: Request, env: Env, ctx: ExecutionContext): Response |
     },
     mcp: {
       registry,
+      // Like the ceiling, a value that is not a whole number from 0 to 256 refuses requests.
+      maxPow: limitFromEnv(env.QUSME_MAX_POW, 'QUSME_MAX_POW', DEFAULT_MAX_POW),
       // Pubkeys only (spec 8.4): a tool went ahead on the grant without the submitters list.
       notice: (n) => console.warn(`${n.event} agent=${n.agentPubkey} queue=${n.queuePubkey}`),
     },

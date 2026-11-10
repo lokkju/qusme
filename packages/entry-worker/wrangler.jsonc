@@ -24,7 +24,12 @@
     "QUSME_SITE_ORIGIN": "https://qus.me",
     // The most create_draft calls the whole service accepts per UTC day (spec 8.5, "Limits"), so
     // a bug or abuse cannot pass a known cost. A whole number; 0 refuses every draft.
-    "QUSME_DAILY_DRAFT_CEILING": "2000"
+    "QUSME_DAILY_DRAFT_CEILING": "2000",
+    // The most NIP-13 proof of work create_draft mines for a grant's min_pow, in bits (spec 7.4).
+    // Sized to the Workers Free plan's 10 ms of CPU per request: 5 bits of a short value take
+    // about 1 ms under workerd, 8 bits the whole 10 ms. Each bit doubles the work; raise it only
+    // with the plan's CPU limit. A whole number from 0 to 256; 0 refuses any grant with min_pow.
+    "QUSME_MAX_POW": "5"
   },
   // Workers Rate Limiting (spec 8.5, "Limits"): one binding per rate class in
   // packages/core/src/limits.ts (RATE_CLASSES), with the same limit and period; a test holds the

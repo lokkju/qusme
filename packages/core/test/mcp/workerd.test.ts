@@ -6,30 +6,41 @@ import { build } from 'esbuild';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { expect, it } from 'vitest';
 import { migrationStatements } from '../../../store-sql/test/harness.ts';
-import { createAgentKeyCustody, createAgentKeyRing, RATE_CLASSES } from '../../src/index.ts';
+import {
+  createAgentKeyCustody,
+  createAgentKeyRing,
+  DEFAULT_MAX_POW,
+  RATE_CLASSES,
+} from '../../src/index.ts';
 
 const SECRET = btoa('w'.repeat(32));
 const CLIENT_ID = 'https://client.example/oauth/client-metadata.json';
 
-// The Workers entrypoint, bundled for workerd as wrangler bundles it, serving /mcp through the
-// MCP SDK in the Workers runtime itself.
+/** The Workers entrypoint, bundled for workerd as wrangler bundles it. */
+async function bundleWorker(): Promise<string> {
+  const bundle = await build({
+    entryPoints: [fileURLToPath(new URL('../../../entry-worker/src/index.ts', import.meta.url))],
+    bundle: true,
+    format: 'esm',
+    platform: 'neutral',
+    mainFields: ['module', 'main'],
+    conditions: ['workerd', 'worker', 'browser'],
+    define: { __QUSME_VERSION__: '"workerd-test"' },
+    write: false,
+  });
+  const script = bundle.outputFiles[0]?.text;
+  if (script === undefined) throw new Error('esbuild produced no output');
+  return script;
+}
+
+// The Workers entrypoint serving /mcp through the MCP SDK in the Workers runtime itself, with
+// wrangler.jsonc's proof of work cap.
 for (const withBindings of [true, false]) {
   const how = withBindings ? 'with' : 'without';
   it(`serves MCP tools under the Workers runtime ${how} Rate Limiting bindings`, {
     timeout: 60_000,
   }, async () => {
-    const bundle = await build({
-      entryPoints: [fileURLToPath(new URL('../../../entry-worker/src/index.ts', import.meta.url))],
-      bundle: true,
-      format: 'esm',
-      platform: 'neutral',
-      mainFields: ['module', 'main'],
-      conditions: ['workerd', 'worker', 'browser'],
-      define: { __QUSME_VERSION__: '"workerd-test"' },
-      write: false,
-    });
-    const script = bundle.outputFiles[0]?.text;
-    if (script === undefined) throw new Error('esbuild produced no output');
+    const script = await bundleWorker();
 
     const mf = new Miniflare(
       convertV4MiniflareOptions({
@@ -39,7 +50,11 @@ for (const withBindings of [true, false]) {
             compatibilityDate: '2026-10-20',
             modules: [{ type: 'ESModule', path: 'index.mjs', contents: script }],
             d1Databases: { DB: `workerd-mcp-${how}` },
-            bindings: { QUSME_AGENT_KEY_SECRET: SECRET, QUSME_PUBLIC_ORIGIN: 'https://app.qus.me' },
+            bindings: {
+              QUSME_AGENT_KEY_SECRET: SECRET,
+              QUSME_PUBLIC_ORIGIN: 'https://app.qus.me',
+              QUSME_MAX_POW: String(DEFAULT_MAX_POW),
+            },
             // workerd's own Rate Limiting bindings, as wrangler.jsonc declares them.
             ...(withBindings && {
               ratelimits: Object.fromEntries(
@@ -142,3 +157,32 @@ for (const withBindings of [true, false]) {
     }
   });
 }
+
+it('refuses requests under the Workers runtime when QUSME_MAX_POW is above 256', {
+  timeout: 60_000,
+}, async () => {
+  const mf = new Miniflare(
+    convertV4MiniflareOptions({
+      workers: [
+        {
+          name: 'qusme',
+          compatibilityDate: '2026-10-20',
+          modules: [{ type: 'ESModule', path: 'index.mjs', contents: await bundleWorker() }],
+          d1Databases: { DB: 'workerd-mcp-max-pow' },
+          bindings: {
+            QUSME_AGENT_KEY_SECRET: SECRET,
+            QUSME_PUBLIC_ORIGIN: 'https://app.qus.me',
+            QUSME_MAX_POW: '300',
+          },
+        },
+      ],
+    })
+  );
+  try {
+    const res = await mf.dispatchFetch('https://app.qus.me/healthz');
+    expect(res.status).toBe(500);
+    await res.text();
+  } finally {
+    await mf.dispose();
+  }
+});

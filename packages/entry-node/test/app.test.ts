@@ -1,4 +1,4 @@
-import { createAgentKeyRing } from '@qusme/core';
+import { createAgentKeyRing, DEFAULT_MAX_POW } from '@qusme/core';
 import {
   buildHttpAuth,
   createLocalSigner,
@@ -17,6 +17,7 @@ const config = {
   version: 'v-test',
   publicOrigin: 'https://app.qus.me',
   draftsPerDayCeiling: 2000,
+  maxPow: DEFAULT_MAX_POW,
 };
 
 describe('the Node entrypoint', () => {
@@ -62,6 +63,16 @@ describe('the Node entrypoint', () => {
     expect(() =>
       configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET, QUSME_DAILY_DRAFT_CEILING: 'many' })
     ).toThrow(/QUSME_DAILY_DRAFT_CEILING/);
+  });
+
+  it('reads the proof of work cap, refusing to start with a malformed one', () => {
+    expect(configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET }).maxPow).toBe(DEFAULT_MAX_POW);
+    const raised = configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET, QUSME_MAX_POW: '16' });
+    expect(raised.maxPow).toBe(16);
+    expect(() => configFromEnv({ QUSME_AGENT_KEY_SECRET: SECRET, QUSME_MAX_POW: 'x' })).toThrow(
+      /QUSME_MAX_POW/
+    );
+    expect(() => buildApp({ ...config, maxPow: 300 })).toThrow(/QUSME_MAX_POW/);
   });
 
   it('rate-limits pairing lookups per client IP in memory', async () => {

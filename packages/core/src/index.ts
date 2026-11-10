@@ -67,6 +67,7 @@ export {
   type McpOptions,
   type McpOverrides,
   type McpToolErrorCode,
+  POW_BYTES_PER_HASH,
 } from './mcp/server.ts';
 export {
   type Nip98Env,
