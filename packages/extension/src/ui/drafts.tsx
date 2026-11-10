@@ -5,6 +5,7 @@
  */
 import { CAP_STREAK_WARNING, type SyncSummary } from '../sync/state.ts';
 import { Button } from './components.tsx';
+import { DeadRelayNotice } from './relays.tsx';
 
 const FIRST_LINE_MAX = 80;
 
@@ -19,13 +20,14 @@ const discardedTotal = (summary: SyncSummary): number =>
 
 /**
  * The rotation notice, the counts from the last sync and its relay errors. Each warning offers
- * the action it asks for: pairing with a device that holds the rotated key (6.1), and the agents
- * screen for a flood, since inbox key rotation (6.4) is not built yet (UX audit 5.8, 5.9).
+ * the action it asks for: pairing with a device that holds the rotated key (6.1), replacing a
+ * storage relay that accepts nothing (9.1), and the agents screen for a flood, since inbox key rotation (6.4) is not built yet (UX audit 5.8, 5.9).
  */
 export function SyncNote(props: {
   summary: SyncSummary;
   onPair?: (() => void) | undefined;
   onAgents?: (() => void) | undefined;
+  onReplaceRelay?: ((url: string) => void) | undefined;
 }) {
   const { summary } = props;
   const discarded = discardedTotal(summary);
@@ -40,6 +42,9 @@ export function SyncNote(props: {
             </Button>
           )}
         </div>
+      )}
+      {summary.deadRelays !== undefined && (
+        <DeadRelayNotice relays={summary.deadRelays} onReplace={props.onReplaceRelay} />
       )}
       <p>
         Last sync: {summary.ingested} new from agents
