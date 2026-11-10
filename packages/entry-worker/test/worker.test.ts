@@ -44,6 +44,14 @@ it('refuses requests when the ceiling is malformed', () => {
   ).toThrow('QUSME_DAILY_DRAFT_CEILING');
 });
 
+it('refuses requests when the proof of work cap is malformed or above 256', () => {
+  for (const value of ['lots', '300']) {
+    expect(() =>
+      worker.fetch(new Request('https://app.qus.me/healthz'), { ...env, QUSME_MAX_POW: value }, ctx)
+    ).toThrow('QUSME_MAX_POW');
+  }
+});
+
 it('serves without any rate limiting binding, limiting in memory and warning once per binding', async () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   try {

@@ -10,6 +10,7 @@ import {
   createMemoryRateLimiter,
   createServiceLimits,
   DEFAULT_LIMITS,
+  DEFAULT_MAX_POW,
   limitFromEnv,
   MAX_URL_BYTES,
   RATE_CLASSES,
@@ -262,5 +263,9 @@ describe('the Workers configuration', () => {
 
   it('configures the daily draft ceiling as a whole number', () => {
     expect(wranglerConfig().vars.QUSME_DAILY_DRAFT_CEILING).toMatch(/^\d+$/);
+  });
+
+  it('configures the proof of work cap as the default the docs give', () => {
+    expect(wranglerConfig().vars.QUSME_MAX_POW).toBe(String(DEFAULT_MAX_POW));
   });
 });

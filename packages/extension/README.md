@@ -23,10 +23,14 @@ A newer run replaces an older one that hasn't been approved: its `plan` job canc
 2. writes that version into `package.json` inside the job only; main keeps the version it has, and nothing is committed back;
 3. typechecks, tests, and runs `wxt zip` and `wxt zip -b firefox` (Chrome zip, Firefox zip, sources zip);
 4. creates a draft GitHub release `extension-v<version>` with the three zips;
-5. runs `wxt submit` for each store whose secrets are all set, skipping the others with a notice;
+5. runs `wxt submit` once per store whose secrets are all set, skipping the others with a notice;
 6. publishes the draft.
 
-Tick `dry_run` to run `wxt submit --dry-run` instead, which checks the store credentials, uploads nothing and makes no release. A submission that fails leaves the draft in place and its version taken; the next run moves on to the next suffix, or you can delete the draft first.
+The run's summary has one line per store: submitted, skipped (secrets unset), busy (in review) or failed.
+
+The Chrome Web Store reviews one version at a time. While an earlier version is still in review it refuses an upload with `NOT_UPDATEABLE` ("You may not edit or publish an item that is in review"), which the job reports as busy: a warning, not a failure. The release is still published as long as every other store succeeded, so Chrome stays a version behind until the next release submits it again. To ship the skipped version sooner, wait for the review to finish and upload the Chrome zip from its GitHub release in the developer dashboard.
+
+Any other store failure fails the job, after every store has been tried, and leaves the draft in place with its version taken; the next run moves on to the next suffix, or you can delete the draft first. Tick `dry_run` to run `wxt submit --dry-run` instead, which checks the store credentials, uploads nothing and makes no release.
 
 The secrets live on the `release` environment:
 

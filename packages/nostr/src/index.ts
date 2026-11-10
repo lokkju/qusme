@@ -124,7 +124,7 @@ export {
   type WrapRef,
 } from './ingest.ts';
 export * from './kinds.ts';
-export { minePow, powOf } from './nip13.ts';
+export { type MineOptions, minePow, PowBudgetExceeded, powOf } from './nip13.ts';
 export {
   nip44ConversationKey,
   nip44Decrypt,

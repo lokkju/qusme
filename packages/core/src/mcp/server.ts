@@ -24,6 +24,7 @@ import {
   type FieldValidation,
   type GrantDestination,
   type JsonObject,
+  PowBudgetExceeded,
   quotaPeriodEnd,
   quotaPeriodStart,
   type SiteDefinition,
@@ -65,8 +66,23 @@ import { createWebSocketRelayPublisher, type RelayPublisher } from './relayPubli
 
 const DAY = 86_400;
 
-/** Most NIP-13 difficulty the service mines by default: about 16 million hashes. */
-export const DEFAULT_MAX_POW = 24;
+/**
+ * Most NIP-13 difficulty the service mines by default (spec 7.4): 2^5 = 32 hashes on average.
+ * Measured under workerd (packages/nostr/scripts/pow-bench.ts), one hash of a gift wrap costs
+ * about 20 ns per byte, 37 µs for a short value's 1.6 KB wrap, so 5 bits of a short value take
+ * about 1 ms of the Workers Free plan's 10 ms per request and 8 bits would take the whole 10 ms.
+ * A deployment with more CPU raises it (`QUSME_MAX_POW`).
+ */
+export const DEFAULT_MAX_POW = 5;
+/**
+ * Bytes of serialized gift wrap the miner may hash per expected hash at the cap: the budget is
+ * 2^maxPow times this, 256 KiB (about 5 ms) at the default. A short value's wrap gets about five
+ * times its expected work before mining gives up (one try in 150 fails); a wrap whose expected
+ * work alone exceeds the budget is refused without mining.
+ */
+export const POW_BYTES_PER_HASH = 8 * 1024;
+/** Most `QUSME_MAX_POW` may be: NIP-13 difficulty counts the leading zero bits of a 256-bit id. */
+const MAX_POW_LIMIT = 256;
 /** Seconds a grant read from the relays is reused by default. */
 export const DEFAULT_GRANT_CACHE_SECONDS = 30;
 /** Largest request body: a 32 KiB value, JSON-escaped, with room for the envelope. */
@@ -94,7 +110,10 @@ export interface McpOverrides {
    * pubkeys only.
    */
   notice?: (notice: McpNotice) => void;
-  /** Highest grant `min_pow` the service mines; a grant asking more is refused. */
+  /**
+   * Highest grant `min_pow` the service mines (`QUSME_MAX_POW`), 0 to 256; a grant asking more is
+   * refused. It also sets the mining budget: 2^maxPow × {@link POW_BYTES_PER_HASH} bytes hashed.
+   */
   maxPow?: number;
 }
 
@@ -128,6 +147,7 @@ export type McpToolErrorCode =
   | 'constraint_violation'
   | 'quota_exhausted'
   | 'rate_limited'
+  | 'pow_budget_exceeded'
   | 'publish_failed'
   | 'invalid_cursor'
   | 'internal_error';
@@ -284,6 +304,10 @@ export function createMcp(options: McpOptions) {
   const grants: GrantCache = createGrantCache(cacheOptions);
   const submitters: SubmittersCache = createSubmittersCache(cacheOptions);
   const maxPow = options.maxPow ?? DEFAULT_MAX_POW;
+  if (!Number.isInteger(maxPow) || maxPow < 0 || maxPow > MAX_POW_LIMIT) {
+    throw new Error(`maxPow (QUSME_MAX_POW) must be a whole number from 0 to ${MAX_POW_LIMIT}`);
+  }
+  const powMaxBytes = 2 ** maxPow * POW_BYTES_PER_HASH;
   const clock = options.now ?? (() => Math.floor(Date.now() / 1000));
   const limits = options.limits ?? createServiceLimits({ now: clock });
 
@@ -429,11 +453,10 @@ export function createMcp(options: McpOptions) {
     if (grant.min_pow > maxPow) {
       throw new ToolError(
         'grant_unusable',
-        `the grant asks for more proof of work than ${maxPow} bits`,
-        {
-          min_pow: grant.min_pow,
-          max_pow: maxPow,
-        }
+        `The user's grant asks for ${grant.min_pow} bits of proof of work (NIP-13 min_pow) on ` +
+          `each submission, and this qus.me service mines at most ${maxPow} bits. Nothing was ` +
+          `submitted. The user can lower min_pow for this agent in this agent's grant.`,
+        { min_pow: grant.min_pow, max_pow: maxPow }
       );
     }
     const quota = await quotaUsage(session, grant);
@@ -501,7 +524,12 @@ export function createMcp(options: McpOptions) {
             content: args.value,
             validation: validationTagJson(validation),
           },
-          { now, submissionExpirationDays: grant.submission_expiration_days, pow: grant.min_pow }
+          {
+            now,
+            submissionExpirationDays: grant.submission_expiration_days,
+            pow: grant.min_pow,
+            powMaxBytes,
+          }
         );
         // A key of the connection's own for relays that only want someone authenticated (7.5).
         const connectionKey = generateSecretKey();
@@ -522,6 +550,25 @@ export function createMcp(options: McpOptions) {
       published = await publishWrap();
     } catch (error) {
       await release();
+      if (error instanceof PowBudgetExceeded) {
+        throw new ToolError(
+          'pow_budget_exceeded',
+          `The user's grant asks for ${error.difficulty} bits of proof of work, and mining them ` +
+            `on this ${error.eventBytes}-byte submission ` +
+            (error.hashes === 0 ? 'would take' : 'took') +
+            ` more work than this qus.me service spends on one draft. Nothing was submitted. ` +
+            (error.hashes === 0
+              ? 'A shorter value needs less work.'
+              : 'Mining is random; retrying usually succeeds.'),
+          {
+            min_pow: error.difficulty,
+            max_pow: maxPow,
+            wrap_bytes: error.eventBytes,
+            budget_bytes: error.maxBytes,
+            hashes: error.hashes,
+          }
+        );
+      }
       throw error;
     }
     const { wrapId, results } = published;
