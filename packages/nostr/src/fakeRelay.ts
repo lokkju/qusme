@@ -30,6 +30,11 @@ export interface FakeRelayOptions {
   brokenAuth?: boolean;
   /** Accepts writes but stores nothing, so reads come back empty. */
   dropWrites?: boolean;
+  /**
+   * Answers an EVENT with nothing at all (no OK, NOTICE or CLOSED) and stores nothing, while
+   * REQs are answered as usual: what nos.lol did on 2026-11-09 (`docs/relays.md`).
+   */
+  silentWrites?: boolean;
   /** Unix seconds for NIP-40 checks; defaults to the clock. */
   now?: () => number;
 }
@@ -148,6 +153,7 @@ export class FakeRelay {
   }
 
   #onEvent(connection: Connection, event: NostrEvent): void {
+    if (this.options.silentWrites) return;
     const id = typeof event === 'object' && event !== null ? event.id : '';
     const refusal = this.#writeRefusal(connection, event);
     connection.socket.deliver(['OK', id, refusal === undefined, refusal ?? '']);

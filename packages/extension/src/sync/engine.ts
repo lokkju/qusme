@@ -33,14 +33,17 @@ import {
   KIND_APP_DATA,
   KIND_DRAFT_WRAP,
   KIND_GIFT_WRAP,
+  KIND_PRIVATE_RELAYS,
   KIND_SUBMITTERS,
   mergeDestinations,
   mergeQuotaCounts,
   type NostrEvent,
   newestFirst,
+  type PublishReport,
   parseAgentGrant,
   parseDestinations,
   parseDraftWrap,
+  parsePrivateRelayList,
   parseRotationMarker,
   parseSettings,
   parseSubmittersList,
@@ -59,6 +62,8 @@ import { finishPendingRevocations } from '../agents/pendingRevocations.ts';
 import { effectiveDefinition, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import type { KeyStore } from '../keyStore.ts';
 import { SERVICE_ORIGIN } from '../permissions.ts';
+import { deadRelays, needsWriteCheck, WriteLog } from '../relays/health.ts';
+import { sameRelays } from '../setup/deps.ts';
 import {
   type CachedDraft,
   type DraftCache,
@@ -123,19 +128,25 @@ async function open(
 const reasonOf = (error: unknown): string =>
   error instanceof RelayError ? error.reason : (error as Error).message;
 
-/** Queries every connection; reports which failed instead of skipping them silently. */
+/**
+ * Queries every connection; reports which failed instead of skipping them silently, and which
+ * answered.
+ */
 async function queryEach(
   connections: readonly RelayConnection[],
   filters: Filter[]
-): Promise<{ events: NostrEvent[]; errors: string[] }> {
+): Promise<{ events: NostrEvent[]; errors: string[]; answered: Set<string> }> {
   const results = await Promise.allSettled(connections.map((c) => c.query(filters)));
   const byId = new Map<string, NostrEvent>();
   const errors: string[] = [];
+  const answered = new Set<string>();
   results.forEach((result, i) => {
-    if (result.status === 'fulfilled') for (const event of result.value) byId.set(event.id, event);
-    else errors.push(`${connections[i]?.url} did not answer: ${reasonOf(result.reason)}`);
+    if (result.status === 'fulfilled') {
+      answered.add(connections[i]?.url as string);
+      for (const event of result.value) byId.set(event.id, event);
+    } else errors.push(`${connections[i]?.url} did not answer: ${reasonOf(result.reason)}`);
   });
-  return { events: [...byId.values()].sort(newestFirst), errors };
+  return { events: [...byId.values()].sort(newestFirst), errors, answered };
 }
 
 /** The newest event that parses, from events already sorted newest first. */
@@ -159,6 +170,8 @@ interface QueueView {
   submitters?: SubmittersList;
   grants: Map<string, AgentGrant>;
   rotatedTo?: string;
+  /** The newest kind 10013, the authority on the storage relays (spec 7). */
+  relayList?: { event: NostrEvent; relays: string[] };
 }
 
 async function readQueue(events: NostrEvent[], queue: Signer, pubkey: string): Promise<QueueView> {
@@ -166,6 +179,7 @@ async function readQueue(events: NostrEvent[], queue: Signer, pubkey: string): P
   const draftsByD = new Map<string, NostrEvent[]>();
   const appData = new Map<string, NostrEvent[]>();
   const submitters: NostrEvent[] = [];
+  const relayLists: NostrEvent[] = [];
   const grantsByAgent = new Map<string, NostrEvent[]>();
   for (const event of events) {
     if (event.pubkey !== pubkey) continue;
@@ -177,6 +191,8 @@ async function readQueue(events: NostrEvent[], queue: Signer, pubkey: string): P
       appData.set(d, [...(appData.get(d) ?? []), event]);
     } else if (event.kind === KIND_SUBMITTERS) {
       submitters.push(event);
+    } else if (event.kind === KIND_PRIVATE_RELAYS) {
+      relayLists.push(event);
     } else if (event.kind === KIND_AGENT_GRANT && d !== undefined) {
       grantsByAgent.set(d, [...(grantsByAgent.get(d) ?? []), event]);
     }
@@ -195,6 +211,10 @@ async function readQueue(events: NostrEvent[], queue: Signer, pubkey: string): P
     parseRotationMarker(e, queue)
   );
   if (marker !== undefined) view.rotatedTo = marker.value.newPubkey;
+  const relayList = await newestValid(relayLists, (e) => parsePrivateRelayList(e, queue));
+  if (relayList !== undefined) {
+    view.relayList = { event: relayList.event, relays: relayList.value.relays };
+  }
   const list = await newestValid(submitters, (e) => parseSubmittersList(e, queue));
   if (list !== undefined) view.submitters = list.value;
   for (const [agent, versions] of grantsByAgent) {
@@ -210,16 +230,29 @@ function storageFilters(pubkey: string): Filter[] {
     { kinds: [KIND_APP_DATA], authors: [pubkey], '#d': [D_DESTINATIONS, D_SETTINGS, D_ROTATED] },
     { kinds: [KIND_SUBMITTERS], authors: [pubkey] },
     { kinds: [KIND_AGENT_GRANT], authors: [pubkey] },
+    { kinds: [KIND_PRIVATE_RELAYS], authors: [pubkey] },
   ];
+}
+
+/** Publishes on every storage connection, noting each relay's answer in `log`. */
+async function publishLogged(
+  connections: readonly RelayConnection[],
+  event: NostrEvent,
+  log: WriteLog
+): Promise<PublishReport> {
+  const report = await publishToAll(connections, event);
+  log.add(report);
+  return report;
 }
 
 /** Publishes on every storage connection; true only when all of them accepted. */
 async function publishEverywhere(
   connections: readonly RelayConnection[],
   event: NostrEvent,
-  errors: string[]
+  errors: string[],
+  log: WriteLog
 ): Promise<boolean> {
-  const report = await publishToAll(connections, event);
+  const report = await publishLogged(connections, event, log);
   for (const refusal of report.refused) errors.push(`${refusal.url} refused: ${refusal.reason}`);
   return report.accepted.length > 0 && report.refused.length === 0;
 }
@@ -270,12 +303,21 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
   const storage = await open(unlocked.record.storageRelays, deps, queue);
   errors.push(...storage.errors);
   const inboxConnections: RelayConnection[] = [];
+  const writes = new WriteLog();
   try {
     if (storage.connections.length === 0) return { state: 'synced', summary };
     const read = await queryEach(storage.connections, storageFilters(pubkey));
     errors.push(...read.errors);
     const view = await readQueue(read.events, queue, pubkey);
     if (view.rotatedTo !== undefined) summary.rotatedTo = view.rotatedTo;
+
+    // Another device may have changed the storage relays (a swap, spec 9.1): the newest 10013
+    // wins, and this device writes to the new list from the next sync on.
+    let storageRelays = unlocked.record.storageRelays;
+    if (view.relayList !== undefined && !sameRelays(view.relayList.relays, storageRelays)) {
+      storageRelays = view.relayList.relays;
+      await store.update({ storageRelays });
+    }
 
     // The newest settings: from the relays, or the copy kept at setup.
     let settingsEvent = view.settings?.event;
@@ -353,7 +395,7 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
 
     // 1. New pending destinations, merged into the latest destinations event.
     if (outcome.newDestinations.length > 0) {
-      await publishDestinations(storage.connections, queue, pubkey, outcome, now, errors);
+      await publishDestinations(storage.connections, queue, pubkey, outcome, now, errors, writes);
     }
 
     // 2. The draft wraps. A wrap counts as published once every reachable storage relay has it.
@@ -364,7 +406,7 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
         draft: { type: 'field_value', value: draft.value },
         createdAt: now,
       });
-      if (await publishEverywhere(storage.connections, event, errors)) {
+      if (await publishEverywhere(storage.connections, event, errors, writes)) {
         published.push({ ref: { wrapId: draft.wrapId, inboxPubkey: draft.inboxPubkey }, event });
       }
     }
@@ -377,9 +419,25 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
         drop: retired.filter((r) => !draining.includes(r)).map((r) => r.key),
         now,
         errors,
+        log: writes,
       });
       if (event !== undefined) await store.update({ settings: event });
     }
+
+    // 3b. Whether each storage relay keeps writes (spec 9.1). A relay that answered the REQ but
+    // got nothing written this sync, and none for a while, gets the current 10013 again: it
+    // changes nothing on a relay that has it, and a relay that answers no EVENT shows it here.
+    const health = syncState.relayHealth ?? {};
+    if (view.relayList !== undefined) {
+      const check = storage.connections.filter(
+        (c) =>
+          read.answered.has(c.url) && !writes.wrote(c.url) && needsWriteCheck(health[c.url], now)
+      );
+      if (check.length > 0) await publishLogged(check, view.relayList.event, writes);
+    }
+    const relayHealth = writes.apply(health, storageRelays, read.answered, now);
+    const dead = deadRelays(relayHealth, storageRelays);
+    if (dead.length > 0) summary.deadRelays = dead;
 
     // 4. Deletion of handled wraps on the inbox relays, signed by the key each was sent to.
     // A listed submitter with no grant yet may be mid-approval: its wrap stays for the next sync.
@@ -408,6 +466,7 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
       ...syncState,
       handled: nextHandled,
       cappedStreak: summary.cappedStreak,
+      relayHealth,
       last: summary,
     };
     // The window moves only when the whole inbox was read and nothing was left behind.
@@ -497,7 +556,8 @@ async function publishDestinations(
   pubkey: string,
   outcome: IngestOutcome,
   now: number,
-  errors: string[]
+  errors: string[],
+  log: WriteLog
 ): Promise<void> {
   const latest = await latestAppData(
     connections,
@@ -517,14 +577,14 @@ async function publishDestinations(
     createdAt: after(now, latest?.createdAt),
     ...(latest?.extraTags && { extraTags: latest.extraTags }),
   });
-  await publishEverywhere(connections, event, errors);
+  await publishEverywhere(connections, event, errors, log);
 }
 
 async function publishSettings(
   connections: readonly RelayConnection[],
   queue: Signer,
   pubkey: string,
-  input: { outcome: IngestOutcome; drop: string[]; now: number; errors: string[] }
+  input: { outcome: IngestOutcome; drop: string[]; now: number; errors: string[]; log: WriteLog }
 ): Promise<NostrEvent | undefined> {
   const latest = await latestAppData(
     connections,
@@ -550,7 +610,7 @@ async function publishSettings(
     createdAt: after(input.now, latest.createdAt),
     ...(latest.extraTags && { extraTags: latest.extraTags }),
   });
-  const report = await publishToAll(connections, event);
+  const report = await publishLogged(connections, event, input.log);
   for (const refusal of report.refused) {
     input.errors.push(`${refusal.url} refused: ${refusal.reason}`);
   }

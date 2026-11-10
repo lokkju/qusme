@@ -117,6 +117,8 @@ interface ViewProps {
   onPair?: (() => void) | undefined;
   /** Opens the agents screen, for the flood warning. */
   onAgents?: (() => void) | undefined;
+  /** Opens the swap screen for a storage relay that accepts nothing (9.1). */
+  onReplaceRelay?: ((url: string) => void) | undefined;
 }
 
 function DraftRow(props: {
@@ -369,7 +371,12 @@ export function InsertView(props: ViewProps) {
         </p>
       )}
       {props.last !== undefined && (
-        <SyncNote summary={props.last} onPair={props.onPair} onAgents={props.onAgents} />
+        <SyncNote
+          summary={props.last}
+          onPair={props.onPair}
+          onAgents={props.onAgents}
+          onReplaceRelay={props.onReplaceRelay}
+        />
       )}
     </div>
   );
@@ -387,6 +394,7 @@ export function InsertPanel(props: {
   setup?: SetupDeps;
   onPair?: () => void;
   onAgents?: () => void;
+  onReplaceRelay?: (url: string) => void;
 }) {
   const { store, deps, setup } = props;
   const [tab, setTab] = useState<{ id: number; url: string } | undefined>();
@@ -626,6 +634,7 @@ export function InsertPanel(props: {
       onUndo={undoable === undefined ? undefined : () => onUndo(undoable)}
       onPair={props.onPair}
       onAgents={props.onAgents}
+      onReplaceRelay={props.onReplaceRelay}
     />
   );
 }

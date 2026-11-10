@@ -13,6 +13,7 @@ import { FirstRunChecklist } from './firstRun.tsx';
 import { type InsertionUiDeps, InsertPanel } from './insert.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
 import { RecoverScreen } from './recover.tsx';
+import { RelaySwapScreen } from './relays.tsx';
 
 export type Route =
   | 'home'
@@ -24,7 +25,8 @@ export type Route =
   | 'agents'
   | 'destinations'
   | 'add-destination'
-  | 'archive';
+  | 'archive'
+  | 'relay-swap';
 
 /** A message for the user from anything a flow threw. */
 export function messageOf(error: unknown): string {
@@ -43,6 +45,8 @@ export function App(props: {
   const [pending, setPending] = useState<PendingImport | undefined>();
   // A popup opened with an approval code goes to the approval screen once unlocked (spec 11.8).
   const [route, setRoute] = useState<Route>(props.approveCode ? 'approve-agent' : 'home');
+  // The storage relay the swap screen replaces (spec 9.1) and the queue's relays when it opened.
+  const [swap, setSwap] = useState<{ dead: string; current: string[] } | undefined>();
 
   const refresh = useCallback(async () => {
     setStatus(await deps.store.status());
@@ -86,6 +90,8 @@ export function App(props: {
         onBack={home}
       />
     );
+  } else if (route === 'relay-swap' && status.state === 'unlocked' && swap !== undefined) {
+    body = <RelaySwapScreen deps={deps} dead={swap.dead} current={swap.current} onBack={home} />;
   } else if (route === 'archive' && status.state === 'unlocked') {
     body = <ArchiveScreen deps={deps} onBack={home} />;
   } else if (
@@ -113,6 +119,11 @@ export function App(props: {
         onRoute={setRoute}
         onChange={refresh}
         insertion={props.insertion}
+        onReplaceRelay={async (dead) => {
+          const record = await deps.store.record();
+          setSwap({ dead, current: record?.storageRelays ?? [] });
+          setRoute('relay-swap');
+        }}
       />
     );
   }
@@ -125,6 +136,7 @@ export function App(props: {
         route !== 'approve-agent' &&
         route !== 'agents' &&
         route !== 'archive' &&
+        route !== 'relay-swap' &&
         route !== 'destinations' &&
         route !== 'add-destination' && (
           <p class="mt-4 text-xs">
@@ -203,6 +215,7 @@ function Unlocked(props: {
   onRoute: (route: Route) => void;
   onChange: () => void;
   insertion?: InsertionUiDeps | undefined;
+  onReplaceRelay?: (url: string) => void;
 }) {
   const { deps, status } = props;
   const toggle = async (on: boolean) => {
@@ -222,6 +235,7 @@ function Unlocked(props: {
         setup={deps}
         onPair={() => props.onRoute('pair')}
         onAgents={() => props.onRoute('agents')}
+        {...(props.onReplaceRelay !== undefined && { onReplaceRelay: props.onReplaceRelay })}
       />
       <div class="mt-4 flex flex-col gap-2">
         <Button onClick={() => props.onRoute('approve-agent')}>Approve an agent</Button>
