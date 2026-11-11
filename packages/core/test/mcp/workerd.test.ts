@@ -94,6 +94,25 @@ for (const withBindings of [true, false]) {
         createdAt: now,
         updatedAt: now,
       });
+      // A grant's storage relays move the binding on workerd's D1 (spec 8.4), and only a newer
+      // grant moves it again, in one guarded statement; the binding is put back for the tools.
+      const queue = 'a'.repeat(64);
+      const moved = ['wss://storage.example/', 'wss://storage2.example/'];
+      expect(await store.bindings.moveStorage(key.id, queue, moved, now - 10, now)).toMatchObject({
+        storageRelays: moved,
+        storageGrantAt: now - 10,
+      });
+      expect(
+        await store.bindings.moveStorage(key.id, queue, ['wss://old.example/'], now - 20, now)
+      ).toBeUndefined();
+      expect(
+        await store.bindings.moveStorage(key.id, 'b'.repeat(64), ['wss://x.example/'], now, now)
+      ).toBeUndefined();
+      expect((await store.bindings.get(key.id))?.storageRelays).toEqual(moved);
+      await store.bindings.update(key.id, {
+        storageRelays: ['wss://storage.example/'],
+        storageGrantAt: null,
+      });
       const token = `qat_${crypto.randomUUID()}`;
       await store.oauthTokens.create({
         tokenHash: await hashSecret(token),

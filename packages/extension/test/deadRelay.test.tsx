@@ -29,6 +29,7 @@ import {
   KIND_SUBMITTERS,
   type NostrEvent,
   newestFirst,
+  parseAgentGrant,
   parsePrivateRelayList,
   publishToAll,
   RelayConnection,
@@ -39,6 +40,7 @@ import { FakeRelayNetwork } from '@qusme/nostr/testing';
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure';
 import { render } from 'preact';
 import { afterEach, describe, expect, it } from 'vitest';
+import { addPendingRevocation } from '../src/agents/pendingRevocations.ts';
 import { KeyStore, LOCAL_QUEUE, type QueueRecord, SESSION_UNLOCKED } from '../src/keyStore.ts';
 import {
   DEAD_RELAY_FAILURES,
@@ -324,7 +326,19 @@ describe('replacing it', () => {
     expect(copied.destinations.map((e) => e.id)).toEqual([q.events.destinations.id]);
     expect(copied.recovery.map((e) => e.id)).toEqual([q.events.backup.id]);
     expect(copied.submitters.map((e) => e.id)).toEqual([q.events.submitters.id]);
-    expect(copied.grants.map((e) => e.id)).toEqual([q.events.grant.id]);
+    // The grant was copied as signed, then replaced by one naming the new relays (step 6).
+    expect(result.grantsRepublished).toBe(1);
+    expect(result.grantsRefused).toBeUndefined();
+    for (const url of [GOOD, NEW]) {
+      const [grant] = onRelay(q.net, url, q.pubkey).grants;
+      const parsed = await parseAgentGrant(grant, q.queue);
+      if (!parsed.ok) throw new Error('no grant');
+      expect(parsed.value.grant.storage).toEqual([GOOD, NEW]);
+      expect(parsed.value.createdAt).toBeGreaterThan(q.events.grant.created_at);
+      expect(parsed.value.grant.destinations).toEqual([
+        { site: 'x', account: 'lokkju', fields: ['text'] },
+      ]);
+    }
     expect(await relaysIn(copied.relayLists[0], q.queue)).toEqual([GOOD, NEW]);
     expect(await relaysIn(onRelay(q.net, GOOD, q.pubkey).relayLists[0], q.queue)).toEqual([
       GOOD,
@@ -338,6 +352,64 @@ describe('replacing it', () => {
     const after = await syncHourly(q.deps, q.time, 1);
     expect(after.deadRelays).toBeUndefined();
     expect(Object.keys((await readSyncState(q.local)).relayHealth ?? {})).toEqual([GOOD, NEW]);
+  });
+
+  it('republishes only live grants with the new storage, never a revoked agent’s', async () => {
+    const q = await deadRelayQueue();
+    const live = dOf(q.events.grant) as string;
+    const revoked = getPublicKey(generateSecretKey());
+    const pending = getPublicKey(generateSecretKey());
+    const expired = getPublicKey(generateSecretKey());
+    const grantInput = {
+      inbox: INBOX,
+      inbox_pubkey: getPublicKey(q.inboxKey),
+      destinations: [{ site: 'x', account: 'lokkju', fields: ['text'] }],
+      quota: { max_submissions: 50, period: 'day' as const },
+    };
+    const old = {
+      revoked: await buildAgentGrant(q.queue, revoked, grantInput),
+      pending: await buildAgentGrant(q.queue, pending, grantInput),
+      expired: await buildAgentGrant(q.queue, expired, { ...grantInput, expires_at: q.time.now() }),
+    };
+    // The newest list dropped `revoked`, whose grant a relay kept anyway. It still names
+    // `pending`, revoked on this device with the service not told yet, and `expired`.
+    const list = await buildSubmittersList(
+      q.queue,
+      {
+        [live]: { label: 'Claude Desktop', authorized_at: q.time.now() },
+        [pending]: { label: 'Pending', authorized_at: q.time.now() },
+        [expired]: { label: 'Expired', authorized_at: q.time.now() },
+      },
+      { createdAt: q.time.now() + 1 }
+    );
+    await publishTo(q.net, GOOD, [...Object.values(old), list]);
+    await addPendingRevocation(q.store, {
+      queuePubkey: q.pubkey,
+      agentPubkey: pending,
+      since: q.time.now(),
+    });
+    q.time.advance(10);
+
+    const result = await swapStorageRelay(q.deps, { dead: DEAD, replacement: NEW });
+    expect(result.grantsRepublished).toBe(1);
+    const storageOf = async (url: string, agent: string) => {
+      const found = onRelay(q.net, url, q.pubkey).grants.filter((e) => dOf(e) === agent);
+      expect(found).toHaveLength(1);
+      const parsed = await parseAgentGrant(found[0], q.queue);
+      if (!parsed.ok) throw new Error('no grant');
+      return { id: parsed.value.id, storage: parsed.value.grant.storage };
+    };
+    for (const url of [GOOD, NEW]) {
+      expect((await storageOf(url, live)).storage).toEqual([GOOD, NEW]);
+      // Every other grant is exactly the one signed before the swap, with no storage.
+      for (const [agent, event] of [
+        [revoked, old.revoked],
+        [pending, old.pending],
+        [expired, old.expired],
+      ] as const) {
+        expect(await storageOf(url, agent)).toEqual({ id: event.id, storage: undefined });
+      }
+    }
   });
 
   it('changes nothing when the replacement fails the storage probe', async () => {

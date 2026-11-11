@@ -111,13 +111,15 @@ async function checkAuthorized(
 
 /**
  * The grant for `choices`, keeping what this version does not edit: `min_pow`, unknown keys at
- * every level, and the event's extra tags (spec 7, "Unknown fields").
+ * every level, and the event's extra tags (spec 7, "Unknown fields"). `storage` is the queue's
+ * storage relays now (7.4).
  */
 function mergedGrant(
   previous: AgentGrantEvent,
   choices: ApprovalChoices,
   snapshot: QueueSnapshot,
-  now: number
+  now: number,
+  storage: readonly string[]
 ): AgentGrant {
   const destinations = snapshot.destinations?.content.destinations ?? [];
   const next = grantFor(choices, destinations, snapshot.settings?.content, now);
@@ -136,6 +138,7 @@ function mergedGrant(
     expires_at: next.expires_at ?? null,
     destinations: shared,
     quota: old.quota.extra !== undefined ? { ...next.quota, extra: old.quota.extra } : next.quota,
+    storage: [...storage],
   };
   if (old.extra !== undefined) grant.extra = old.extra;
   return grant;
@@ -168,7 +171,13 @@ export async function editGrant(
   return withQueue(deps, async (session) => {
     const snapshot = await readQueue(session);
     const previous = await checkAuthorized(deps, session, snapshot, agentPubkey);
-    const grant = mergedGrant(previous, choices, snapshot, session.now);
+    const grant = mergedGrant(
+      previous,
+      choices,
+      snapshot,
+      session.now,
+      session.record.storageRelays
+    );
     await publishGrant(session, previous, grant);
     const list = snapshot.submitters;
     const current = list?.labels[agentPubkey];
@@ -224,7 +233,13 @@ export async function shareDestination(
       };
       // Destinations the grant names that the queue no longer has stay in it: sharing one more
       // destination is not the place to drop them silently.
-      const grant = mergedGrant(previous, choices, snapshot, session.now);
+      const grant = mergedGrant(
+        previous,
+        choices,
+        snapshot,
+        session.now,
+        session.record.storageRelays
+      );
       grant.destinations = [...grant.destinations, ...start.dropped];
       await publishGrant(session, previous, grant);
       changed.push(agentPubkey);
