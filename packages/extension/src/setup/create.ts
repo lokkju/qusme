@@ -21,6 +21,7 @@ import {
   type RelayRole,
   recoveryCodeToBase32,
   recoveryCodeToWords,
+  recoveryLookupTag,
   recoveryPassword,
 } from '@qusme/nostr';
 import { npubEncode } from 'nostr-tools/nip19';
@@ -140,7 +141,10 @@ export async function finishCreate(
     inbox_relays: inboxRelays,
     quota_counts: {},
   });
-  const backup = await buildRecoveryBackup(signer, backupNcryptsec);
+  // The lookup tag lets the code alone find the backup later, without the npub (6.1).
+  const backup = await buildRecoveryBackup(signer, backupNcryptsec, {
+    lookup: recoveryLookupTag(draft.recoveryCode),
+  });
 
   const { connections, failed } = await openRelays(storageRelays, deps, (t) => signer.signEvent(t));
   try {

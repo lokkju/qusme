@@ -3,11 +3,10 @@ import type { SetupDeps } from '../setup/deps.ts';
 import { cleanRelayUrl, SetupError } from '../setup/deps.ts';
 import {
   BackupNotFound,
-  type FetchedBackup,
-  findRecoveryBackup,
   finishRecover,
-  openRecoveryBackup,
+  type OpenedBackup,
   type RecoverResult,
+  recoverWithCode,
 } from '../setup/recover.ts';
 import { type ParsedRecoveryInput, parseRecoverySheet } from '../setup/recoverySheet.ts';
 import { messageOf } from './app.tsx';
@@ -25,8 +24,8 @@ import {
 /** What the recovery box has found so far, in words, for the live region under it. */
 export function foundSummary(parsed: ParsedRecoveryInput): string {
   const parts = [
-    parsed.npub !== undefined ? 'Queue ID found' : 'no Queue ID yet',
     parsed.code !== undefined ? 'recovery code found' : 'no recovery code yet',
+    parsed.npub !== undefined ? 'Queue ID found' : 'no Queue ID (not needed)',
   ];
   const n = parsed.storageRelays.length;
   if (n > 0) parts.push(`${n} storage server${n === 1 ? '' : 's'}`);
@@ -35,8 +34,8 @@ export function foundSummary(parsed: ParsedRecoveryInput): string {
 }
 
 /**
- * The relays to look the queue up on: the sheet's storage servers and the one typed, or none,
- * which means the default storage relays (9.1).
+ * The relays the user named: the sheet's storage servers and the one typed. Recovery asks these
+ * and the default storage relays, current and earlier, together (9.1).
  */
 export function lookupRelays(parsed: ParsedRecoveryInput, typedRelay: string): string[] {
   const relays = [...parsed.storageRelays];
@@ -55,7 +54,7 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
   const [text, setText] = useState('');
   const [relayUrl, setRelayUrl] = useState('');
   const [needRelay, setNeedRelay] = useState(false);
-  const [opened, setOpened] = useState<{ fetched: FetchedBackup; key: Uint8Array }>();
+  const [opened, setOpened] = useState<OpenedBackup>();
   const [passphrase, setPassphrase] = useState('');
   const [again, setAgain] = useState('');
   const [result, setResult] = useState<RecoverResult>();
@@ -68,7 +67,7 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
     try {
       await fn();
     } catch (e) {
-      if (e instanceof BackupNotFound && e.askedDefaults) setNeedRelay(true);
+      if (e instanceof BackupNotFound) setNeedRelay(true);
       setError(messageOf(e));
     } finally {
       setBusy(false);
@@ -83,6 +82,12 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
           <p class="mt-2 text-sm">
             The queue’s relay list was not found, so this device uses the relays it found the backup
             on.
+          </p>
+        )}
+        {result.lookupAdded === false && (
+          <p class="mt-2 text-sm">
+            The backup could not be updated to be found by the recovery code alone, so keep the
+            Queue ID with your recovery code.
           </p>
         )}
         {!result.settingsFound && (
@@ -102,7 +107,11 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
     const finish = (event: Event) => {
       event.preventDefault();
       void run(async () => {
-        setResult(await finishRecover(opened.fetched, opened.key, passphrase, deps));
+        setResult(
+          await finishRecover(opened.fetched, opened.key, passphrase, deps, {
+            lookup: opened.lookup,
+          })
+        );
       });
     };
     return (
@@ -129,22 +138,19 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
   const open = (event: Event) => {
     event.preventDefault();
     void run(async () => {
-      if (parsed.npub === undefined) {
-        throw new SetupError(
-          'No Queue ID found: it starts with npub1 and is on your recovery sheet.'
-        );
-      }
       if (parsed.code === undefined) {
         throw new SetupError(
-          'No recovery code found: the 12 words, or the 26-character code, from your recovery sheet.'
+          'That is not a recovery code: 12 words from the list, or 26 letters and digits. Check for a mistyped word or character.'
         );
       }
       if (parsed.conflict !== undefined) throw new SetupError(parsed.conflict);
       const relays = lookupRelays(parsed, relayUrl);
-      const fetched = await findRecoveryBackup({ npub: parsed.npub, relays }, deps);
-      const key = openRecoveryBackup(fetched, parsed.code);
+      const result = await recoverWithCode(
+        { code: parsed.code, relays, ...(parsed.npub !== undefined && { npub: parsed.npub }) },
+        deps
+      );
       setText('');
-      setOpened({ fetched, key });
+      setOpened(result);
     });
   };
   return (
@@ -153,7 +159,7 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
         <Field
           id="recover-sheet"
           label="Your recovery sheet"
-          hint="Paste the whole sheet, or type the Queue ID (starts with npub1) and the recovery code (12 words, or 26 letters and digits)."
+          hint="Paste the whole sheet, or type just the recovery code: the 12 words, or the 26 letters and digits. The Queue ID (starts with npub1) is optional; add it if you have it."
         >
           <textarea
             id="recover-sheet"
@@ -172,8 +178,8 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
         {needRelay && (
           <Field
             id="recover-relay"
-            label="One of the queue’s storage servers"
-            hint="On your recovery sheet under Storage servers; starts with wss://."
+            label="Another storage server (optional)"
+            hint="On your recovery sheet under Storage servers; starts with wss://. Recovery also asks the default servers."
           >
             <input
               id="recover-relay"
@@ -187,15 +193,7 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
           </Field>
         )}
         <ErrorText message={error} />
-        <Button
-          type="submit"
-          class="mt-3"
-          disabled={
-            busy ||
-            text.trim() === '' ||
-            (needRelay && relayUrl.trim() === '' && parsed.storageRelays.length === 0)
-          }
-        >
+        <Button type="submit" class="mt-3" disabled={busy || text.trim() === ''}>
           {busy ? 'Looking up the queue…' : 'Recover'}
         </Button>
       </form>

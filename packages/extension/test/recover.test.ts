@@ -117,16 +117,17 @@ describe('recover flow (spec 6.1, 11.3)', { timeout: 30_000 }, () => {
     expect((await b.store.record())?.storageRelays).toEqual(STORAGE);
   });
 
-  it('asks for a relay only when the queue is not on the default storage relays', async () => {
+  it('names every relay asked when none has the queue, then finds it on a relay the user adds', async () => {
     const net = network();
     net.add('wss://default-empty.example');
     const a = await createdDevice(net);
     const b = device(net);
-    b.deps.defaultStorageRelays = ['wss://default-empty.example'];
+    b.deps.defaultStorageRelays = ['wss://default-empty.example', 'wss://gone.example'];
     const missing = findRecoveryBackup({ npub: a.npub }, b.deps);
-    await expect(missing).rejects.toThrow(/isn’t on the default storage servers/);
+    await expect(missing).rejects.toThrow(
+      'No recovery backup for that Queue ID on wss://default-empty.example (wss://gone.example could not be reached).'
+    );
     await expect(missing).rejects.toBeInstanceOf(BackupNotFound);
-    await missing.catch((e: BackupNotFound) => expect(e.askedDefaults).toBe(true));
     const fetched = await findRecoveryBackup(
       { npub: a.npub, relays: [STORAGE[0] as string] },
       b.deps
