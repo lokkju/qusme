@@ -192,9 +192,13 @@ export async function approveAgent(
       ...(list?.extraTags && { extraTags: list.extraTags }),
     });
     const previousGrant = snapshot.grants.get(request.agentPubkey);
-    const grantEvent = await buildAgentGrant(session.queue, request.agentPubkey, grant, {
-      createdAt: after(session.now, previousGrant?.createdAt),
-    });
+    // The queue's storage relays ride in the grant, so the service follows a later swap (7.4).
+    const grantEvent = await buildAgentGrant(
+      session.queue,
+      request.agentPubkey,
+      { ...grant, storage: [...session.record.storageRelays] },
+      { createdAt: after(session.now, previousGrant?.createdAt) }
+    );
     // The list first: it is what the service checks, and a grant without it authorizes nothing.
     await publishOrThrow(session, submittersEvent, 'submitters list');
     await publishOrThrow(session, grantEvent, 'agent grant');

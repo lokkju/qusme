@@ -55,6 +55,7 @@ import {
   type FoundGrant,
   type GrantCache,
   type SubmittersCache,
+  storageMoveFor,
 } from './grants.ts';
 import {
   effectiveDefinition,
@@ -128,7 +129,11 @@ export interface McpOptions extends McpOverrides {
 
 /** Something an operator may want to see; carries no key material and no submitted value. */
 export interface McpNotice {
-  event: 'submitters_list_unavailable';
+  /**
+   * `submitters_list_unavailable`: a tool went ahead on the grant alone (8.4).
+   * `storage_relays_moved`: a newer grant named other storage relays and the binding follows them.
+   */
+  event: 'submitters_list_unavailable' | 'storage_relays_moved';
   agentPubkey: string;
   queuePubkey: string;
 }
@@ -352,7 +357,40 @@ export function createMcp(options: McpOptions) {
         queuePubkey: agent.queuePubkey,
       });
     }
+    await followStorage(session, found);
     return found;
+  }
+
+  /**
+   * Moves the agent's binding to the storage relays its grant names, when the grant is newer than
+   * the one the binding last moved for (7.4, 8.4), so the next call reads the grant and the
+   * submitters list there. The store's guard makes it one conditional statement; a failure leaves
+   * the binding as it was and the call goes on.
+   */
+  async function followStorage(session: Session, found: FoundGrant): Promise<void> {
+    const { agent, now } = session;
+    const relays = storageMoveFor(agent, found);
+    if (relays === undefined) return;
+    let moved: Awaited<ReturnType<Store['bindings']['moveStorage']>>;
+    try {
+      moved = await store.bindings.moveStorage(
+        agent.agentKeyId,
+        agent.queuePubkey,
+        relays,
+        found.createdAt,
+        now
+      );
+    } catch {
+      return;
+    }
+    if (moved === undefined) return;
+    agent.storageRelays = moved.storageRelays;
+    agent.storageGrantAt = moved.storageGrantAt;
+    options.notice?.({
+      event: 'storage_relays_moved',
+      agentPubkey: agent.agentPubkey,
+      queuePubkey: agent.queuePubkey,
+    });
   }
 
   async function quotaUsage(session: Session, grant: AgentGrant) {

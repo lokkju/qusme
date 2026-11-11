@@ -12,7 +12,11 @@
  * 4. publishes a new kind 10013, with the dead relay replaced in place, to the replacement and
  *    every remaining relay (all must accept) and to the dead relay (best effort);
  * 5. only then writes the new list to this device's record, and copies to the replacement
- *    anything another device wrote to the remaining relays meanwhile, best effort.
+ *    anything another device wrote to the remaining relays meanwhile, best effort;
+ * 6. republishes every live agent's grant with the new list as its `storage` (7.4) and a newer
+ *    `created_at`, to the new relay set, so app.qus.me moves each agent's binding there (8.4).
+ *    An agent the submitters list no longer names, or with a revocation still pending, is left
+ *    out: a revoked agent's grant is never revived. Best effort, like step 5's catch-up.
  *
  * Until step 5 nothing local changes and nothing is removed anywhere, so a replacement that fails
  * at any point leaves the queue as it was: the remaining relays still hold every event, and the
@@ -21,6 +25,8 @@
  */
 
 import {
+  type AgentGrantEvent,
+  buildAgentGrant,
   buildPrivateRelayList,
   createLocalSigner,
   D_DESTINATIONS,
@@ -56,6 +62,7 @@ import {
 import type { Filter } from 'nostr-tools/filter';
 import { npubEncode } from 'nostr-tools/nip19';
 import { getPublicKey } from 'nostr-tools/pure';
+import { readPendingRevocations } from '../agents/pendingRevocations.ts';
 import { DEFAULT_STORAGE_RELAYS } from '../setup/create.ts';
 import {
   cleanRelayUrl,
@@ -106,6 +113,15 @@ export interface SwapResult {
   caughtUp: number;
   /** The dead relay's answer to the new 10013, when it refused or said nothing. */
   deadRefused?: string;
+  /** Live agents whose grant went out again with the new relays as its `storage` (step 6). */
+  grantsRepublished: number;
+  /**
+   * Agents whose republished grant a relay of the new set refused, with the refusals; the service
+   * keeps reading their grant from the relays it was bound to until a later edit reaches it.
+   */
+  grantsRefused?: { agentPubkey: string; reason: string }[];
+  /** Why step 6 stopped before republishing every grant, when it did. */
+  grantsError?: string;
 }
 
 const dOf = (event: NostrEvent): string | undefined => event.tags.find((t) => t[0] === 'd')?.[1];
@@ -258,6 +274,82 @@ async function publishOne(
   }
 }
 
+const sameRelays = (a: readonly string[] | undefined, b: readonly string[]): boolean =>
+  a !== undefined && a.length === b.length && a.every((url) => b.includes(url));
+
+/**
+ * Step 6: the newest valid grant of each agent the newest submitters list names, with no pending
+ * revocation and not expired, rebuilt with `relays` as its `storage` and published to
+ * `connections`. A grant that already names exactly those relays is left alone.
+ */
+async function republishGrants(input: {
+  deps: SwapDeps;
+  queue: Signer;
+  pubkey: string;
+  now: number;
+  relays: string[];
+  events: readonly NostrEvent[];
+  connections: readonly RelayConnection[];
+}): Promise<Pick<SwapResult, 'grantsRepublished' | 'grantsRefused'>> {
+  const { queue, pubkey, now, relays } = input;
+  const mine = input.events.filter((e) => e.pubkey === pubkey);
+  const lists = mine.filter((e) => e.kind === KIND_SUBMITTERS).sort(newestFirst);
+  let listed: string[] | undefined;
+  for (const event of lists) {
+    const parsed = await parseSubmittersList(event, queue);
+    if (parsed.ok) {
+      listed = parsed.value.submitters;
+      break;
+    }
+  }
+  if (listed === undefined) return { grantsRepublished: 0 };
+  const pending = new Set(
+    (await readPendingRevocations(input.deps.store, pubkey)).map((p) => p.agentPubkey)
+  );
+
+  const byAgent = new Map<string, NostrEvent[]>();
+  for (const event of mine) {
+    const d = dOf(event);
+    if (event.kind !== KIND_AGENT_GRANT || d === undefined) continue;
+    byAgent.set(d, [...(byAgent.get(d) ?? []), event]);
+  }
+  let grantsRepublished = 0;
+  const grantsRefused: { agentPubkey: string; reason: string }[] = [];
+  for (const [agentPubkey, versions] of byAgent) {
+    if (!listed.includes(agentPubkey) || pending.has(agentPubkey)) continue;
+    let previous: AgentGrantEvent | undefined;
+    for (const event of [...new Map(versions.map((e) => [e.id, e])).values()].sort(newestFirst)) {
+      const parsed = await parseAgentGrant(event, queue);
+      if (parsed.ok) {
+        previous = parsed.value;
+        break;
+      }
+    }
+    if (previous === undefined || previous.agentPubkey !== agentPubkey) continue;
+    const { grant } = previous;
+    if (grant.expires_at !== null && grant.expires_at <= now) continue;
+    if (sameRelays(grant.storage, relays)) continue;
+    const event = await buildAgentGrant(
+      queue,
+      agentPubkey,
+      { ...grant, storage: [...relays] },
+      {
+        createdAt: after(now, previous.createdAt),
+        ...(previous.extraTags && { extraTags: previous.extraTags }),
+      }
+    );
+    const report = await publishToAll(input.connections, event);
+    if (report.refused.length > 0 || report.accepted.length === 0) {
+      const reason =
+        report.refused.map((r) => `${r.url} (${r.reason})`).join(', ') || 'no relay accepted it';
+      grantsRefused.push({ agentPubkey, reason });
+    } else {
+      grantsRepublished += 1;
+    }
+  }
+  return grantsRefused.length > 0 ? { grantsRepublished, grantsRefused } : { grantsRepublished };
+}
+
 /**
  * Replaces `dead` with `replacement` among the queue's storage relays, copying the queue there
  * first (see the module comment). Throws {@link SwapProbeError} when the replacement fails the
@@ -387,7 +479,24 @@ export async function swapStorageRelay(
       }
     }
 
-    const result: SwapResult = { relays, copied, caughtUp };
+    // 6. Every live grant again, naming the new relays, so the service follows them (8.4).
+    // The swap is committed by now, so a failure here is reported, never thrown.
+    const grants = await republishGrants({
+      deps,
+      queue,
+      pubkey,
+      now,
+      relays,
+      events: [...events, ...fresh],
+      connections: [...remainingConnections, target],
+    }).catch(
+      (error: unknown): Pick<SwapResult, 'grantsRepublished' | 'grantsError'> => ({
+        grantsRepublished: 0,
+        grantsError: reasonOf(error),
+      })
+    );
+
+    const result: SwapResult = { relays, copied, caughtUp, ...grants };
     if (deadRefused !== undefined) result.deadRefused = deadRefused;
     return result;
   } finally {
