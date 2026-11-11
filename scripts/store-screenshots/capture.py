@@ -542,7 +542,7 @@ def main() -> None:
         listed = approve_page.locator("fieldset ul").first.bounding_box()
         toggle = (
             approve_page.get_by_text("Let it propose new destinations")
-            .locator("xpath=ancestor::*[contains(@class, 'border')][1]")
+            .locator("xpath=ancestor::*[contains(@class, 'card')][1]")
             .bounding_box()
         )
         approve_cut = int((listed["y"] + listed["height"] + toggle["y"]) / 2 - box["y"])
