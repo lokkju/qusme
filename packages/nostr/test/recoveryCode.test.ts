@@ -1,4 +1,6 @@
-import { hexToBytes } from '@noble/hashes/utils.js';
+import { hkdf } from '@noble/hashes/hkdf.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { describe, expect, it } from 'vitest';
 import {
   decodeNcryptsec,
@@ -7,9 +9,13 @@ import {
   generateRecoveryCode,
   parseRecoveryCode,
   RECOVERY_CODE_BASE32_LENGTH,
+  RECOVERY_LOOKUP_NAMESPACE,
   recoveryCodeToBase32,
   recoveryCodeToWords,
+  recoveryLookupOf,
+  recoveryLookupTag,
   recoveryPassword,
+  withRecoveryLookup,
 } from '../src/index.ts';
 import { queueKey } from './helpers.ts';
 
@@ -95,5 +101,35 @@ describe('recovery code', () => {
     const ncryptsec = encodeNcryptsec(queueKey, recoveryPassword(bytes), { logN: 16 });
     const typed = parseRecoveryCode(recoveryCodeToWords(bytes).join(' ')) as Uint8Array;
     expect(decodeNcryptsec(ncryptsec, recoveryPassword(typed))).toEqual(queueKey);
+  });
+});
+
+describe('recovery lookup tag (6.1)', () => {
+  it('is HKDF-SHA256 of the code bytes, salt qus.me/recovery-lookup, info v1', () => {
+    const bytes = hexToBytes('000102030405060708090a0b0c0d0e0f');
+    const expected = bytesToHex(
+      hkdf(sha256, bytes, utf8ToBytes('qus.me/recovery-lookup'), utf8ToBytes('v1'), 32)
+    );
+    expect(recoveryLookupTag(bytes)).toBe(expected);
+    expect(recoveryLookupTag(bytes)).toMatch(/^[0-9a-f]{64}$/);
+    expect(recoveryLookupTag(bytes)).not.toContain(recoveryPassword(bytes));
+    expect(recoveryLookupTag(generateRecoveryCode())).not.toBe(recoveryLookupTag(bytes));
+    expect(() => recoveryLookupTag(new Uint8Array(15))).toThrow(/16 bytes/);
+  });
+
+  it('is written as a NIP-32 label and read back, replacing an earlier one', () => {
+    const a = recoveryLookupTag(generateRecoveryCode());
+    const b = recoveryLookupTag(generateRecoveryCode());
+    const tags = withRecoveryLookup([['future', 'kept']], a);
+    expect(tags).toEqual([
+      ['future', 'kept'],
+      ['L', RECOVERY_LOOKUP_NAMESPACE],
+      ['l', a, RECOVERY_LOOKUP_NAMESPACE],
+    ]);
+    const again = withRecoveryLookup(tags, b);
+    expect(recoveryLookupOf({ extraTags: again })).toBe(b);
+    expect(again.filter((t) => t[0] === 'l')).toHaveLength(1);
+    expect(recoveryLookupOf({})).toBeUndefined();
+    expect(() => withRecoveryLookup([], 'nope')).toThrow(/64 lowercase hex/);
   });
 });
