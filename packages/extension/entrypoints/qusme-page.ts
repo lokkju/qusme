@@ -5,7 +5,9 @@ import {
   type PageApi,
   PICKER_PICK_MESSAGE,
   PICKER_POPUP_MESSAGE,
+  PICKER_UNDO_MESSAGE,
   type PickerPickMessage,
+  type PickerUndoMessage,
 } from '../src/insertion/protocol.ts';
 
 /**
@@ -25,6 +27,10 @@ export default defineUnlistedScript(() => {
     },
     pick: (token, d) => {
       const message: PickerPickMessage = { type: PICKER_PICK_MESSAGE, token, d };
+      return browser.runtime.sendMessage(message);
+    },
+    undo: (token) => {
+      const message: PickerUndoMessage = { type: PICKER_UNDO_MESSAGE, token };
       return browser.runtime.sendMessage(message);
     },
     openPopup: async () => {

@@ -15,26 +15,40 @@ import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 import { displayAccount, type SiteAccount } from '@qusme/nostr';
 import { rowData } from '../drafts/row.ts';
 import type { KeyStore } from '../keyStore.ts';
-import { type CachedDraft, readDraftCache } from '../sync/state.ts';
+import { SetupError } from '../setup/deps.ts';
+import { readDraftCache } from '../sync/state.ts';
 import { dismissPickerTip } from '../tips.ts';
-import { definitionForDraft, type SiteDefinitionSource } from './definitions.ts';
+import type { SiteDefinitionSource } from './definitions.ts';
 import { accountLocators, draftsForPage, type PageDraft } from './matching.ts';
 import {
   PICKER_PICK_MESSAGE,
   PICKER_TEXT_CHARS,
+  PICKER_UNDO_MESSAGE,
+  PICKER_UNDO_SECONDS,
   type PickerItem,
   type PickerPickMessage,
+  type PickerUndoMessage,
   type PickerView,
 } from './protocol.ts';
 import type { InsertionService, InsertResponse } from './service.ts';
 
 /** `storage.session` key for the open picker's token, tab and listed drafts. */
 export const SESSION_PICKER = 'qusme.picker';
+/** `storage.session` key for the last pick's Undo: a one-time token, its tab, draft and expiry. */
+export const SESSION_PICKER_UNDO = 'qusme.pickerUndo';
 
 interface PickerSession {
   token: string;
   tabId: number;
   drafts: string[];
+}
+
+interface PickerUndoSession {
+  token: string;
+  tabId: number;
+  d: string;
+  /** Unix seconds. */
+  expiresAt: number;
 }
 
 /** What the picker needs from the page: detection, and opening it. */
@@ -52,9 +66,31 @@ export interface PickerDeps {
   token?: () => string;
   /** Unix seconds, for the rows' relative times; defaults to the clock. */
   now?: () => number;
+  /**
+   * Restores draft `d` to `active` (7.1), for the success notice's Undo. Without it the notice
+   * offers no Undo.
+   */
+  restore?: (d: string) => Promise<unknown>;
 }
 
-export type PickResponse = InsertResponse | { state: 'expired' } | { state: 'not_found' };
+/** A pick's answer; `undo` is the token for the notice's Undo when the insertion was recorded. */
+export type PickResponse =
+  | (InsertResponse & { undo?: string })
+  | { state: 'expired' }
+  | { state: 'not_found' };
+
+export type UndoResponse =
+  | { state: 'restored' }
+  | { state: 'expired' }
+  | { state: 'failed'; message: string };
+
+/** Validates a {@link PickerUndoMessage}; undefined if it is anything else. */
+export function readUndoMessage(message: unknown): PickerUndoMessage | undefined {
+  if (typeof message !== 'object' || message === null) return undefined;
+  const m = message as Record<string, unknown>;
+  if (m.type !== PICKER_UNDO_MESSAGE || typeof m.token !== 'string') return undefined;
+  return { type: PICKER_UNDO_MESSAGE, token: m.token };
+}
 
 /** Validates a {@link PickerPickMessage}; undefined if it is anything else. */
 export function readPickMessage(message: unknown): PickerPickMessage | undefined {
@@ -70,6 +106,12 @@ export function pickerText(content: string): string {
   const text = content.replace(/[ \t]+/g, ' ').trim();
   const chars = [...text];
   return chars.length > PICKER_TEXT_CHARS ? `${chars.slice(0, PICKER_TEXT_CHARS).join('')}…` : text;
+}
+
+/** An account as the picker's head shows it: "@lanternworks", "@me@mastodon.social". */
+export function handle(account: string): string {
+  const shown = displayAccount(account);
+  return shown.startsWith('@') || /\s/.test(shown) ? shown : `@${shown}`;
 }
 
 export class PickerService {
@@ -128,8 +170,6 @@ export class PickerService {
       detected,
     });
 
-    const siteName = (draft: CachedDraft): string =>
-      definitionForDraft(definitions, draft, destinations).definition?.name ?? draft.site;
     // The same row the popup shows (drafts/row.ts), with the text cut for the page.
     const now = this.deps.now?.() ?? Math.floor(Date.now() / 1000);
     const item = ({ draft }: PageDraft, showDestination: boolean): PickerItem =>
@@ -140,12 +180,8 @@ export class PickerService {
         showDestination,
         text: pickerText(draft.content),
       });
-    const context = Object.entries(detected)
-      .map(([site, account]) => {
-        const name = page.matching.find((e) => e.draft.site === site);
-        return `${name === undefined ? site : siteName(name.draft)} as ${displayAccount(account)}`;
-      })
-      .join(', ');
+    // The account alone; the page already says which site it is (critique P4).
+    const context = Object.values(detected).map(handle).join(', ');
     return {
       token,
       state: 'ready',
@@ -182,11 +218,56 @@ export class PickerService {
       (d) => d.d === message.d && d.status === 'active'
     );
     if (draft === undefined) return { state: 'not_found' };
-    return this.deps.insertion.insert({
+    const response: PickResponse = await this.deps.insertion.insert({
       tabId,
       ...(frameId !== undefined && { frameId }),
       method: 'extension_shortcut',
       draft,
     });
+    // A recorded insertion archived the draft; the page's notice may bring it back, once.
+    if (response.state === 'inserted' && response.recorded && this.deps.restore !== undefined) {
+      const undo: PickerUndoSession = {
+        token: this.deps.token?.() ?? bytesToHex(randomBytes(16)),
+        tabId,
+        d: draft.d,
+        expiresAt: this.#now() + PICKER_UNDO_SECONDS,
+      };
+      await store.session.set({ [SESSION_PICKER_UNDO]: undo });
+      return { ...response, undo: undo.token };
+    }
+    return response;
+  }
+
+  /**
+   * The success notice's Undo in `tabId`: restores the draft the last pick inserted, if the token
+   * is that pick's, from the same tab, and not expired. The token works once.
+   */
+  async undo(tabId: number, message: PickerUndoMessage): Promise<UndoResponse> {
+    const { store } = this.deps;
+    const session = (await store.session.get([SESSION_PICKER_UNDO]))[SESSION_PICKER_UNDO] as
+      | PickerUndoSession
+      | undefined;
+    if (
+      session === undefined ||
+      session.token !== message.token ||
+      session.tabId !== tabId ||
+      session.expiresAt < this.#now() ||
+      this.deps.restore === undefined
+    ) {
+      return { state: 'expired' };
+    }
+    await store.session.remove([SESSION_PICKER_UNDO]);
+    try {
+      await this.deps.restore(session.d);
+      return { state: 'restored' };
+    } catch (error) {
+      const text =
+        error instanceof SetupError ? error.message : String((error as Error)?.message ?? error);
+      return { state: 'failed', message: text };
+    }
+  }
+
+  #now(): number {
+    return this.deps.now?.() ?? Math.floor(Date.now() / 1000);
   }
 }

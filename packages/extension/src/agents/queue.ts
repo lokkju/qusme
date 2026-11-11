@@ -47,6 +47,9 @@ export type AgentDeps = SetupDeps & {
   approvalRetryMs?: readonly number[];
 };
 
+/** What opening the queue's storage relays needs: the store, the relay client and the clock. */
+export type QueueDeps = Pick<AgentDeps, 'store' | 'socket' | 'relayTimeoutMs' | 'now'>;
+
 export interface QueueSession {
   queue: Signer;
   pubkey: string;
@@ -71,7 +74,7 @@ export const LOCKED_MESSAGE = 'Unlock the queue first.';
  * Opens every storage relay as the queue key (AUTH where a relay asks, 9.2). Throws while the
  * queue is locked (spec 11.8) or when any storage relay cannot be reached.
  */
-export async function openQueue(deps: AgentDeps): Promise<QueueSession> {
+export async function openQueue(deps: QueueDeps): Promise<QueueSession> {
   const unlocked = await deps.store.unlocked();
   if (unlocked === undefined) throw new SetupError(LOCKED_MESSAGE);
   const queue = createLocalSigner(unlocked.queueKey);
@@ -94,7 +97,7 @@ export async function openQueue(deps: AgentDeps): Promise<QueueSession> {
 
 /** Runs `fn` with an open session and closes its connections afterwards. */
 export async function withQueue<T>(
-  deps: AgentDeps,
+  deps: QueueDeps,
   fn: (session: QueueSession) => Promise<T>
 ): Promise<T> {
   const session = await openQueue(deps);

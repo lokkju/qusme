@@ -22,7 +22,7 @@ import type {
 import { PAGE_DONE_MESSAGE } from '../protocol.ts';
 import { accessibleName, collapse, findByLocator } from './accessible.ts';
 import { mountPicker, type PickerHandle } from './picker.ts';
-import { type Prompt, showPrompt } from './prompt.ts';
+import { type Prompt, type PromptAction, showPrompt } from './prompt.ts';
 import { IMMEDIATE_STRATEGIES, placeCaretAtEnd } from './strategies.ts';
 import {
   type EditableTarget,
@@ -42,7 +42,7 @@ export interface PageEnv {
   /** Writes text to the clipboard; false when the page may not. */
   writeClipboard(text: string): Promise<boolean>;
   /** Shows a notice in the page; defaults to {@link showPrompt}. */
-  prompt?(message: string, onClose?: () => void): Prompt;
+  prompt?(message: string, onClose?: () => void, action?: PromptAction): Prompt;
   /** How long a strategy's effect may take to show, in milliseconds. Defaults to 400. */
   settleMs?: number;
   /** How often to read the target back while waiting, in milliseconds. Defaults to 25. */
@@ -52,6 +52,8 @@ export interface PageEnv {
    * background's answer, which for an insertion that ran is reported by that insertion itself.
    */
   pick?(token: string, d: string): Promise<unknown>;
+  /** Asks the extension to undo a picked insertion with the token its answer carried. */
+  undo?(token: string): Promise<unknown>;
   /** Asks the extension to open its popup; false when the browser refused. */
   openPopup?(): Promise<boolean>;
   /** Mounts the picker; defaults to {@link mountPicker}. Tests use it to reach the closed root. */
@@ -62,6 +64,9 @@ export interface PageEnv {
 export const DEFAULT_WAIT_MS = 120_000;
 /** How long a failure notice stays up. */
 const FAILURE_NOTICE_MS = 8000;
+/** How long the success notice after a pick stays up (critique P6), longer when it offers Undo. */
+const SUCCESS_NOTICE_MS = 4000;
+const UNDO_NOTICE_MS = 6000;
 
 const FAILURE_TEXT: Record<PageFailure, string> = {
   partial: "qus.me: the field changed but doesn't match the draft. Check the field before posting.",
@@ -149,7 +154,9 @@ export function createPageApi(env: PageEnv): PageApi {
   const settleMs = env.settleMs ?? 400;
   const pollMs = env.pollMs ?? 25;
   const prompt =
-    env.prompt ?? ((message: string, onClose?: () => void) => showPrompt(doc, message, onClose));
+    env.prompt ??
+    ((message: string, onClose?: () => void, action?: PromptAction) =>
+      showPrompt(doc, message, onClose, action));
   let cancelWaiting: ((reason: PageFailure) => void) | undefined;
 
   const sleep = (ms: number) => new Promise<void>((resolve) => view.setTimeout(resolve, ms));
@@ -339,12 +346,48 @@ export function createPageApi(env: PageEnv): PageApi {
     not_found: "qus.me: that draft isn't in the queue any more.",
     expired: 'qus.me: this list was out of date. Press the shortcut again.',
   };
+  /** A notice that takes itself down after `ms`. */
+  const briefly = (text: string, ms: number, action?: PromptAction) => {
+    const notice = prompt(text, undefined, action);
+    view.setTimeout(() => notice.remove(), ms);
+  };
+  const reportUndo = (response: unknown) => {
+    const r = (typeof response === 'object' && response !== null ? response : {}) as {
+      state?: unknown;
+      message?: unknown;
+    };
+    if (r.state === 'restored')
+      briefly('qus.me: the draft is back in your queue.', SUCCESS_NOTICE_MS);
+    else
+      briefly(
+        typeof r.message === 'string'
+          ? `qus.me couldn't undo that: ${r.message}`
+          : "qus.me couldn't undo that. Restore the draft from the Archive in qus.me.",
+        FAILURE_NOTICE_MS
+      );
+  };
   const reportPick = (response: unknown) => {
     const r = (typeof response === 'object' && response !== null ? response : {}) as {
       state?: unknown;
       reason?: unknown;
       message?: unknown;
+      undo?: unknown;
     };
+    if (r.state === 'inserted') {
+      // The text is in the field; say so briefly, with Undo when the insertion was recorded and
+      // so archived the draft (critique P6). Nothing about the draft's text.
+      const token = r.undo;
+      if (typeof token === 'string' && env.undo !== undefined) {
+        const undo = env.undo;
+        briefly('qus.me: inserted.', UNDO_NOTICE_MS, {
+          label: 'Undo',
+          onClick: () => void undo(token).then(reportUndo, () => reportUndo(undefined)),
+        });
+      } else {
+        briefly('qus.me: inserted.', SUCCESS_NOTICE_MS);
+      }
+      return;
+    }
     let text: string | undefined;
     if (typeof r.state === 'string') text = PICK_TEXT[r.state];
     if (r.state === 'failed' && r.reason === 'injection')

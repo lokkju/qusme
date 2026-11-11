@@ -26,6 +26,7 @@ import {
   type AgentDeps,
   after,
   publishOrThrow,
+  type QueueDeps,
   type QueueSession,
   withQueue,
 } from '../agents/queue.ts';
@@ -63,7 +64,7 @@ async function readDraft(session: QueueSession, d: string): Promise<DraftWrap> {
  */
 async function republish(
   d: string,
-  deps: AgentDeps,
+  deps: QueueDeps,
   change: (value: FieldValue) => FieldValue
 ): Promise<CachedDraft | undefined> {
   const { pubkey, value, updatedAt } = await withQueue(deps, async (session) => {
@@ -84,7 +85,7 @@ async function republish(
 }
 
 async function updateCache(
-  deps: AgentDeps,
+  deps: Pick<QueueDeps, 'store'>,
   pubkey: string,
   d: string,
   value: FieldValue,
@@ -182,6 +183,6 @@ export async function dismissDraft(d: string, deps: AgentDeps): Promise<CachedDr
  * Restores an archived draft (dismissed or inserted) to `active`, keeping its `inserted` tags
  * (7.1).
  */
-export async function restoreDraft(d: string, deps: AgentDeps): Promise<CachedDraft | undefined> {
+export async function restoreDraft(d: string, deps: QueueDeps): Promise<CachedDraft | undefined> {
   return republish(d, deps, (value) => withStatus(value, (s) => s !== 'active', 'active'));
 }

@@ -1,7 +1,9 @@
 /**
  * The keyboard picker (spec 11.5): a small list of drafts anchored at the focused field, opened
- * by the extension's shortcut. Type to filter, arrow keys to choose, Enter to insert, Escape to
- * close.
+ * by the extension's shortcut. Type to filter, arrow keys to choose, Enter to insert, a digit 1 to
+ * 9 to insert that row while the filter is empty, Tab to show or hide the drafts for other sites
+ * when the page has drafts of its own, Escape to close. When nothing matches the page, the other
+ * drafts list under their heading with no toggle (critique P1, P2).
  *
  * It lives in a closed shadow root on a plain `<div>` with no qus.me id, class or attribute, so
  * the page's scripts can neither find it by name nor reach into it, and its styles sit entirely
@@ -80,13 +82,18 @@ ${schemeRules('.p')}
   text-overflow: ellipsis; }
 .m { margin: 0; padding: 12px 14px 4px; color: var(--fg); }
 .l { list-style: none; margin: 0; padding: 6px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
-.g { padding: 10px 10px 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.g { display: flex; align-items: baseline; gap: 8px; padding: 10px 10px 2px; font-size: 11px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.g.t2 { cursor: pointer; }
+.g .r { margin-left: auto; font-weight: 400; letter-spacing: normal; text-transform: none; font-size: 12px; }
 .o { padding: 9px 10px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
 .o[aria-selected="true"] { background: var(--tint); }
 .t { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3;
   -webkit-box-orient: vertical; overflow: hidden; }
 .o .s { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 12px; color: var(--muted); }
 .o .s > span { flex: none; white-space: nowrap; }
+.o .s .d { flex: none; min-width: 16px; padding: 0 3px; border: 1px solid var(--edge); border-radius: 4px; text-align: center;
+  font: 11px/15px ${MONO}; color: var(--fg); background: var(--surface); }
 .o .s .w { color: var(--fg); font-weight: 500; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
 .o .s .e { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .o .s .n { margin-left: auto; flex: none; font-variant-numeric: tabular-nums; }
@@ -189,36 +196,44 @@ export function mountPicker(
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-label', 'Drafts');
   const actions = el('div', 'a');
-  const toggle = el('button', 'btn');
-  toggle.type = 'button';
   const openPopup = el('button', 'btn');
   openPopup.type = 'button';
-  actions.append(toggle, openPopup);
+  actions.append(openPopup);
 
   const keys = el('div', 'k');
-  for (const [k, label] of [
-    ['Enter', 'insert'],
-    ['↑ ↓', 'choose'],
-    ['Esc', 'close'],
-  ] as const) {
-    const span = el('span');
-    span.append(el('kbd', undefined, k), doc.createTextNode(` ${label}`));
-    keys.append(span);
-  }
+  const keyHints = (hints: readonly (readonly [string, string])[]) => {
+    keys.replaceChildren();
+    for (const [k, label] of hints) {
+      const span = el('span');
+      span.append(el('kbd', undefined, k), doc.createTextNode(` ${label}`));
+      keys.append(span);
+    }
+  };
 
   panel.append(head, message, list, actions, keys);
   root.append(style, panel);
 
-  let showOthers = false;
+  // The other sites' drafts sit behind Tab only while the page has drafts of its own.
+  const canToggle = view.state === 'ready' && view.here.length > 0 && view.others.length > 0;
+  let showOthers = view.here.length === 0;
   let visible: PickerItem[] = [];
   let selected = 0;
   let closed = false;
+
+  const toggleOthers = () => {
+    showOthers = !showOthers;
+    if (!showOthers && selected >= view.here.length) selected = 0;
+    render();
+    position();
+  };
 
   const render = () => {
     const words = filter.value.toLocaleLowerCase().split(/\s+/).filter(Boolean);
     const here = view.here.filter((i) => matches(i, words));
     const others = showOthers ? view.others.filter((i) => matches(i, words)) : [];
     visible = [...here, ...others];
+    // Digits pick only while the filter is empty, so they label rows only then.
+    const digits = words.length === 0 && filter.value === '';
     if (selected >= visible.length) selected = Math.max(0, visible.length - 1);
 
     list.replaceChildren();
@@ -230,6 +245,11 @@ export function mountPicker(
       li.dataset.i = String(index);
       // The popup's row meta (ui/draftRow.tsx), from the same segments: who, where, when, count.
       const meta = el('span', 's');
+      if (digits && index < 9) {
+        const digit = el('span', 'd', String(index + 1));
+        digit.setAttribute('aria-hidden', 'true');
+        meta.append(digit);
+      }
       rowSegments(item.meta).forEach((segment, i) => {
         if (i > 0) meta.append(doc.createTextNode('·'));
         meta.append(el('span', SEGMENT_CLASS[segment.key], segment.text));
@@ -243,20 +263,34 @@ export function mountPicker(
     here.forEach((item, i) => {
       list.append(option(item, i));
     });
-    if (others.length > 0) {
-      const label = el('li', 'g', 'Other sites');
+    if (view.state === 'ready' && (others.length > 0 || (canToggle && !showOthers))) {
+      // The group's heading; while the page has drafts of its own it also says how to toggle it,
+      // and a click on it does the same for the mouse.
+      const label = el('li', canToggle ? 'g t2' : 'g');
       label.setAttribute('role', 'presentation');
+      label.append(
+        doc.createTextNode(showOthers ? 'Other sites' : `Other sites (${view.others.length})`)
+      );
+      if (canToggle) {
+        const hint = el('span', 'r');
+        hint.append(
+          el('kbd', undefined, 'Tab'),
+          doc.createTextNode(showOthers ? ' to hide' : ' to show')
+        );
+        label.append(hint);
+        label.dataset.toggle = '';
+      }
       list.append(label);
       others.forEach((item, i) => {
         list.append(option(item, here.length + i));
       });
     }
-    list.hidden = visible.length === 0;
     if (visible.length > 0) filter.setAttribute('aria-activedescendant', `o${selected}`);
     else filter.removeAttribute('aria-activedescendant');
     root.getElementById?.(`o${selected}`)?.scrollIntoView?.({ block: 'nearest' });
 
     const total = view.here.length + (showOthers ? view.others.length : 0);
+    list.hidden = list.childElementCount === 0;
     context.textContent =
       words.length > 0
         ? `${view.context ? `${view.context} · ` : ''}${visible.length} of ${total}`
@@ -266,16 +300,23 @@ export function mountPicker(
     if (view.state === 'locked') text = 'Your qus.me queue is locked.';
     else if (view.state === 'setup') text = "qus.me isn't set up in this browser yet.";
     else if (visible.length === 0 && words.length > 0) text = 'No drafts match.';
-    else if (view.here.length === 0 && !showOthers) text = 'No drafts for this page.';
+    else if (view.here.length === 0) text = 'No drafts for this page.';
     message.textContent = text;
     message.hidden = text === '';
 
-    toggle.hidden = view.state !== 'ready' || view.others.length === 0;
-    toggle.textContent = `${showOthers ? 'Hide' : 'Show'} drafts for other sites (${view.others.length})`;
-    toggle.setAttribute('aria-expanded', String(showOthers));
     openPopup.hidden = !(view.state !== 'ready' || view.here.length === 0);
     openPopup.textContent = view.state === 'locked' ? 'Open qus.me to unlock' : 'Open qus.me';
-    actions.hidden = toggle.hidden && openPopup.hidden;
+    actions.hidden = openPopup.hidden;
+
+    const hints: [string, string][] = [];
+    if (view.state === 'ready' && visible.length > 0) {
+      hints.push(['Enter', 'insert'], ['↑ ↓', 'choose']);
+      if (digits)
+        hints.push([visible.length > 1 ? `1–${Math.min(9, visible.length)}` : '1', 'pick']);
+    }
+    if (canToggle) hints.push(['Tab', showOthers ? 'hide other sites' : 'other sites']);
+    hints.push(['Esc', 'close']);
+    keyHints(hints);
   };
 
   const select = (index: number) => {
@@ -367,10 +408,42 @@ export function mountPicker(
     } else if (key.key === 'Enter' && fromFilter && !key.isComposing && view.state === 'ready') {
       key.preventDefault();
       pick(selected);
+    } else if (
+      key.key === 'Tab' &&
+      fromFilter &&
+      !key.isComposing &&
+      !key.altKey &&
+      !key.ctrlKey &&
+      !key.metaKey &&
+      canToggle
+    ) {
+      key.preventDefault();
+      toggleOthers();
+    } else if (
+      /^[1-9]$/.test(key.key) &&
+      fromFilter &&
+      !key.isComposing &&
+      !key.altKey &&
+      !key.ctrlKey &&
+      !key.metaKey &&
+      view.state === 'ready' &&
+      filter.value === ''
+    ) {
+      // A digit alone is never a useful filter, so on an empty filter it picks that row (P2).
+      const index = Number(key.key) - 1;
+      if (index < visible.length) {
+        key.preventDefault();
+        pick(index);
+      }
     }
   });
   listen(list, 'click', (event) => {
     if (!event.isTrusted) return;
+    if ((event.target as Element | null)?.closest?.('[data-toggle]')) {
+      toggleOthers();
+      filter.focus();
+      return;
+    }
     const option = (event.target as Element | null)?.closest?.('[role="option"]');
     const index = Number((option as HTMLElement | null | undefined)?.dataset.i);
     if (Number.isInteger(index)) pick(index);
@@ -379,14 +452,6 @@ export function mountPicker(
     if (!event.isTrusted) return;
     selected = 0;
     render();
-  });
-  listen(toggle, 'click', (event) => {
-    if (!event.isTrusted) return;
-    showOthers = !showOthers;
-    if (!showOthers && selected >= view.here.length) selected = 0;
-    render();
-    position();
-    filter.focus();
   });
   listen(openPopup, 'click', (event) => {
     if (!event.isTrusted) return;

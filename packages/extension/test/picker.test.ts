@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountPicker, type PickerHandle } from '../src/insertion/page/picker.ts';
+import type { PromptAction } from '../src/insertion/page/prompt.ts';
 import { createPageApi, type PageEnv } from '../src/insertion/page/run.ts';
 import type { PickerView } from '../src/insertion/protocol.ts';
 
@@ -27,7 +28,7 @@ const view = (over: Partial<PickerView> = {}): PickerView => ({
       meta: { who: 'You', when: 'just now', destination: 'mastodon.social · me' },
     },
   ],
-  context: 'X as @lokkju',
+  context: '@lokkju',
   ...over,
 });
 
@@ -46,15 +47,22 @@ interface Harness {
   env: PageEnv;
   picks: [string, string][];
   prompts: string[];
+  /** The action each prompt offered (Undo), by index. */
+  actions: (PromptAction | undefined)[];
+  undos: string[];
   popups: number;
   handle(): PickerHandle;
 }
 
-function harness(options: { pickAnswer?: unknown; popupOpens?: boolean } = {}): Harness {
+function harness(
+  options: { pickAnswer?: unknown; popupOpens?: boolean; undoAnswer?: unknown } = {}
+): Harness {
   let last: PickerHandle | undefined;
   const h: Harness = {
     picks: [],
     prompts: [],
+    actions: [],
+    undos: [],
     popups: 0,
     handle: () => {
       if (last === undefined) throw new Error('no picker');
@@ -64,9 +72,14 @@ function harness(options: { pickAnswer?: unknown; popupOpens?: boolean } = {}): 
       document,
       notify: () => undefined,
       writeClipboard: async () => true,
-      prompt: (message) => {
+      prompt: (message, _onClose, action) => {
         h.prompts.push(message);
+        h.actions.push(action);
         return { update: () => undefined, remove: () => undefined };
+      },
+      undo: async (token) => {
+        h.undos.push(token);
+        return options.undoAnswer ?? { state: 'restored' };
       },
       pick: async (token, d) => {
         h.picks.push([token, d]);
@@ -165,7 +178,7 @@ describe('keyboard picker in the page', () => {
       'Thread (1/4): what shipping a queue taught us',
     ]);
     expect(options(p)[0]?.selected).toBe(true);
-    expect(p.root.textContent).toContain('X as @lokkju · 2 of 3');
+    expect(p.root.textContent).toContain('@lokkju · 2 of 3');
 
     typeFilter(p, 'claude ship');
     expect(options(p).map((o) => o.text)).toEqual(['Shipped: drafts land in your composer.']);
@@ -195,6 +208,7 @@ describe('keyboard picker in the page', () => {
     );
     const meta = h.handle().root.querySelector('[role="option"] .s');
     expect([...(meta?.children ?? [])].map((c) => c.textContent)).toEqual([
+      '1',
       '<b>Bot</b>',
       '2 h ago',
       '301 / 280',
@@ -220,8 +234,90 @@ describe('keyboard picker in the page', () => {
     expect(ta.selectionStart).toBe(6);
     expect(h.picks).toEqual([['tok-1', 'd2']]);
     await tick();
-    // The insertion reports its own outcome; an inserted draft needs no notice.
-    expect(h.prompts).toEqual([]);
+    // A short notice that it went in (P6), with no Undo: this answer carried no token.
+    expect(h.prompts).toEqual(['qus.me: inserted.']);
+    expect(h.actions).toEqual([undefined]);
+  });
+
+  it('offers Undo after a recorded pick, and sends the one-time token back', async () => {
+    textarea().focus();
+    const h = harness({
+      pickAnswer: { state: 'inserted', strategy: 'insertText', recorded: true, undo: 'undo-1' },
+    });
+    createPageApi(h.env).openPicker(view());
+    filterOf(h.handle()).dispatchEvent(key('Enter'));
+    await tick();
+    expect(h.prompts).toEqual(['qus.me: inserted.']);
+    expect(h.actions[0]?.label).toBe('Undo');
+    h.actions[0]?.onClick();
+    await tick();
+    expect(h.undos).toEqual(['undo-1']);
+    expect(h.prompts.at(-1)).toBe('qus.me: the draft is back in your queue.');
+  });
+
+  it('says so when the Undo could not run', async () => {
+    textarea().focus();
+    const h = harness({
+      pickAnswer: { state: 'inserted', strategy: 'insertText', recorded: true, undo: 'undo-1' },
+      undoAnswer: { state: 'expired' },
+    });
+    createPageApi(h.env).openPicker(view());
+    filterOf(h.handle()).dispatchEvent(key('Enter'));
+    await tick();
+    h.actions[0]?.onClick();
+    await tick();
+    expect(h.prompts.at(-1)).toBe(
+      "qus.me couldn't undo that. Restore the draft from the Archive in qus.me."
+    );
+  });
+
+  it('picks the nth row with a digit while the filter is empty, and shows the digits', () => {
+    textarea().focus();
+    const h = harness();
+    createPageApi(h.env).openPicker(view());
+    const p = h.handle();
+    const digits = [...p.root.querySelectorAll('[role="option"] .d')].map((d) => d.textContent);
+    expect(digits).toEqual(['1', '2', '3']);
+    expect(p.root.querySelector('.k')?.textContent).toContain('1–3 pick');
+    // A digit past the last row does nothing, and the filter stays empty for typing.
+    filterOf(p).dispatchEvent(key('7'));
+    expect(h.picks).toEqual([]);
+    expect(p.host.isConnected).toBe(true);
+    filterOf(p).dispatchEvent(key('2'));
+    expect(h.picks).toEqual([['tok-1', 'd2']]);
+    expect(p.host.isConnected).toBe(false);
+  });
+
+  it('types a digit into a filter that has text, and drops the digit labels', () => {
+    textarea().focus();
+    const h = harness();
+    createPageApi(h.env).openPicker(view());
+    const p = h.handle();
+    typeFilter(p, 'ship');
+    const event = key('1');
+    filterOf(p).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(h.picks).toEqual([]);
+    expect(p.root.querySelectorAll('[role="option"] .d')).toHaveLength(0);
+    expect(p.root.querySelector('.k')?.textContent).not.toContain('pick');
+    p.close('escape');
+  });
+
+  it('ignores a digit with a modifier or from an untrusted event', () => {
+    textarea().focus();
+    const h = harness();
+    createPageApi(h.env).openPicker(view());
+    const p = h.handle();
+    filterOf(p).dispatchEvent(
+      trusted(
+        new KeyboardEvent('keydown', { key: '1', altKey: true, bubbles: true, composed: true })
+      )
+    );
+    filterOf(p).dispatchEvent(
+      new KeyboardEvent('keydown', { key: '1', bubbles: true, composed: true })
+    );
+    expect(h.picks).toEqual([]);
+    p.close('escape');
   });
 
   it('inserts a draft the user clicks', () => {
@@ -394,39 +490,61 @@ describe('keyboard picker in the page', () => {
     p.close('escape');
   });
 
-  it('with nothing for this page, says so, offers the popup and the other drafts', () => {
+  it('with nothing for this page, says so and lists the other drafts with no toggle', () => {
     textarea().focus();
     const h = harness();
     createPageApi(h.env).openPicker(view({ here: [], context: '' }));
     const p = h.handle();
     expect(messageOf(p)).toBe('No drafts for this page.');
     expect(buttonNamed(p, /^Open qus\.me$/)).toBeDefined();
-    const toggle = buttonNamed(p, /other sites/);
-    expect(toggle?.textContent).toBe('Show drafts for other sites (1)');
-    toggle?.dispatchEvent(trusted(new MouseEvent('click', { bubbles: true })));
+    expect(buttonNamed(p, /other sites/)).toBeUndefined();
+    // Listed at once under their heading, reachable with the arrow keys and Enter (P1).
+    expect(p.root.querySelector('.g')?.textContent).toBe('Other sites');
     expect(options(p)).toEqual([{ text: 'A post for Mastodon', selected: true }]);
-    expect(messageOf(p)).toBe('');
+    // Tab has nothing to toggle, so it is left to the browser.
+    const tab = key('Tab');
+    filterOf(p).dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(false);
+    expect(options(p)).toHaveLength(1);
+    expect(p.root.querySelector('.k')?.textContent).not.toContain('Tab');
     filterOf(p).dispatchEvent(key('Enter'));
     expect(h.picks).toEqual([['tok-1', 'd9']]);
   });
 
-  it('lists drafts for other sites after the page’s own, behind the toggle', () => {
+  it('opens and closes the other sites’ drafts with Tab, after the page’s own', () => {
     textarea().focus();
     const h = harness();
     createPageApi(h.env).openPicker(view());
     const p = h.handle();
     expect(options(p)).toHaveLength(3);
-    buttonNamed(p, /other sites/)?.dispatchEvent(
-      trusted(new MouseEvent('click', { bubbles: true }))
-    );
+    // No mouse-only button: the group's heading says Tab, and the footer says so too (P1).
+    expect(buttonNamed(p, /other sites/)).toBeUndefined();
+    expect(p.root.querySelector('.g')?.textContent).toBe('Other sites (1)Tab to show');
+    expect(p.root.querySelector('.k')?.textContent).toContain('Tab other sites');
+    const tab = key('Tab');
+    filterOf(p).dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(p.root.activeElement).toBe(filterOf(p));
     expect(options(p).map((o) => o.text)).toEqual([
       'Shipped: drafts land in your composer.',
       'Thread (1/4): what shipping a queue taught us',
       'Lunch is at noon',
       'A post for Mastodon',
     ]);
-    expect(buttonNamed(p, /other sites/)?.textContent).toBe('Hide drafts for other sites (1)');
-    p.close('escape');
+    expect(p.root.querySelector('.g')?.textContent).toBe('Other sitesTab to hide');
+    // The fourth row is reachable by arrow and by its digit.
+    filterOf(p).dispatchEvent(key('ArrowUp'));
+    expect(options(p).at(-1)?.selected).toBe(true);
+    filterOf(p).dispatchEvent(key('Tab'));
+    expect(options(p)).toHaveLength(3);
+    expect(options(p)[0]?.selected).toBe(true);
+    // A click on the heading toggles it for the mouse.
+    (p.root.querySelector('.g') as HTMLElement).dispatchEvent(
+      trusted(new MouseEvent('click', { bubbles: true }))
+    );
+    expect(options(p)).toHaveLength(4);
+    filterOf(p).dispatchEvent(key('4'));
+    expect(h.picks).toEqual([['tok-1', 'd9']]);
   });
 
   it('tells the user when the pick could not run', async () => {
