@@ -156,6 +156,35 @@ html body {
   &:hover {
     color: var(--color-accent-hover);
   }
+  /* The same disabled look as the buttons' muted text (components.tsx, critique S4). */
+  &:disabled {
+    color: var(--color-muted);
+    text-decoration: none;
+    cursor: default;
+  }
+}
+
+/*
+ * The unlock progress line's moving bar. A transform animation runs on the compositor, so it keeps
+ * moving while scrypt holds the main thread.
+ */
+@keyframes qusme-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@utility progress-indeterminate {
+  animation: qusme-indeterminate 1.4s ease-in-out infinite;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    transform: none;
+    width: 100%;
+    opacity: 0.5;
+  }
 }
 
 /* A key name, as the picker's footer shows it. */

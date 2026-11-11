@@ -1132,7 +1132,8 @@ describe('agent screens', () => {
     expect(html).toContain('&lt;b>meta&lt;/b>');
     expect(html).toMatch(/text-2xl[^>]*>evil\.example</);
     expect(html).toContain('Only approve if you just connected an agent from evil.example.');
-    expect(html).toContain('The name is whatever the client says it is');
+    // The host-large card makes the point; the extra trust sentences went (critique A4).
+    expect(html).not.toContain('The name is whatever the client says it is');
     // Client ID, scope and agent key sit under Details.
     expect(html.indexOf('<summary')).toBeLessThan(html.indexOf('Client ID<'));
   });
@@ -1215,8 +1216,8 @@ describe('agent screens', () => {
       />
     );
     expect(html).toMatch(/id="allow-new-destinations"(?![^>]*checked)[^>]*>/);
-    expect(html).toContain('Let it propose new destinations');
-    expect(html).toContain('each new one waits as pending until you confirm it');
+    expect(html).toContain('Let it add new accounts');
+    expect(html).toContain('Each one waits for your OK before its drafts show.');
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script>x&lt;/script>');
   });
@@ -1254,7 +1255,12 @@ describe('agent screens', () => {
     expect(html).toContain('&lt;i>mine&lt;/i>');
     expect(html).toContain('calls itself &lt;u>Spoof&lt;/u>');
     expect(html).toContain('&lt;em>x / new&lt;/em>');
-    expect(html).toContain('Reject and dismiss its drafts');
+    // Reject is a plain button; its consequence is in the confirmation (critique A8).
+    expect(html).toContain('>Allow<');
+    expect(html).toContain('>Reject…<');
+    expect(html).not.toContain('Reject and dismiss its drafts');
+    // No agent key on the row (critique A6).
+    expect(html).not.toContain('npub1');
   });
 
   it('shows a revocation still being finished with qus.me, with Retry and no Revoke', () => {

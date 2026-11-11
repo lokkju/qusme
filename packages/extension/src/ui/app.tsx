@@ -1,6 +1,6 @@
 import { npubEncode } from 'nostr-tools/nip19';
 import type { ComponentChildren } from 'preact';
-import { useCallback, useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { definitionSource } from '../insertion/definitions.ts';
 import { type KeyStatus, type PendingImport, WrongPassphrase } from '../keyStore.ts';
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
@@ -42,6 +42,11 @@ export function App(props: {
   deps: SetupDeps;
   openInTab?: () => void;
   approveCode?: string;
+  /**
+   * Reads the approval code off the active tab when it is a qus.me sign-in page (critique A1);
+   * the popup then opens on the approval with the code filled in.
+   */
+  tabApprovalCode?: () => Promise<string | undefined>;
   insertion?: InsertionUiDeps;
 }) {
   const { deps } = props;
@@ -54,6 +59,8 @@ export function App(props: {
   // The toolbar's chip (the home list reports it after detection) and the menu's Agents count.
   const [chip, setChip] = useState<string | undefined>();
   const [waiting, setWaiting] = useState(0);
+  // The code on the sign-in page this popup opened over, if it opened over one.
+  const [tabCode, setTabCode] = useState<string | undefined>();
 
   const refresh = useCallback(async () => {
     const next = await deps.store.status();
@@ -67,11 +74,26 @@ export function App(props: {
     void refresh();
   }, [refresh]);
 
+  // Once, on open: a popup opened over a sign-in page goes to the approval with its code, unless
+  // it was opened with one already or the user has gone somewhere else meanwhile.
+  useEffect(() => {
+    if (props.approveCode !== undefined || props.tabApprovalCode === undefined) return;
+    void props
+      .tabApprovalCode()
+      .then((code) => {
+        if (code === undefined) return;
+        setTabCode(code);
+        setRoute((current) => (current === 'home' ? 'approve-agent' : current));
+      })
+      .catch(() => undefined);
+  }, []);
+
   const home = () => {
     setRoute('home');
     void refresh();
   };
 
+  const approveCode = props.approveCode ?? tabCode;
   let body: ComponentChildren;
   if (status === undefined) {
     body = <p>Loading…</p>;
@@ -80,14 +102,18 @@ export function App(props: {
   } else if (route === 'pair' || (status.state === 'empty' && pending !== undefined)) {
     body = <PairScreen deps={deps} pending={pending} onDone={home} onBack={home} />;
   } else if (route === 'recover') {
-    body = <RecoverScreen deps={deps} onDone={home} onBack={home} />;
+    body = (
+      <RecoverScreen deps={deps} forgot={status.state === 'locked'} onDone={home} onBack={home} />
+    );
   } else if (route === 'pair-source' && status.state === 'unlocked') {
     body = <PairSourceScreen deps={deps} onDone={home} />;
   } else if (route === 'approve-agent' && status.state === 'unlocked') {
     body = (
       <ApproveAgentScreen
         deps={deps}
-        {...(props.approveCode !== undefined && { initialCode: props.approveCode })}
+        {...(approveCode !== undefined && { initialCode: approveCode })}
+        fromTab={props.approveCode === undefined && tabCode !== undefined}
+        source={props.insertion?.definitions ?? definitionSource()}
         onDone={home}
         onBack={home}
       />
@@ -131,7 +157,17 @@ export function App(props: {
   } else if (status.state === 'empty') {
     body = <Welcome onRoute={setRoute} />;
   } else if (status.state === 'locked') {
-    body = <Unlock deps={deps} onUnlocked={home} />;
+    body = (
+      <Unlock
+        deps={deps}
+        onUnlocked={() => {
+          // An approval the popup opened for waits behind Unlock; everything else goes home.
+          if (route !== 'approve-agent') setRoute('home');
+          void refresh();
+        }}
+        onForgot={() => setRoute('recover')}
+      />
+    );
   } else {
     body = (
       <Unlocked
@@ -166,8 +202,13 @@ export function App(props: {
           />
         )}
       </Toolbar>
-      {/* The home list ends with its own padding or the tip, which sticks to the bottom edge. */}
-      <div class={`min-h-0 flex-1 overflow-y-auto px-4 pt-3 ${showHome ? '' : 'pb-4'}`}>
+      {/*
+       * The home list ends with its own padding or the tip, which sticks to the bottom edge; so
+       * does a screen with a pinned bottom bar (components.tsx BottomBar).
+       */}
+      <div
+        class={`min-h-0 flex-1 overflow-y-auto px-4 pt-3 ${showHome ? '' : 'pb-4 has-[[data-bottom-bar]]:pb-0'}`}
+      >
         {body}
         {props.openInTab &&
           (route === 'create' ||
@@ -205,23 +246,47 @@ function Welcome(props: { onRoute: (route: Route) => void }) {
   );
 }
 
-function Unlock(props: { deps: SetupDeps; onUnlocked: () => void }) {
+/** Resolves after the browser has painted, so a busy state shows before a blocking step. */
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
+/**
+ * Unlock (critique U1): the passphrase focused on open, a progress line while scrypt runs (it
+ * blocks the page for a second or more, so the line is painted first), and a way to recovery by
+ * code for a forgotten passphrase.
+ */
+export function Unlock(props: { deps: SetupDeps; onUnlocked: () => void; onForgot?: () => void }) {
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const field = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    field.current?.focus();
+  }, []);
   const submit = async (event: Event) => {
     event.preventDefault();
     setBusy(true);
     setError(undefined);
+    let unlocked = false;
     try {
+      await nextPaint();
       await props.deps.store.unlock(passphrase);
       setPassphrase('');
-      props.onUnlocked();
+      unlocked = true;
     } catch (e) {
       setError(messageOf(e));
     } finally {
       setBusy(false);
     }
+    if (unlocked) props.onUnlocked();
+    else field.current?.focus();
   };
   return (
     <Screen title="Unlock">
@@ -229,10 +294,12 @@ function Unlock(props: { deps: SetupDeps; onUnlocked: () => void }) {
         <Field id="unlock-passphrase" label="Passphrase">
           <input
             id="unlock-passphrase"
+            ref={field}
             type="password"
             autocomplete="current-password"
             class={inputClass}
             value={passphrase}
+            disabled={busy}
             onInput={(e) => setPassphrase(e.currentTarget.value)}
           />
         </Field>
@@ -240,7 +307,24 @@ function Unlock(props: { deps: SetupDeps; onUnlocked: () => void }) {
         <Button type="submit" class="mt-3" disabled={busy || passphrase === ''}>
           {busy ? 'Unlocking…' : 'Unlock'}
         </Button>
+        <div role="status" class="mt-3" data-unlock-progress>
+          {busy && (
+            <>
+              <div class="h-1 overflow-hidden rounded-full bg-line" aria-hidden="true">
+                <div class="progress-indeterminate h-full w-1/3 rounded-full bg-accent" />
+              </div>
+              <p class="mt-1.5 text-muted text-xs">Opening your queue, a few seconds…</p>
+            </>
+          )}
+        </div>
       </form>
+      {props.onForgot !== undefined && (
+        <p class="mt-2 text-xs">
+          <button type="button" class="link" onClick={props.onForgot}>
+            Forgot your passphrase? Recover with your code
+          </button>
+        </p>
+      )}
     </Screen>
   );
 }

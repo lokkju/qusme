@@ -30,6 +30,14 @@ const BUTTON_SIZE: Record<ButtonSize, string> = {
   xs: 'min-h-7 px-2.5 py-0.5 text-xs',
 };
 
+/**
+ * Every disabled button, whatever its look: the plain look with muted text, so a disabled primary
+ * never reads as a third colour (critique S4). Variants come after base utilities in the
+ * stylesheet, so these win over the look's border, background and text.
+ */
+const BUTTON_DISABLED =
+  'disabled:cursor-default disabled:border-line disabled:bg-band disabled:text-muted';
+
 /** The popup's button: 6px corners like the site's, in three looks and three sizes. */
 export function Button(
   props: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }
@@ -38,7 +46,7 @@ export function Button(
   return (
     <button
       type={type}
-      class={`inline-flex cursor-pointer items-center justify-center rounded-control border font-medium leading-tight disabled:cursor-default disabled:opacity-50 ${BUTTON_LOOK[variant]} ${BUTTON_SIZE[size]} ${extra ?? ''}`}
+      class={`inline-flex cursor-pointer items-center justify-center rounded-control border font-medium leading-tight ${BUTTON_DISABLED} ${BUTTON_LOOK[variant]} ${BUTTON_SIZE[size]} ${extra ?? ''}`}
       {...rest}
     />
   );
@@ -69,12 +77,32 @@ export function Field(props: {
 export const inputClass =
   'w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-ink text-sm placeholder:text-muted focus-visible:border-accent';
 
-export function ErrorText(props: { message: string | undefined }) {
+export function ErrorText(props: { message: string | undefined; class?: string }) {
   if (props.message === undefined) return null;
   return (
-    <p role="alert" class="mt-3 font-medium text-danger text-sm">
+    <p role="alert" class={`font-medium text-danger text-sm ${props.class ?? 'mt-3'}`}>
       {props.message}
     </p>
+  );
+}
+
+/** A small uppercase heading over a list of hairline rows. */
+export const groupLabel =
+  'pt-3 pb-1.5 font-semibold text-[11px] text-muted uppercase tracking-[0.08em]';
+
+/**
+ * The bar pinned to the bottom of the popup with a screen's decision in it (Approve and Deny,
+ * Save and Cancel), so the buttons are never a scroll away (critique A3). The popup's scroll area
+ * drops its bottom padding while one is on screen (`app.tsx`).
+ */
+export function BottomBar(props: { children: ComponentChildren }) {
+  return (
+    <div
+      data-bottom-bar
+      class="sticky bottom-0 z-10 -mx-4 mt-4 border-line border-t bg-paper px-4 py-3"
+    >
+      {props.children}
+    </div>
   );
 }
 

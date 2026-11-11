@@ -7,6 +7,7 @@
 import type { Destination, QuotaPeriod } from '@qusme/nostr';
 import { createLocalSigner, MAX_SUBMISSION_EXPIRATION_DAYS, QUOTA_PERIODS } from '@qusme/nostr';
 import { npubEncode } from 'nostr-tools/nip19';
+import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import {
   type ApprovalChoices,
@@ -39,10 +40,18 @@ import {
   loadShareableDestinations,
 } from '../agents/view.ts';
 import { destinationLabel } from '../drafts/row.ts';
-import type { SiteDefinitionSource } from '../insertion/definitions.ts';
+import { effectiveDefinition, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
 import { messageOf } from './app.tsx';
-import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
+import {
+  BottomBar,
+  Button,
+  ErrorText,
+  Field,
+  groupLabel,
+  inputClass,
+  Screen,
+} from './components.tsx';
 
 const PERIOD_LABELS: Record<QuotaPeriod, string> = {
   day: 'per day',
@@ -61,13 +70,6 @@ const shortNpub = (pubkey: string): string => {
   return `${npub.slice(0, 12)}…${npub.slice(-6)}`;
 };
 
-const fieldsText = (fields: readonly string[]) => fields.join(', ');
-const parseFields = (text: string) =>
-  text
-    .split(',')
-    .map((f) => f.trim())
-    .filter((f) => f !== '');
-
 /** End of the chosen local day, as unix seconds; null when the date is empty. */
 function expiryFromDate(value: string): number | null {
   if (value === '') return null;
@@ -84,30 +86,34 @@ function dateOf(expiresAt: number | null): string {
 
 /**
  * Who is asking, with the client ID's host large: any client can call itself anything, but it
- * can't serve its document from another's host. The rest of the request is under Details.
+ * can't serve its document from another's host. The rest of the request, and whatever the caller
+ * puts in `children` (the label), is under Details (critique A4).
  */
-export function RequestSummary(props: { request: AuthorizationRequest }) {
+export function RequestSummary(props: {
+  request: AuthorizationRequest;
+  /** The code came off the sign-in page in this tab rather than being typed (critique A1). */
+  fromTab?: boolean;
+  children?: ComponentChildren;
+}) {
   const { request } = props;
   return (
     <div class="mt-3 card-band p-3">
-      <p class="text-muted text-xs">Code {request.code} · this agent calls itself</p>
+      <p class="text-muted text-xs">
+        Code {request.code}
+        {props.fromTab && ', read from this tab'} · calls itself
+      </p>
       <p class="font-semibold text-lg break-words">{request.clientName}</p>
-      <p class="mt-2 text-muted text-xs">Published by (the host of its client ID)</p>
+      <p class="mt-1 text-muted text-xs">from</p>
       <p class="font-mono font-bold text-2xl break-all" data-client-host>
         {request.clientHost}
       </p>
       <p class="mt-1 text-xs">
         Only approve if you just connected an agent from {request.clientHost}.
       </p>
-      {request.clientName.toLowerCase() !== request.clientHost.toLowerCase() && (
-        <p class="mt-2 text-muted text-xs">
-          The name is whatever the client says it is. Approve only if you started this from a client
-          you trust and the host above is the one you expect.
-        </p>
-      )}
       <details class="mt-2 text-xs">
         <summary class="cursor-pointer text-muted">Details</summary>
-        <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+        {props.children}
+        <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
           <dt class="text-muted">Client ID</dt>
           <dd class="break-all font-mono">{request.clientId}</dd>
           {request.redirectHost !== undefined && (
@@ -126,27 +132,48 @@ export function RequestSummary(props: { request: AuthorizationRequest }) {
   );
 }
 
+/** The agent's label, private to the queue; it sits under Details on both forms (critique A3). */
+export function LabelField(props: {
+  choices: ApprovalChoices;
+  onChange: (choices: ApprovalChoices) => void;
+}) {
+  return (
+    <Field id="agent-label" label="Label" hint="Only your devices see it.">
+      <input
+        id="agent-label"
+        class={inputClass}
+        value={props.choices.label}
+        maxLength={100}
+        aria-describedby="agent-label-hint"
+        onInput={(e) => props.onChange({ ...props.choices, label: e.currentTarget.value })}
+      />
+    </Field>
+  );
+}
+
 /** Above Approve when the agent would be able to draft nothing (UX audit 4.7). */
 export function NothingSharedWarning(props: { name: string }) {
   return (
     <div role="alert" class="mt-3 card-danger p-3">
       <p class="font-semibold text-sm">This agent won't be able to draft anything</p>
       <p class="mt-1 text-xs">
-        Nothing is shared with {props.name} and it can't propose new destinations, so every draft it
-        sends will be refused. Tick a destination or let it propose new ones; otherwise you'd have
-        to revoke it and approve it again to share one later.
+        Nothing is shared with {props.name} and it can't add new accounts, so every draft it sends
+        will be refused. Tick an account or let it add new ones; otherwise you'd have to revoke it
+        and approve it again to share one later.
       </p>
     </div>
   );
 }
 
-/** The review step: who is asking, the grant form, the warning and the buttons. */
+/** The review step: who is asking, the grant form, the warning and the pinned buttons. */
 export function ApprovalReview(props: {
   request: AuthorizationRequest;
   destinations: Destination[];
   choices: ApprovalChoices;
   busy: string | undefined;
   error: string | undefined;
+  fromTab?: boolean;
+  source?: SiteDefinitionSource | undefined;
   onChange: (choices: ApprovalChoices) => void;
   onApprove: () => void;
   onDeny: () => void;
@@ -156,23 +183,32 @@ export function ApprovalReview(props: {
   const empty = sharesNothing(choices);
   return (
     <Screen title="Approve an agent" onBack={props.onBack}>
-      <RequestSummary request={props.request} />
-      <GrantForm destinations={props.destinations} choices={choices} onChange={props.onChange} />
+      <RequestSummary request={props.request} fromTab={props.fromTab ?? false}>
+        <LabelField choices={choices} onChange={props.onChange} />
+      </RequestSummary>
+      <GrantForm
+        destinations={props.destinations}
+        choices={choices}
+        source={props.source}
+        onChange={props.onChange}
+      />
       {empty && <NothingSharedWarning name={choices.label.trim() || props.request.clientName} />}
-      <ErrorText message={props.error} />
-      <div class="mt-4 flex gap-2">
-        <Button onClick={props.onApprove} disabled={props.busy !== undefined}>
-          {props.busy ?? (empty ? 'Approve anyway' : 'Approve')}
-        </Button>
-        <Button variant="danger" onClick={props.onDeny} disabled={props.busy !== undefined}>
-          Deny
-        </Button>
-      </div>
+      <BottomBar>
+        <ErrorText message={props.error} class="mb-2" />
+        <div class="flex gap-2">
+          <Button onClick={props.onApprove} disabled={props.busy !== undefined}>
+            {props.busy ?? (empty ? 'Approve anyway' : 'Approve')}
+          </Button>
+          <Button variant="danger" onClick={props.onDeny} disabled={props.busy !== undefined}>
+            Deny
+          </Button>
+        </div>
+      </BottomBar>
     </Screen>
   );
 }
 
-/** After an approval: the steps that finished, and what the client does next on its own. */
+/** After an approval: the steps that finished, and what to ask the agent next (critique A5). */
 export function ApprovalDone(props: { name: string; shared: string[]; onDone: () => void }) {
   const tick = (
     <span
@@ -182,6 +218,7 @@ export function ApprovalDone(props: { name: string; shared: string[]; onDone: ()
       ✓
     </span>
   );
+  const first = props.shared[0];
   return (
     <Screen title="Agent approved">
       <h2 class="mt-2 font-semibold text-base">{props.name} is connected</h2>
@@ -210,6 +247,11 @@ export function ApprovalDone(props: { name: string; shared: string[]; onDone: ()
       <p class="mt-3 text-muted text-xs">
         {props.shared.length === 0 ? 'Shared: nothing yet.' : `Shared: ${props.shared.join(', ')}.`}
       </p>
+      <p class="mt-3 card-tint p-3 text-sm" data-next-step>
+        {first === undefined
+          ? `Now ask ${props.name} to draft something.`
+          : `Now ask ${props.name} to draft something: "Draft a post for ${first} about …"`}
+      </p>
       <Button class="mt-4" onClick={props.onDone}>
         Back to drafts
       </Button>
@@ -217,13 +259,44 @@ export function ApprovalDone(props: { name: string; shared: string[]; onDone: ()
   );
 }
 
-/** The grant form: label, destinations with fields, the new-destinations toggle, limits. */
+const PERIOD_UNIT: Record<QuotaPeriod, string> = { day: 'day', week: 'week', month: 'month' };
+
+/**
+ * The limits in one line, for the collapsed Limits row (critique A3): "50 drafts a day · unread
+ * drafts expire after 30 days · no end date".
+ */
+export function limitsSummary(choices: ApprovalChoices): string {
+  const { max_submissions: max, period } = choices.quota;
+  const days = choices.submissionExpirationDays;
+  return [
+    `${max} draft${max === 1 ? '' : 's'} a ${PERIOD_UNIT[period]}`,
+    `unread drafts expire after ${days} day${days === 1 ? '' : 's'}`,
+    choices.expiresAt === null ? 'no end date' : `access ends ${dateOf(choices.expiresAt)}`,
+  ].join(' · ');
+}
+
+/** The fields a destination's definition offers; one or none means there is nothing to choose. */
+function fieldsOf(
+  source: SiteDefinitionSource | undefined,
+  destination: Destination
+): { name: string; label: string }[] {
+  if (source === undefined) return [];
+  return effectiveDefinition(source, destination.site, destination.override)?.fields ?? [];
+}
+
+/**
+ * The grant form: the accounts as a checkbox list in the one account format, the new-accounts
+ * toggle, and the limits folded into one line with Change. Fields are chosen only where the site
+ * definition has more than one (critique A2); the label is the caller's, under Details.
+ */
 export function GrantForm(props: {
   destinations: Destination[];
   choices: ApprovalChoices;
+  source?: SiteDefinitionSource | undefined;
   onChange: (choices: ApprovalChoices) => void;
 }) {
-  const { destinations, choices, onChange } = props;
+  const { destinations, choices, onChange, source } = props;
+  const [limitsOpen, setLimitsOpen] = useState(false);
   const set = (patch: Partial<ApprovalChoices>) => onChange({ ...choices, ...patch });
   const chosen = (id: string) => choices.destinations.find((d) => d.id === id);
   const toggle = (id: string, on: boolean) =>
@@ -232,53 +305,58 @@ export function GrantForm(props: {
         ? [...choices.destinations, { id, fields: [...DEFAULT_FIELDS] }]
         : choices.destinations.filter((d) => d.id !== id),
     });
-  const setFields = (id: string, text: string) =>
+  const toggleField = (id: string, field: string, on: boolean) =>
     set({
       destinations: choices.destinations.map((d) =>
-        d.id === id ? { ...d, fields: parseFields(text) } : d
+        d.id === id
+          ? {
+              ...d,
+              fields: on ? [...d.fields, field] : d.fields.filter((f) => f !== field),
+            }
+          : d
       ),
     });
+  const labelOf = (d: Destination) =>
+    source === undefined ? d.label : destinationLabel(source, d.site, d.account, d);
   return (
     <>
-      <Field id="agent-label" label="Label" hint="Only your devices see it.">
-        <input
-          id="agent-label"
-          class={inputClass}
-          value={choices.label}
-          maxLength={100}
-          aria-describedby="agent-label-hint"
-          onInput={(e) => set({ label: e.currentTarget.value })}
-        />
-      </Field>
-
       <fieldset class="mt-3">
-        <legend class="font-medium text-sm">Where it may draft</legend>
+        <legend class={groupLabel}>Where it may draft</legend>
         {destinations.length === 0 ? (
           <p class="text-muted text-xs">
-            The queue has no confirmed destinations yet. Without any, the agent can draft only if
-            you allow new destinations below.
+            You have no accounts yet. Without any, it can draft only if you let it add new accounts
+            below.
           </p>
         ) : (
-          <ul class="mt-1 flex flex-col gap-2">
+          <ul class="-mx-4 border-line border-t">
             {destinations.map((d) => {
               const choice = chosen(d.id);
+              const label = labelOf(d);
+              const fields = fieldsOf(source, d);
               return (
-                <li key={d.id} class="card p-3">
+                <li key={d.id} class="border-line border-b px-4 py-2">
                   <label class="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
                       checked={choice !== undefined}
                       onChange={(e) => toggle(d.id, e.currentTarget.checked)}
                     />
-                    <span>{d.label}</span>
+                    <span class="break-words">{label}</span>
                   </label>
-                  {choice !== undefined && (
-                    <input
-                      aria-label={`Fields for ${d.label}`}
-                      class={`${inputClass} mt-1`}
-                      value={fieldsText(choice.fields)}
-                      onChange={(e) => setFields(d.id, e.currentTarget.value)}
-                    />
+                  {choice !== undefined && fields.length > 1 && (
+                    <fieldset class="mt-1 ml-6 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                      <legend class="sr-only">Fields for {label}</legend>
+                      {fields.map((f) => (
+                        <label key={f.name} class="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={choice.fields.includes(f.name)}
+                            onChange={(e) => toggleField(d.id, f.name, e.currentTarget.checked)}
+                          />
+                          <span>{f.label}</span>
+                        </label>
+                      ))}
+                    </fieldset>
                   )}
                 </li>
               );
@@ -287,7 +365,7 @@ export function GrantForm(props: {
         )}
       </fieldset>
 
-      <div class="mt-3 flex items-start gap-2 card-tint p-3">
+      <div class="-mx-4 flex items-start gap-2 border-line border-b px-4 py-2">
         <input
           id="allow-new-destinations"
           type="checkbox"
@@ -297,72 +375,96 @@ export function GrantForm(props: {
           onChange={(e) => set({ allowNewDestinations: e.currentTarget.checked })}
         />
         <div>
-          <label for="allow-new-destinations" class="font-medium text-sm">
-            Let it propose new destinations
+          <label for="allow-new-destinations" class="text-sm">
+            Let it add new accounts
           </label>
           <p id="allow-new-destinations-hint" class="text-muted text-xs">
-            Off: it drafts only where you chose above. On: it may draft for any site and account;
-            each new one waits as pending until you confirm it.
+            Each one waits for your OK before its drafts show.
           </p>
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
-        <Field id="quota-max" label="Quota">
-          <input
-            id="quota-max"
-            type="number"
-            min={1}
-            class={inputClass}
-            value={String(choices.quota.max_submissions)}
-            onInput={(e) =>
-              set({ quota: { ...choices.quota, max_submissions: Number(e.currentTarget.value) } })
-            }
-          />
-        </Field>
-        <Field id="quota-period" label="Period">
-          <select
-            id="quota-period"
-            class={inputClass}
-            value={choices.quota.period}
-            onChange={(e) =>
-              set({ quota: { ...choices.quota, period: e.currentTarget.value as QuotaPeriod } })
-            }
+      <div class="mt-3 card-band px-3 py-2" data-limits>
+        <div class="flex items-start gap-3">
+          <p class="flex-1 text-xs" id="limits-summary">
+            <span class="font-semibold">Limits:</span> {limitsSummary(choices)}
+          </p>
+          <button
+            type="button"
+            class="text-xs link"
+            aria-expanded={limitsOpen}
+            aria-controls="limits-fields"
+            aria-label={limitsOpen ? 'Hide limits' : 'Change limits'}
+            onClick={() => setLimitsOpen(!limitsOpen)}
           >
-            {QUOTA_PERIODS.map((p) => (
-              <option key={p} value={p}>
-                {PERIOD_LABELS[p]}
-              </option>
-            ))}
-          </select>
-        </Field>
+            {limitsOpen ? 'Hide' : 'Change'}
+          </button>
+        </div>
+        {limitsOpen && (
+          <div id="limits-fields" class="pb-1">
+            <div class="grid grid-cols-2 gap-3">
+              <Field id="quota-max" label="Quota">
+                <input
+                  id="quota-max"
+                  type="number"
+                  min={1}
+                  class={inputClass}
+                  value={String(choices.quota.max_submissions)}
+                  onInput={(e) =>
+                    set({
+                      quota: { ...choices.quota, max_submissions: Number(e.currentTarget.value) },
+                    })
+                  }
+                />
+              </Field>
+              <Field id="quota-period" label="Period">
+                <select
+                  id="quota-period"
+                  class={inputClass}
+                  value={choices.quota.period}
+                  onChange={(e) =>
+                    set({
+                      quota: { ...choices.quota, period: e.currentTarget.value as QuotaPeriod },
+                    })
+                  }
+                >
+                  {QUOTA_PERIODS.map((p) => (
+                    <option key={p} value={p}>
+                      {PERIOD_LABELS[p]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Field
+              id="submission-expiration"
+              label="Unread drafts expire after (days)"
+              hint={`1 to ${MAX_SUBMISSION_EXPIRATION_DAYS}.`}
+            >
+              <input
+                id="submission-expiration"
+                type="number"
+                min={1}
+                max={MAX_SUBMISSION_EXPIRATION_DAYS}
+                class={inputClass}
+                value={String(choices.submissionExpirationDays)}
+                aria-describedby="submission-expiration-hint"
+                onInput={(e) => set({ submissionExpirationDays: Number(e.currentTarget.value) })}
+              />
+            </Field>
+            <Field id="grant-expires" label="Access ends on" hint="Leave empty for no end date.">
+              <input
+                id="grant-expires"
+                type="date"
+                class={inputClass}
+                value={dateOf(choices.expiresAt)}
+                aria-describedby="grant-expires-hint"
+                onInput={(e) => set({ expiresAt: expiryFromDate(e.currentTarget.value) })}
+              />
+            </Field>
+          </div>
+        )}
       </div>
-      <Field
-        id="submission-expiration"
-        label="Unread submissions expire after (days)"
-        hint={`1 to ${MAX_SUBMISSION_EXPIRATION_DAYS}.`}
-      >
-        <input
-          id="submission-expiration"
-          type="number"
-          min={1}
-          max={MAX_SUBMISSION_EXPIRATION_DAYS}
-          class={inputClass}
-          value={String(choices.submissionExpirationDays)}
-          aria-describedby="submission-expiration-hint"
-          onInput={(e) => set({ submissionExpirationDays: Number(e.currentTarget.value) })}
-        />
-      </Field>
-      <Field id="grant-expires" label="Access ends on" hint="Leave empty for no end date.">
-        <input
-          id="grant-expires"
-          type="date"
-          class={inputClass}
-          value={dateOf(choices.expiresAt)}
-          aria-describedby="grant-expires-hint"
-          onInput={(e) => set({ expiresAt: expiryFromDate(e.currentTarget.value) })}
-        />
-      </Field>
     </>
   );
 }
@@ -373,56 +475,86 @@ type ApprovePhase =
   | { phase: 'done'; approved: true; name: string; shared: string[] }
   | { phase: 'done'; approved: false };
 
-/** Enter the code from the client's authorize page, review the request, approve or deny. */
+/**
+ * Enter the code from the client's authorize page, review the request, approve or deny. With a
+ * code read off the sign-in tab (`fromTab`) and the service permission already granted, the code
+ * step looks it up on its own, so the popup opens on the review (critique A1); without the
+ * permission it waits for Look up, since a permission request needs the user's click.
+ */
 export function ApproveAgentScreen(props: {
   deps: SetupDeps;
   initialCode?: string;
+  fromTab?: boolean;
+  source?: SiteDefinitionSource | undefined;
   onDone: () => void;
   onBack: () => void;
 }) {
-  const { deps } = props;
+  const { deps, source } = props;
   const [input, setInput] = useState(props.initialCode ?? '');
   const [phase, setPhase] = useState<ApprovePhase>({ phase: 'code' });
   const [choices, setChoices] = useState<ApprovalChoices | undefined>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState<string>();
 
+  /** `gesture`: called from the user's click, so the permission may be requested. */
+  const lookUp = async (text: string, gesture: boolean) => {
+    setError(undefined);
+    const code = parseApprovalCode(text, deps.serviceOrigin);
+    if (code === undefined) {
+      setError('Enter the 8-character code from the page, like ABCD-1234, or paste its link.');
+      return;
+    }
+    setBusy('Looking up…');
+    try {
+      // First thing awaited in the gesture: Firefox grants the permission only inside it.
+      const allowed = gesture
+        ? await deps.requestServicePermission()
+        : ((await deps.hasServicePermission?.()) ?? false);
+      if (!allowed) {
+        throw new SetupError('qus.me needs permission to reach app.qus.me to look up the code.');
+      }
+      const unlocked = await deps.store.unlocked();
+      if (unlocked === undefined) throw new SetupError('Unlock the queue first.');
+      const [request, destinations] = await Promise.all([
+        fetchAuthorization(createLocalSigner(unlocked.queueKey), code, deps),
+        loadShareableDestinations(deps),
+      ]);
+      setChoices(defaultChoices(request, destinations));
+      setPhase({ phase: 'review', request, destinations });
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  // Once, on open: a code read off the sign-in tab goes straight to the review when it can.
+  useEffect(() => {
+    const code = props.initialCode;
+    if (!props.fromTab || code === undefined) return;
+    let live = true;
+    void (async () => {
+      if (!((await deps.hasServicePermission?.()) ?? false) || !live) return;
+      await lookUp(code, false);
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
   if (phase.phase === 'code') {
-    const lookUp = async (event: Event) => {
+    const submit = (event: Event) => {
       event.preventDefault();
-      setError(undefined);
-      const code = parseApprovalCode(input, deps.serviceOrigin);
-      if (code === undefined) {
-        setError('Enter the 8-character code from the page, like ABCD-1234, or paste its link.');
-        return;
-      }
-      setBusy('Looking up…');
-      try {
-        // First thing awaited in the gesture: Firefox grants the permission only inside it.
-        if (!(await deps.requestServicePermission())) {
-          throw new SetupError('qus.me needs permission to reach app.qus.me to look up the code.');
-        }
-        const unlocked = await deps.store.unlocked();
-        if (unlocked === undefined) throw new SetupError('Unlock the queue first.');
-        const [request, destinations] = await Promise.all([
-          fetchAuthorization(createLocalSigner(unlocked.queueKey), code, deps),
-          loadShareableDestinations(deps),
-        ]);
-        setChoices(defaultChoices(request, destinations));
-        setPhase({ phase: 'review', request, destinations });
-      } catch (e) {
-        setError(messageOf(e));
-      } finally {
-        setBusy(undefined);
-      }
+      void lookUp(input, true);
     };
     return (
       <Screen title="Approve an agent" onBack={props.onBack}>
         <p class="mt-2 text-sm">
-          Enter the code the MCP client's authorization page shows, or paste the link from its QR
-          code.
+          {props.fromTab
+            ? 'This is the code on the sign-in page in this tab.'
+            : "Enter the code the MCP client's authorization page shows, or paste the link from its QR code."}
         </p>
-        <form onSubmit={lookUp}>
+        <form onSubmit={submit}>
           <Field id="approval-code" label="Code or link">
             <input
               id="approval-code"
@@ -465,9 +597,11 @@ export function ApproveAgentScreen(props: {
     setBusy('Publishing…');
     try {
       await approveAgent(request, choices, deps);
-      const shared = choices.destinations.flatMap(
-        (c) => destinations.find((d) => d.id === c.id)?.label ?? []
-      );
+      const shared = choices.destinations.flatMap((c) => {
+        const d = destinations.find((x) => x.id === c.id);
+        if (d === undefined) return [];
+        return source === undefined ? d.label : destinationLabel(source, d.site, d.account, d);
+      });
       setPhase({
         phase: 'done',
         approved: true,
@@ -500,6 +634,8 @@ export function ApproveAgentScreen(props: {
       choices={choices}
       busy={busy}
       error={error}
+      fromTab={props.fromTab ?? false}
+      source={source}
       onChange={setChoices}
       onApprove={() => void approve()}
       onDeny={() => void deny()}
@@ -525,9 +661,17 @@ export function revokeMessage(name: string, result: RevokeResult): string {
 const agentName = (agent: AgentRow) =>
   agent.label ?? agent.binding?.clientName ?? 'Unlabeled agent';
 
+/** "3 accounts, may add new ones · up to 50 a day", for an agent's row. */
+function grantSummary(grant: NonNullable<AgentRow['grant']>): string {
+  const n = grant.destinations.length;
+  const accounts = `${n} account${n === 1 ? '' : 's'}${grant.allow_new_destinations ? ', may add new ones' : ''}`;
+  return `${accounts} · up to ${grant.quota.max_submissions} ${PERIOD_LABELS[grant.quota.period]}`;
+}
+
 /**
- * One agent: its label, the client behind it, what it may do, and the revoke control; or, for a
- * revocation the service has not confirmed, that state and Retry.
+ * One agent as a hairline row: its label, the client behind it, what it may do, and Edit access
+ * and Revoke; or, for a revocation the service has not confirmed, that state and Retry. No key:
+ * the npub helps nobody here (critique A6).
  */
 export function AgentItem(props: {
   agent: AgentRow;
@@ -540,7 +684,7 @@ export function AgentItem(props: {
   const [confirming, setConfirming] = useState(false);
   if (agent.pendingRevocation !== undefined) {
     return (
-      <li class="card-danger p-3">
+      <li class="border-line border-b bg-danger-tint px-4 py-2.5">
         <p class="font-medium text-sm">{agentName(agent)}</p>
         {agent.binding !== undefined && (
           <p class="font-mono font-semibold text-xs">{agent.binding.clientHost}</p>
@@ -562,29 +706,29 @@ export function AgentItem(props: {
     );
   }
   return (
-    <li class="card p-3">
-      <p class="font-medium text-sm">{agentName(agent)}</p>
-      {agent.binding !== undefined && (
-        <p class="text-xs">
-          <span class="font-mono font-semibold">{agent.binding.clientHost}</span>
-          {agent.label !== undefined && agent.label !== agent.binding.clientName && (
-            <span class="text-muted"> · calls itself {agent.binding.clientName}</span>
-          )}
-        </p>
-      )}
-      <p class="font-mono text-muted text-xs">{shortNpub(agent.agentPubkey)}</p>
+    <li class="border-line border-b px-4 py-2.5">
+      <p class="text-sm">
+        <span class="font-medium">{agentName(agent)}</span>
+        {agent.binding !== undefined && (
+          <span class="text-muted text-xs">
+            {' · '}
+            <span class="font-mono font-semibold text-ink">{agent.binding.clientHost}</span>
+            {agent.label !== undefined &&
+              agent.label !== agent.binding.clientName &&
+              ` · calls itself ${agent.binding.clientName}`}
+          </span>
+        )}
+      </p>
       {agent.grant !== undefined && (
         <p class="text-muted text-xs">
-          {agent.grant.destinations.length} destination
-          {agent.grant.destinations.length === 1 ? '' : 's'}
-          {agent.grant.allow_new_destinations && ', may propose new ones'}, up to{' '}
-          {agent.grant.quota.max_submissions} {PERIOD_LABELS[agent.grant.quota.period]}
-        </p>
-      )}
-      {agent.grant !== undefined && agent.counts !== undefined && (
-        <p class="text-muted text-xs" data-agent-counts>
-          {PERIOD_NOW[agent.grant.quota.period]}: {agent.counts.accepted} accepted
-          {agent.counts.discarded > 0 && `, ${agent.counts.discarded} discarded`}
+          {grantSummary(agent.grant)}
+          {agent.counts !== undefined && (
+            <span data-agent-counts>
+              {' · '}
+              {PERIOD_NOW[agent.grant.quota.period]}: {agent.counts.accepted} accepted
+              {agent.counts.discarded > 0 && `, ${agent.counts.discarded} discarded`}
+            </span>
+          )}
         </p>
       )}
       {!agent.listed && (
@@ -594,25 +738,28 @@ export function AgentItem(props: {
         </p>
       )}
       {confirming ? (
-        <div class="mt-2 flex gap-2">
-          <Button
-            variant="danger"
-            size="sm"
-            disabled={props.busy}
-            onClick={() => props.onRevoke(agent)}
-          >
-            Revoke now
-          </Button>
-          <Button variant="plain" size="sm" onClick={() => setConfirming(false)}>
-            Keep
-          </Button>
+        <div class="mt-1.5">
+          <p class="text-xs">{agentName(agent)} will no longer be able to send drafts.</p>
+          <div class="mt-1 flex gap-2">
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={props.busy}
+              onClick={() => props.onRevoke(agent)}
+            >
+              Revoke now
+            </Button>
+            <Button variant="plain" size="sm" onClick={() => setConfirming(false)}>
+              Keep
+            </Button>
+          </div>
         </div>
       ) : (
-        <div class="mt-2 flex gap-2">
+        <div class="mt-1.5 flex gap-2">
           {agent.listed && agent.grant !== undefined && props.onEdit !== undefined && (
             <Button
               variant="plain"
-              size="sm"
+              size="xs"
               disabled={props.busy}
               onClick={() => props.onEdit?.(agent)}
             >
@@ -621,7 +768,7 @@ export function AgentItem(props: {
           )}
           <Button
             variant="plain"
-            size="sm"
+            size="xs"
             disabled={props.busy}
             onClick={() => setConfirming(true)}
           >
@@ -634,8 +781,9 @@ export function AgentItem(props: {
 }
 
 /**
- * A destination an agent proposed, with confirm, reject, and merge into one of the confirmed
- * destinations (the same account under another spelling, say).
+ * An account an agent proposed, as a hairline row with Allow and Reject, the same pair as the
+ * home list's card (critique A7, A8), and merging into a confirmed account (the same account under
+ * another spelling, say). Reject asks first and names what it does to the drafts.
  */
 export function PendingItem(props: {
   destination: Destination;
@@ -651,34 +799,52 @@ export function PendingItem(props: {
   const { destination } = props;
   const confirmed = props.confirmed ?? [];
   const [merging, setMerging] = useState<string | undefined>();
+  const [rejecting, setRejecting] = useState(false);
   const into = confirmed.find((d) => d.id === merging);
   const selectId = `merge-${destination.id}`;
+  const label = (d: Destination) =>
+    props.source === undefined ? d.label : destinationLabel(props.source, d.site, d.account, d);
   return (
-    <li class="card p-3">
-      <p class="text-sm">
-        {props.source === undefined
-          ? destination.label
-          : destinationLabel(props.source, destination.site, destination.account, destination)}
-      </p>
-      <div class="mt-2 flex gap-2">
-        <Button size="sm" disabled={props.busy} onClick={() => props.onConfirm(destination)}>
-          Confirm
-        </Button>
-        <Button
-          variant="danger"
-          size="sm"
-          disabled={props.busy}
-          onClick={() => props.onReject(destination)}
-        >
-          Reject and dismiss its drafts
-        </Button>
-      </div>
+    <li class="border-line border-b px-4 py-2.5">
+      <p class="text-sm">{label(destination)}</p>
+      {rejecting ? (
+        <div class="mt-1.5">
+          <p class="text-xs">Rejecting also dismisses its drafts.</p>
+          <div class="mt-1 flex gap-2">
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={props.busy}
+              onClick={() => props.onReject(destination)}
+            >
+              Reject
+            </Button>
+            <Button variant="plain" size="sm" onClick={() => setRejecting(false)}>
+              Keep
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div class="mt-1.5 flex gap-2">
+          <Button size="sm" disabled={props.busy} onClick={() => props.onConfirm(destination)}>
+            Allow
+          </Button>
+          <Button
+            variant="plain"
+            size="sm"
+            disabled={props.busy}
+            onClick={() => setRejecting(true)}
+          >
+            Reject…
+          </Button>
+        </div>
+      )}
       {props.onMerge !== undefined &&
         confirmed.length > 0 &&
         (merging === undefined ? (
           <button
             type="button"
-            class="mt-2 text-xs link"
+            class="mt-1.5 text-xs link"
             disabled={props.busy}
             onClick={() => setMerging(confirmed[0]?.id)}
           >
@@ -697,12 +863,12 @@ export function PendingItem(props: {
             >
               {confirmed.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.label}
+                  {label(d)}
                 </option>
               ))}
             </select>
             <p class="mt-1 text-muted text-xs">
-              Its drafts become drafts for the destination you choose, and it leaves the list.
+              Its drafts become drafts for the account you choose, and it leaves the list.
             </p>
             <div class="mt-2 flex gap-2">
               <Button
@@ -737,11 +903,11 @@ export function AgentsList(props: {
   return (
     <>
       {view.pending.length > 0 && (
-        <section class="mt-3" aria-labelledby="pending-title">
-          <h2 id="pending-title" class="font-semibold text-sm">
+        <section aria-labelledby="pending-title">
+          <h2 id="pending-title" class={groupLabel}>
             Accounts waiting for your OK
           </h2>
-          <ul class="mt-1 flex flex-col gap-2">
+          <ul class="-mx-4 border-line border-t">
             {view.pending.map((d) => (
               <PendingItem
                 key={d.id}
@@ -757,14 +923,14 @@ export function AgentsList(props: {
           </ul>
         </section>
       )}
-      <section class="mt-3" aria-labelledby="agents-title">
-        <h2 id="agents-title" class="font-semibold text-sm">
-          Authorized agents
+      <section aria-labelledby="agents-title">
+        <h2 id="agents-title" class={groupLabel}>
+          Connected agents
         </h2>
         {view.agents.length === 0 ? (
-          <p class="mt-1 text-sm">No agents are authorized.</p>
+          <p class="text-sm">No agents are connected.</p>
         ) : (
-          <ul class="mt-1 flex flex-col gap-2">
+          <ul class="-mx-4 border-line border-t">
             {view.agents.map((a) => (
               <AgentItem
                 key={a.agentPubkey}
@@ -788,7 +954,10 @@ export function AgentsList(props: {
   );
 }
 
-/** Editing an agent's access: the grant form, starting from its current grant (spec 7.4). */
+/**
+ * Editing an agent's access (spec 7.4): the approval's compact form, starting from its current
+ * grant, with the label under Details and Save and Cancel pinned to the bottom.
+ */
 export function EditGrantView(props: {
   agent: AgentRow;
   destinations: Destination[];
@@ -796,6 +965,7 @@ export function EditGrantView(props: {
   choices: ApprovalChoices;
   busy: string | undefined;
   error: string | undefined;
+  source?: SiteDefinitionSource | undefined;
   onChange: (choices: ApprovalChoices) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -805,27 +975,46 @@ export function EditGrantView(props: {
   const empty = sharesNothing(choices);
   return (
     <Screen title="Edit access" onBack={props.onCancel}>
-      <p class="mt-2 font-medium text-sm">{name}</p>
-      {agent.binding !== undefined && (
-        <p class="font-mono font-semibold text-xs">{agent.binding.clientHost}</p>
-      )}
+      <div class="mt-3 card-band p-3">
+        <p class="font-semibold text-base">{name}</p>
+        {agent.binding !== undefined && (
+          <p class="font-mono font-semibold text-sm">{agent.binding.clientHost}</p>
+        )}
+        <details class="mt-2 text-xs">
+          <summary class="cursor-pointer text-muted">Details</summary>
+          <LabelField choices={choices} onChange={props.onChange} />
+          {agent.binding !== undefined && (
+            <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+              <dt class="text-muted">Client ID</dt>
+              <dd class="break-all font-mono">{agent.binding.clientId}</dd>
+            </dl>
+          )}
+        </details>
+      </div>
       {props.start.dropped.length > 0 && (
         <p class="mt-2 text-muted text-xs" data-dropped>
-          No longer among your destinations, so saving removes them from this agent:{' '}
+          No longer among your accounts, so saving removes them from this agent:{' '}
           {props.start.dropped.map((d) => `${d.site} / ${d.account}`).join(', ')}.
         </p>
       )}
-      <GrantForm destinations={props.destinations} choices={choices} onChange={props.onChange} />
+      <GrantForm
+        destinations={props.destinations}
+        choices={choices}
+        source={props.source}
+        onChange={props.onChange}
+      />
       {empty && <NothingSharedWarning name={choices.label.trim() || name} />}
-      <ErrorText message={props.error} />
-      <div class="mt-4 flex gap-2">
-        <Button onClick={props.onSave} disabled={props.busy !== undefined}>
-          {props.busy ?? (empty ? 'Save anyway' : 'Save')}
-        </Button>
-        <Button variant="plain" onClick={props.onCancel} disabled={props.busy !== undefined}>
-          Cancel
-        </Button>
-      </div>
+      <BottomBar>
+        <ErrorText message={props.error} class="mb-2" />
+        <div class="flex gap-2">
+          <Button onClick={props.onSave} disabled={props.busy !== undefined}>
+            {props.busy ?? (empty ? 'Save anyway' : 'Save')}
+          </Button>
+          <Button variant="plain" onClick={props.onCancel} disabled={props.busy !== undefined}>
+            Cancel
+          </Button>
+        </div>
+      </BottomBar>
     </Screen>
   );
 }
@@ -1050,6 +1239,7 @@ export function AgentsScreen(props: {
         choices={editing.choices}
         busy={editBusy}
         error={editError}
+        source={source}
         onChange={(choices) => setEditing({ ...editing, choices })}
         onSave={() => void save()}
         onCancel={() => setEditing(undefined)}
@@ -1060,7 +1250,7 @@ export function AgentsScreen(props: {
   return (
     <Screen title="Agents" onBack={props.onBack}>
       {props.onApprove !== undefined && (
-        <Button class="mt-3 self-start" onClick={props.onApprove}>
+        <Button size="sm" class="mt-3 self-start" onClick={props.onApprove}>
           Approve an agent
         </Button>
       )}
