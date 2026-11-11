@@ -90,7 +90,7 @@ export function PairScreen(props: {
             <textarea
               id="pair-input"
               rows={3}
-              class={inputClass}
+              class={`${inputClass} font-mono`}
               spellcheck={false}
               autocomplete="off"
               value={input}
@@ -238,7 +238,7 @@ function PairUnlock(props: {
             <textarea
               id="pair-secret"
               rows={3}
-              class={inputClass}
+              class={`${inputClass} font-mono`}
               spellcheck={false}
               autocomplete="off"
               value={secret}
@@ -250,7 +250,7 @@ function PairUnlock(props: {
               id="pair-secret"
               type="password"
               autocomplete="current-password"
-              class={inputClass}
+              class={`${inputClass} font-mono`}
               value={secret}
               aria-describedby="pair-secret-hint"
               onInput={(e) => setSecret(e.currentTarget.value)}
@@ -268,7 +268,7 @@ function PairUnlock(props: {
           <Field id="pair-relay" label="A storage relay of the queue" hint={relayPrompt}>
             <input
               id="pair-relay"
-              class={inputClass}
+              class={`${inputClass} font-mono`}
               spellcheck={false}
               value={relayUrl}
               aria-describedby="pair-relay-hint"
@@ -370,7 +370,7 @@ export function PairSourceScreen(props: { deps: SetupDeps; onDone: () => void })
           <Qr text={phase.uri} label="Pairing QR code" />
           <Button
             variant="plain"
-            class="w-full text-sm"
+            class="w-full"
             onClick={() =>
               act(async () => {
                 await navigator.clipboard.writeText(phase.uri);
@@ -386,7 +386,7 @@ export function PairSourceScreen(props: { deps: SetupDeps; onDone: () => void })
               <p class="font-mono font-semibold text-2xl tracking-widest">
                 {formatPairingCode(phase.code)}
               </p>
-              <p class="text-ink/70 text-xs">
+              <p class="text-muted text-xs">
                 It will then ask for your recovery code instead of your passphrase.
               </p>
             </div>
@@ -394,7 +394,7 @@ export function PairSourceScreen(props: { deps: SetupDeps; onDone: () => void })
             started?.canIssueCode && (
               <Button
                 variant="plain"
-                class="mt-2 w-full text-sm"
+                class="mt-2 w-full"
                 disabled={busy}
                 onClick={() => act(() => started.requestCode())}
               >

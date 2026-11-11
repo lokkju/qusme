@@ -140,7 +140,7 @@ function DraftRow(props: {
   // Expanding shows something only when the preview cut the text.
   const more = preview !== draft.content.trim();
   const header = (
-    <p class="text-ink/70 text-xs">
+    <p class="text-muted text-xs">
       {draft.site}
       {props.showAccount && ` / ${draft.account}`} · {draft.field}
       {draft.source !== undefined && ` · from ${draft.source.label ?? 'an agent'}`}
@@ -150,7 +150,7 @@ function DraftRow(props: {
     const save = props.onEdit;
     const id = `edit-${draft.d}`;
     return (
-      <li class="rounded border border-accent p-2" data-draft={draft.d}>
+      <li class="card-accent p-3" data-draft={draft.d}>
         {header}
         <label for={id} class="sr-only">
           Draft text
@@ -162,11 +162,11 @@ function DraftRow(props: {
           onInput={(e) => setEditing(e.currentTarget.value)}
         />
         <div class="mt-2 flex justify-end gap-2">
-          <Button variant="plain" class="px-2 py-1 text-sm" onClick={() => setEditing(undefined)}>
+          <Button variant="plain" size="sm" onClick={() => setEditing(undefined)}>
             Cancel
           </Button>
           <Button
-            class="px-3 py-1 text-sm"
+            size="sm"
             disabled={props.busy || editing.trim() === '' || editing === draft.content}
             onClick={async () => {
               if (await save(props.entry, editing)) setEditing(undefined);
@@ -179,7 +179,7 @@ function DraftRow(props: {
     );
   }
   return (
-    <li class="rounded border border-ink/20 p-2" data-draft={draft.d}>
+    <li class="card p-3" data-draft={draft.d}>
       {header}
       {open ? (
         <p class="mt-1 whitespace-pre-wrap break-words text-sm">{draft.content}</p>
@@ -190,7 +190,7 @@ function DraftRow(props: {
         {more && (
           <button
             type="button"
-            class="mr-auto text-xs underline"
+            class="mr-auto text-xs link"
             aria-expanded={open}
             onClick={() => setOpen(!open)}
           >
@@ -200,7 +200,7 @@ function DraftRow(props: {
         {props.onEdit !== undefined && (
           <button
             type="button"
-            class={`${more ? '' : 'mr-auto '}text-xs underline`}
+            class={`${more ? '' : 'mr-auto '}text-xs link`}
             disabled={props.busy}
             onClick={() => setEditing(draft.content)}
           >
@@ -210,7 +210,7 @@ function DraftRow(props: {
         {props.onDismiss !== undefined && (
           <button
             type="button"
-            class="text-xs underline"
+            class="text-xs link"
             disabled={props.busy}
             onClick={() => props.onDismiss?.(props.entry)}
           >
@@ -218,25 +218,17 @@ function DraftRow(props: {
           </button>
         )}
         {props.armed ? (
-          <span class="text-ink/70 text-xs">Armed for right-click</span>
+          <span class="text-muted text-xs">Armed for right-click</span>
         ) : (
           open &&
           props.insertable && (
-            <Button
-              variant="plain"
-              class="px-2 py-1 text-xs"
-              onClick={() => props.onArm(props.entry)}
-            >
+            <Button variant="plain" size="xs" onClick={() => props.onArm(props.entry)}>
               Arm for right-click
             </Button>
           )
         )}
         {props.insertable && (
-          <Button
-            class="px-3 py-1 text-sm"
-            disabled={props.busy}
-            onClick={() => props.onInsert(props.entry)}
-          >
+          <Button size="sm" disabled={props.busy} onClick={() => props.onInsert(props.entry)}>
             Insert
           </Button>
         )}
@@ -275,14 +267,14 @@ export function InsertView(props: ViewProps) {
             For this page
           </h2>
           {props.pickerShortcut !== undefined && (
-            <p class="mt-1 text-ink/70 text-xs">
+            <p class="mt-1 text-muted text-xs">
               {props.pickerShortcut === ''
                 ? "Give qus.me a keyboard shortcut in your browser's extension shortcuts to pick drafts from any text field."
                 : `Press ${props.pickerShortcut} in any text field to pick a draft there.`}
             </p>
           )}
           {detected.map(([site, account]) => (
-            <p key={site} class="mt-1 text-ink/70 text-xs">
+            <p key={site} class="mt-1 text-muted text-xs">
               Signed in to {site} as {account}.
             </p>
           ))}
@@ -290,7 +282,7 @@ export function InsertView(props: ViewProps) {
             <div key={`${offer.site}:${offer.account}`} class="mt-2">
               <Button
                 variant="plain"
-                class="px-2 py-1 text-xs"
+                size="xs"
                 disabled={props.busy}
                 onClick={() => props.onAddOffer?.(offer)}
               >
@@ -299,7 +291,7 @@ export function InsertView(props: ViewProps) {
             </div>
           ))}
           {props.undetected.map((site) => (
-            <p key={site} class="mt-1 text-ink/70 text-xs">
+            <p key={site} class="mt-1 text-muted text-xs">
               Couldn't tell which {site} account is signed in; showing drafts for every account.
             </p>
           ))}
@@ -311,7 +303,7 @@ export function InsertView(props: ViewProps) {
             </ul>
           )}
           {page !== undefined && page.otherAccounts > 0 && (
-            <p class="mt-1 text-ink/70 text-xs">
+            <p class="mt-1 text-muted text-xs">
               {page.otherAccounts} draft{page.otherAccounts === 1 ? '' : 's'} for other accounts
               hidden.
             </p>
@@ -323,7 +315,7 @@ export function InsertView(props: ViewProps) {
           <h2 id="elsewhere-title" class="font-semibold text-sm">
             {onPage ? 'Elsewhere' : 'Drafts'}
             {elsewhere.length > 0 && (
-              <span class="ml-2 font-normal text-ink/70 text-xs">
+              <span class="ml-2 font-normal text-muted text-xs">
                 {elsewhere.length} draft{elsewhere.length === 1 ? '' : 's'}
               </span>
             )}
@@ -335,15 +327,15 @@ export function InsertView(props: ViewProps) {
           )}
         </section>
       )}
-      {props.syncing && <p class="text-ink/70 text-xs">Syncing…</p>}
+      {props.syncing && <p class="text-muted text-xs">Syncing…</p>}
       {armed !== undefined && (
-        <div class="rounded border border-accent p-2">
+        <div class="card-accent p-3">
           <p class="text-xs">Armed for right-click:</p>
           <p class="break-words text-sm">{firstLine(armed.content)}</p>
-          <p class="mt-1 text-ink/70 text-xs">
+          <p class="mt-1 text-muted text-xs">
             Right-click a field on the destination's page and choose Insert.
           </p>
-          <Button variant="plain" class="mt-2 px-2 py-1 text-sm" onClick={props.onDisarm}>
+          <Button variant="plain" size="sm" class="mt-2" onClick={props.onDisarm}>
             Disarm
           </Button>
         </div>
@@ -354,7 +346,7 @@ export function InsertView(props: ViewProps) {
           {props.onUndo !== undefined && (
             <>
               {' '}
-              <button type="button" class="underline" disabled={props.busy} onClick={props.onUndo}>
+              <button type="button" class="link" disabled={props.busy} onClick={props.onUndo}>
                 Undo
               </button>
             </>
@@ -365,7 +357,7 @@ export function InsertView(props: ViewProps) {
         <p class="text-danger text-xs">
           {props.unrecorded} insertion{props.unrecorded === 1 ? '' : 's'} not recorded on the relays
           yet.{' '}
-          <button type="button" class="underline" onClick={props.onRetry}>
+          <button type="button" class="link" onClick={props.onRetry}>
             Retry
           </button>
         </p>

@@ -14,20 +14,31 @@ import {
   suggestPassphrase,
 } from '../passphrase.ts';
 
+export type ButtonVariant = 'primary' | 'plain' | 'danger';
+export type ButtonSize = 'md' | 'sm' | 'xs';
+
+const BUTTON_LOOK: Record<ButtonVariant, string> = {
+  primary:
+    'border-accent bg-accent text-on-accent enabled:hover:border-accent-hover enabled:hover:bg-accent-hover',
+  plain: 'border-line-strong bg-surface text-ink enabled:hover:border-ink',
+  danger: 'border-danger bg-surface text-danger enabled:hover:bg-danger-tint',
+};
+
+const BUTTON_SIZE: Record<ButtonSize, string> = {
+  md: 'min-h-10 px-4 py-2 text-sm',
+  sm: 'min-h-8 px-3 py-1 text-sm',
+  xs: 'min-h-7 px-2.5 py-0.5 text-xs',
+};
+
+/** The popup's button: 6px corners like the site's, in three looks and three sizes. */
 export function Button(
-  props: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'plain' | 'danger' }
+  props: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }
 ) {
-  const { variant = 'primary', class: extra, type = 'button', ...rest } = props;
-  const look =
-    variant === 'primary'
-      ? 'bg-accent text-white'
-      : variant === 'danger'
-        ? 'border border-danger text-danger'
-        : 'border border-ink/30 text-ink';
+  const { variant = 'primary', size = 'md', class: extra, type = 'button', ...rest } = props;
   return (
     <button
       type={type}
-      class={`rounded px-3 py-2 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 ${look} ${extra ?? ''}`}
+      class={`inline-flex cursor-pointer items-center justify-center rounded-control border font-medium leading-tight disabled:cursor-default disabled:opacity-50 ${BUTTON_LOOK[variant]} ${BUTTON_SIZE[size]} ${extra ?? ''}`}
       {...rest}
     />
   );
@@ -46,7 +57,7 @@ export function Field(props: {
       </label>
       {props.children}
       {props.hint !== undefined && (
-        <p id={`${props.id}-hint`} class="text-ink/70 text-xs">
+        <p id={`${props.id}-hint`} class="text-muted text-xs">
           {props.hint}
         </p>
       )}
@@ -54,32 +65,39 @@ export function Field(props: {
   );
 }
 
+/** Text inputs, textareas and selects. Add `font-mono` where the value is a code, key or URL. */
 export const inputClass =
-  'w-full rounded border border-ink/30 bg-white px-2 py-1.5 font-mono text-sm focus-visible:outline-2 focus-visible:outline-accent';
+  'w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-ink text-sm placeholder:text-muted focus-visible:border-accent';
 
 export function ErrorText(props: { message: string | undefined }) {
   if (props.message === undefined) return null;
   return (
-    <p role="alert" class="mt-3 text-danger text-sm">
+    <p role="alert" class="mt-3 font-medium text-danger text-sm">
       {props.message}
     </p>
   );
 }
 
 export function Heading(props: { children: ComponentChildren }) {
-  return <h1 class="font-semibold text-lg">{props.children}</h1>;
+  return <h1 class="font-serif font-medium text-2xl leading-tight">{props.children}</h1>;
 }
 
-export function Screen(props: { title: string; onBack?: () => void; children: ComponentChildren }) {
+export function Screen(props: {
+  title: string;
+  onBack?: () => void;
+  /** The title for screen readers only, where the popup's header already says it. */
+  hideTitle?: boolean;
+  children: ComponentChildren;
+}) {
   return (
     <section class="flex flex-col" aria-labelledby="screen-title">
-      <div class="flex items-center gap-2">
+      <div class={`flex items-center gap-3 ${props.hideTitle ? 'sr-only' : ''}`}>
         {props.onBack && (
-          <Button variant="plain" class="px-2 py-1 text-sm" onClick={props.onBack}>
+          <Button variant="plain" size="sm" onClick={props.onBack}>
             Back
           </Button>
         )}
-        <h1 id="screen-title" class="font-semibold text-lg">
+        <h1 id="screen-title" class="font-serif font-medium text-2xl leading-tight">
           {props.title}
         </h1>
       </div>
@@ -126,11 +144,11 @@ export function ProbeResults(props: { results: ProbeResult[] }) {
   return (
     <ul class="mt-3 flex flex-col gap-2 text-sm" aria-live="polite">
       {props.results.map((result) => (
-        <li key={`${result.role}:${result.url}`} class="rounded border border-ink/20 p-2">
+        <li key={`${result.role}:${result.url}`} class="card p-3">
           <span class="font-mono">{result.url}</span>{' '}
-          <span class="text-ink/70">({result.role})</span>{' '}
+          <span class="text-muted">({result.role})</span>{' '}
           {result.ok ? (
-            <span class="text-green-700">passed</span>
+            <span class="font-medium text-accent">passed</span>
           ) : (
             <span class="text-danger">
               refused: {result.failed?.name}
@@ -144,13 +162,19 @@ export function ProbeResults(props: { results: ProbeResult[] }) {
 }
 
 /** Copies `text` and says so on the button for a moment. */
-export function CopyButton(props: { text: string; label?: string; class?: string }) {
+export function CopyButton(props: {
+  text: string;
+  label?: string;
+  class?: string;
+  size?: 'md' | 'sm' | 'xs';
+}) {
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   const label = props.label ?? 'Copy';
   return (
     <Button
       variant="plain"
+      {...(props.size !== undefined && { size: props.size })}
       class={props.class}
       disabled={props.text === ''}
       onClick={async () => {
@@ -171,12 +195,11 @@ export function CopyButton(props: { text: string; label?: string; class?: string
 
 /** The strength meter: four bars, filled to the level, hidden from screen readers (the text says it). */
 export function StrengthMeter(props: { level: StrengthLevel }) {
-  const color =
-    props.level >= 3 ? 'bg-green-700' : props.level === 2 ? 'bg-amber-500' : 'bg-danger';
+  const color = props.level >= 3 ? 'bg-accent' : props.level === 2 ? 'bg-warn' : 'bg-danger';
   return (
     <div class="mt-1 flex gap-1" aria-hidden="true" data-level={props.level}>
       {[1, 2, 3, 4].map((n) => (
-        <div key={n} class={`h-1.5 flex-1 rounded ${n <= props.level ? color : 'bg-ink/15'}`} />
+        <div key={n} class={`h-1.5 flex-1 rounded-full ${n <= props.level ? color : 'bg-line'}`} />
       ))}
     </div>
   );
@@ -224,7 +247,7 @@ export function NewPassphrase(props: {
           />
           <Button
             variant="plain"
-            class="shrink-0 text-sm"
+            class="shrink-0"
             onClick={() => {
               const phrase = (props.suggest ?? suggestPassphrase)();
               props.onInput(phrase);
@@ -235,22 +258,22 @@ export function NewPassphrase(props: {
             Suggest one
           </Button>
         </div>
-        <p id="new-passphrase-rule" class="text-ink/70 text-xs">
+        <p id="new-passphrase-rule" class="text-muted text-xs">
           {PASSPHRASE_RULE}
         </p>
         <StrengthMeter level={strength.level} />
         <p
           id="new-passphrase-status"
-          class={`text-xs ${strength.level >= 3 && !mismatch ? 'text-green-700' : 'text-ink'}`}
+          class={`text-xs ${strength.level >= 3 && !mismatch ? 'text-accent' : 'text-ink'}`}
           aria-live="polite"
         >
           {status}
         </p>
         <div class="flex gap-2">
-          <Button variant="plain" class="px-2 py-1 text-xs" onClick={() => setShown(!shown)}>
+          <Button variant="plain" size="xs" onClick={() => setShown(!shown)}>
             {shown ? 'Hide' : 'Show'}
           </Button>
-          <CopyButton text={props.value} class="px-2 py-1 text-xs" />
+          <CopyButton text={props.value} size="xs" />
         </div>
       </div>
       <Field id="new-passphrase-confirm" label="Type it again">
@@ -290,7 +313,7 @@ export function saveFile(name: string, type: string, content: string): void {
 /** The statement spec 6.1 requires at setup. */
 export function LossWarning() {
   return (
-    <p class="mt-3 rounded bg-amber-100 p-2 text-sm">
+    <p class="card-warn mt-3 p-3 text-sm">
       If you forget the passphrase, the recovery code restores the queue. If you lose the recovery
       code and no other paired device remains, the queue is lost.
     </p>

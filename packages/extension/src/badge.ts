@@ -16,8 +16,8 @@ import {
 import { readDraftCache } from './sync/state.ts';
 
 /** The popup's accent and danger colours (`entrypoints/popup/style.css`) as hex for the API. */
-export const BADGE_COLOR = '#1F6FEB';
-export const BADGE_ATTENTION_COLOR = '#C4320A';
+export const BADGE_COLOR = '#1F5F4A';
+export const BADGE_ATTENTION_COLOR = '#A8321F';
 
 export interface BadgeInput {
   unlocked: boolean;

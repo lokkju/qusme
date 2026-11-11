@@ -34,12 +34,12 @@ function ArchivedRow(props: {
   const preview = firstLine(draft.content);
   const more = preview !== draft.content.trim();
   return (
-    <li class="rounded border border-ink/20 p-2" data-draft={draft.d}>
-      <p class="text-ink/70 text-xs">
+    <li class="card p-3" data-draft={draft.d}>
+      <p class="text-muted text-xs">
         {draft.site} / {draft.account} · {draft.field}
         {draft.source !== undefined && ` · from ${draft.source.label ?? 'an agent'}`}
       </p>
-      <p class="text-ink/70 text-xs">
+      <p class="text-muted text-xs">
         {draft.status === 'archived:inserted' ? 'Inserted' : 'Dismissed'} {dateOf(draft.updatedAt)}
       </p>
       {open ? (
@@ -51,7 +51,7 @@ function ArchivedRow(props: {
         {more && (
           <button
             type="button"
-            class="mr-auto text-xs underline"
+            class="mr-auto text-xs link"
             aria-expanded={open}
             onClick={() => setOpen(!open)}
           >
@@ -60,7 +60,7 @@ function ArchivedRow(props: {
         )}
         <Button
           variant="plain"
-          class="px-3 py-1 text-sm"
+          size="sm"
           disabled={props.busy}
           onClick={() => props.onRestore(draft)}
         >
@@ -130,7 +130,7 @@ export function ArchiveScreen(props: { deps: SetupDeps; onBack: () => void }) {
 
   return (
     <Screen title="Archived drafts" onBack={props.onBack}>
-      <p class="mt-2 text-ink/70 text-xs">
+      <p class="mt-2 text-muted text-xs">
         Drafts you inserted or dismissed. Restore puts one back in your drafts.
       </p>
       <ArchiveList drafts={drafts} busy={busy} onRestore={(d) => void restore(d)} />

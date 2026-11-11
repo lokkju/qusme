@@ -32,12 +32,12 @@ export function SyncNote(props: {
   const { summary } = props;
   const discarded = discardedTotal(summary);
   return (
-    <div class="mt-3 text-ink/70 text-xs">
+    <div class="mt-3 text-muted text-xs">
       {summary.rotatedTo !== undefined && (
-        <div role="alert" class="mb-2 rounded border border-danger/50 p-2 text-danger text-sm">
+        <div role="alert" class="mb-2 card-danger p-3 text-danger text-sm">
           <p>This queue has been rotated to a new key. Pair this device with one that holds it.</p>
           {props.onPair !== undefined && (
-            <Button class="mt-2 px-2 py-1 text-sm" onClick={props.onPair}>
+            <Button size="sm" class="mt-2" onClick={props.onPair}>
               Pair this device
             </Button>
           )}
@@ -58,7 +58,7 @@ export function SyncNote(props: {
             in a row. An agent may be sending too many drafts; revoke it under Agents.
           </p>
           {props.onAgents !== undefined && (
-            <Button variant="plain" class="mt-1 px-2 py-1 text-xs" onClick={props.onAgents}>
+            <Button variant="plain" size="xs" class="mt-1" onClick={props.onAgents}>
               Open Agents
             </Button>
           )}

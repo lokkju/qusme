@@ -12,18 +12,18 @@ import {
   loadChecklist,
   updateFirstRun,
 } from '../firstRun.ts';
-import { Button, CopyButton } from './components.tsx';
+import { Button, CopyButton, inputClass } from './components.tsx';
 
 /** The MCP endpoint a custom connector points at. */
 export const mcpUrl = (serviceOrigin: string): string => `${serviceOrigin}/mcp`;
 
 function Item(props: { done: boolean; title: string; children?: ComponentChildren }) {
   return (
-    <li class="rounded border border-ink/20 p-3">
+    <li class="card p-3">
       <div class="flex items-center gap-2">
         <span
           aria-hidden="true"
-          class={`flex h-5 w-5 flex-none items-center justify-center rounded-full text-white text-xs ${props.done ? 'bg-green-700' : 'border-2 border-ink/40'}`}
+          class={`flex h-5 w-5 flex-none items-center justify-center rounded-full text-on-accent text-xs ${props.done ? 'bg-accent' : 'border-2 border-line-strong'}`}
         >
           {props.done ? '✓' : ''}
         </span>
@@ -53,11 +53,11 @@ export function ChecklistView(props: {
         <h2 id="first-run-title" class="font-semibold">
           Get started
         </h2>
-        <span class="text-ink/70 text-xs">{checklistCount(state)} of 3 done</span>
+        <span class="text-muted text-xs">{checklistCount(state)} of 3 done</span>
       </div>
       <ul class="mt-2 flex flex-col gap-2">
         <Item done={state.agent} title="Connect Claude: add a custom connector">
-          <p class="mt-2 text-ink/80 text-xs">
+          <p class="mt-2 text-ink-2 text-xs">
             In Claude: Settings, Connectors, Add custom connector, then paste this address. Claude
             then shows a code; enter it under “Approve an agent”.
           </p>
@@ -65,14 +65,14 @@ export function ChecklistView(props: {
             <input
               readOnly
               aria-label="Connector address"
-              class="w-full rounded border border-ink/30 bg-white px-2 py-1.5 font-mono text-sm"
+              class={`${inputClass} font-mono`}
               value={url}
             />
             <CopyButton text={url} />
           </div>
         </Item>
         <Item done={state.destination} title="Add your X account">
-          <p class="mt-2 text-ink/80 text-xs">
+          <p class="mt-2 text-ink-2 text-xs">
             The account drafts go to. On x.com, the extension can read which account is signed in.
           </p>
           <Button class="mt-2" onClick={props.onAddDestination}>
@@ -80,7 +80,7 @@ export function ChecklistView(props: {
           </Button>
         </Item>
         <Item done={state.device} title="Pair your phone">
-          <p class="mt-2 text-ink/80 text-xs">
+          <p class="mt-2 text-ink-2 text-xs">
             A second device keeps your queue if you lose this one, and shows your drafts there.
           </p>
           <div class="mt-2 flex gap-2">
@@ -91,7 +91,7 @@ export function ChecklistView(props: {
           </div>
         </Item>
       </ul>
-      <Button variant="plain" class="mt-2 text-xs" onClick={props.onDismiss}>
+      <Button variant="plain" size="xs" class="mt-2" onClick={props.onDismiss}>
         Hide this checklist
       </Button>
     </section>

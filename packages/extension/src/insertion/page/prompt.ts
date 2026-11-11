@@ -10,6 +10,8 @@
  * querying the page.
  */
 
+import { pageScheme, SANS, schemeRules } from './scheme.ts';
+
 export interface Prompt {
   update(message: string): void;
   remove(): void;
@@ -42,14 +44,18 @@ const HOST_STYLE = [
 
 const STYLE = `
 :host { all: initial; }
+${schemeRules('.b')}
 .b {
   position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; max-width: 22rem;
-  padding: 10px 12px; border-radius: 6px; background: #1c1917; color: #fafaf9;
-  font: 14px/1.4 system-ui, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,.3);
-  display: flex; gap: 8px; align-items: flex-start; box-sizing: border-box;
+  padding: 10px 12px 10px 14px; border-radius: 10px; background: var(--surface); color: var(--fg);
+  border: 1px solid var(--edge); border-left: 4px solid var(--accent);
+  font: 14px/1.45 ${SANS}; box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 12px 32px -8px var(--shadow);
+  display: flex; gap: 10px; align-items: flex-start; box-sizing: border-box;
+  text-align: left; direction: ltr; letter-spacing: normal; text-transform: none;
 }
-.x { all: unset; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; color: inherit; }
-.x:focus-visible { outline: 2px solid #fafaf9; outline-offset: 2px; }
+.x { all: unset; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; color: var(--muted); }
+.x:hover { color: var(--fg); }
+.x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 `;
 
 /** The notice currently shown in each document, held here rather than marked in the page. */
@@ -64,7 +70,8 @@ export function showPrompt(doc: Document, message: string, onClose?: () => void)
   const style = doc.createElement('style');
   style.textContent = STYLE;
   const box = doc.createElement('div');
-  box.className = 'b';
+  const scheme = pageScheme(doc);
+  box.className = scheme === undefined ? 'b' : `b ${scheme}`;
   box.setAttribute('role', 'status');
   const text = doc.createElement('span');
   text.textContent = message;
