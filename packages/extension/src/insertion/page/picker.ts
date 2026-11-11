@@ -314,7 +314,7 @@ export function mountPicker(
       if (digits)
         hints.push([visible.length > 1 ? `1–${Math.min(9, visible.length)}` : '1', 'pick']);
     }
-    if (canToggle) hints.push(['Tab', showOthers ? 'hide other sites' : 'other sites']);
+    if (canToggle) hints.push(['Tab', 'other sites']);
     hints.push(['Esc', 'close']);
     keyHints(hints);
   };
