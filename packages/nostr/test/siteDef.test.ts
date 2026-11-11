@@ -136,6 +136,62 @@ describe('site definitions (spec 7.6, 10.1)', () => {
     }
   });
 
+  it('reads placeholder locators and skips a locator kind it does not know', () => {
+    const field = x.fields[0] as SiteDefinition['fields'][number];
+    const placeholder = { role: 'textbox', name: { en: ["What's up?"] }, by: 'placeholder' };
+    const future = { role: 'textbox', name: { en: ['Post'] }, by: 'xpath' };
+    const parsed = expectOk(
+      parseSiteDefinition({ ...x, fields: [{ ...field, locators: [future, placeholder] }] })
+    );
+    expect(parsed.fields[0]?.locators).toEqual([placeholder]);
+    expect(parsed.unusableFields).toBeUndefined();
+    // A field whose every locator is of an unknown kind keeps working by focus (10.2).
+    const onlyFuture = expectOk(
+      parseSiteDefinition({ ...x, fields: [{ ...field, locators: [future] }] })
+    );
+    expect(onlyFuture.fields[0]?.locators).toEqual([]);
+    // An account locator of an unknown kind leaves the site without account detection.
+    const account = { ...x.account, locator: future };
+    expect(expectOk(parseSiteDefinition({ ...x, account })).account).toBeUndefined();
+    expectError(
+      parseSiteDefinition({ ...x, fields: [{ ...field, locators: [{ ...placeholder, by: 1 }] }] }),
+      'invalid_content'
+    );
+  });
+
+  it('reads an account template from the object form of extract', () => {
+    const extract = { pattern: '^@([A-Za-z0-9_]+)$', template: '{1}@{host}' };
+    const parsed = expectOk(
+      parseSiteDefinition({ ...mastodon, account: { ...x.account, extract } })
+    );
+    expect(parsed.account).toEqual({
+      locator: x.account?.locator,
+      extract: '^@([A-Za-z0-9_]+)$',
+      template: '{1}@{host}',
+    });
+    // Without a template the object form means what the string does.
+    expect(
+      expectOk(
+        parseSiteDefinition({ ...x, account: { ...x.account, extract: { pattern: '@(a)' } } })
+      ).account?.extract
+    ).toBe('@(a)');
+    const bad: unknown[] = [
+      { pattern: '@(a)', template: '{2}@{host}' },
+      { pattern: '@(a)', template: '{host}' },
+      { pattern: '@(a)', template: '{1}@{origin}' },
+      { pattern: '@(a)', template: '{1}@{0}' },
+      { pattern: '@(a)', template: '{1}}' },
+      { pattern: '@(a)', template: '' },
+      { pattern: '([', template: '{1}' },
+      { template: '{1}' },
+      [],
+    ];
+    for (const value of bad) {
+      const result = parseSiteDefinition({ ...x, account: { ...x.account, extract: value } });
+      expect(result.ok, JSON.stringify(value)).toBe(false);
+    }
+  });
+
   it('orders versions as CalVer', () => {
     expect(compareSiteVersions('2026.10.1', '2026.10.2')).toBeLessThan(0);
     expect(compareSiteVersions('2026.11.1', '2026.10.9')).toBeGreaterThan(0);

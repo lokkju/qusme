@@ -1,3 +1,4 @@
+import { mastodonCountableText } from './mastodonText.ts';
 import {
   COUNTER_NAMES,
   type CounterName,
@@ -36,10 +37,19 @@ export function countTwitterText(text: string): number {
   return parseTweet(text).weightedLength;
 }
 
+/**
+ * Mastodon's length (`mastodon`): grapheme clusters, with every URL that has a protocol counted
+ * as 23 and a mention `@user@domain` as `@user`, as the server's StatusLengthValidator counts.
+ */
+export function countMastodon(text: string): number {
+  return countGraphemes(mastodonCountableText(text));
+}
+
 const COUNTERS: Record<CounterName, (text: string) => number> = {
   default: countCodePoints,
   graphemes: countGraphemes,
   'twitter-text': countTwitterText,
+  mastodon: countMastodon,
 };
 
 /** The length of `text` under the named counting strategy (spec 10.1). */

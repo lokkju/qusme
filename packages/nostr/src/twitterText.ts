@@ -112,6 +112,9 @@ const EMOJI = new RegExp(
   'gv'
 );
 
+/** What may not follow a mention (upstream `endMentionMatch`), which Mastodon's extractor reuses. */
+export const END_MENTION_MATCH = new RegExp(`^(?:[@＠]|[${latinAccentChars}]|://)`);
+
 const MAX_URL_LENGTH = 4096;
 const MAX_TCO_SLUG_LENGTH = 40;
 const MAX_DOMAIN_LABEL_LENGTH = 63;
@@ -200,9 +203,14 @@ function isValidUrl(url: string, protocol: string, domain: string): boolean {
 
 /**
  * URLs in the text as X links them, with or without a protocol (upstream
- * `extractUrlsWithIndices` with `extractUrlsWithoutProtocol: true`).
+ * `extractUrlsWithIndices` with `extractUrlsWithoutProtocol: true`). `withoutProtocol: false`
+ * keeps only URLs that start with `http://` or `https://`, as Mastodon extracts them.
  */
-export function extractUrlsWithIndices(text: string): ExtractedUrl[] {
+export function extractUrlsWithIndices(
+  text: string,
+  options: { withoutProtocol?: boolean } = {}
+): ExtractedUrl[] {
+  const withoutProtocol = options.withoutProtocol !== false;
   if (!text.includes('.')) return [];
   const urls: ExtractedUrl[] = [];
   const extractUrl = new RegExp(EXTRACT_URL_SOURCE, 'gi');
@@ -216,7 +224,7 @@ export function extractUrlsWithIndices(text: string): ExtractedUrl[] {
     const startPosition = endPosition - url.length;
     if (!isValidUrl(url, protocol || DEFAULT_PROTOCOL, domain)) continue;
     if (!protocol) {
-      if (INVALID_URL_WITHOUT_PROTOCOL_PRECEDING_CHARS.test(before)) continue;
+      if (!withoutProtocol || INVALID_URL_WITHOUT_PROTOCOL_PRECEDING_CHARS.test(before)) continue;
       let lastUrl: ExtractedUrl | undefined;
       let asciiEndPosition = 0;
       for (const ascii of domain.matchAll(new RegExp(VALID_ASCII_DOMAIN_SOURCE, 'gi'))) {

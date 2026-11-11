@@ -22,13 +22,25 @@ export type InjectionStrategy = (typeof INJECTION_STRATEGIES)[number];
  * Names of the counting strategies a definition's `constraints.counter` may reference (spec
  * 10.1). The strategies themselves live elsewhere; a definition naming any other fails to load.
  */
-export const COUNTER_NAMES = ['default', 'graphemes', 'twitter-text'] as const;
+export const COUNTER_NAMES = ['default', 'graphemes', 'twitter-text', 'mastodon'] as const;
 export type CounterName = (typeof COUNTER_NAMES)[number];
+
+/**
+ * What a locator's names are compared with (spec 10.1): the element's accessible name, or its
+ * placeholder text. A closed set; a locator naming any other is skipped.
+ */
+export const LOCATOR_SOURCES = ['name', 'placeholder'] as const;
+export type LocatorSource = (typeof LOCATOR_SOURCES)[number];
 
 /** An ARIA role and accessible names keyed by `document.documentElement.lang`, `en` required. */
 export interface Locator {
   role: string;
   name: Record<string, string[]>;
+  /**
+   * `placeholder` compares the names with the placeholder text of the element or of an empty
+   * paragraph inside it, for editors with no accessible name; absent means the accessible name.
+   */
+  by?: LocatorSource;
 }
 
 export interface FieldConstraints {
@@ -46,8 +58,13 @@ export interface SiteField {
 
 export interface SiteAccount {
   locator: Locator;
-  /** A regular expression whose first capture group is the account. */
+  /** A regular expression whose first capture group is the account, unless `template` is set. */
   extract: string;
+  /**
+   * Builds the account from the match: `{1}`..`{9}` are capture groups and `{host}` is the page's
+   * host name (`{1}@{host}` for Mastodon). Written in JSON as `extract: { pattern, template }`.
+   */
+  template?: string;
   /**
    * Whether the site tells accounts apart by case; absent means false, and accounts compare
    * case-insensitively (`normalizeAccount`).
@@ -93,9 +110,19 @@ const MATCH_PATTERN = /^(?:\*|https?):\/\/(?:\*|(?:\*\.)?[^/*]+)\/.*$/;
 const LANG = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
 const NAME_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
-function readLocator(value: unknown, path: string): Locator {
+/**
+ * Reads a locator; undefined for one whose `by` this version doesn't know, which the caller skips
+ * so a newer registry's locator kind doesn't make the whole definition fail.
+ */
+function readLocator(value: unknown, path: string): Locator | undefined {
   const record = readRecord(value, path);
   requireKeys(record, path, ['role', 'name']);
+  let by: LocatorSource | undefined;
+  if (record.by !== undefined) {
+    const source = readString(record.by, joinPath(path, 'by'), { nonEmpty: true });
+    if (!(LOCATOR_SOURCES as readonly string[]).includes(source)) return undefined;
+    by = source as LocatorSource;
+  }
   const names = readRecord(record.name, joinPath(path, 'name'));
   if (!Object.hasOwn(names, 'en')) {
     throw new Invalid('invalid_content', 'missing the en fallback', joinPath(path, 'name'));
@@ -110,13 +137,64 @@ function readLocator(value: unknown, path: string): Locator {
       readString(item, joinPath(langPath, i), { nonEmpty: true })
     );
   }
-  return { role: readString(record.role, joinPath(path, 'role'), { nonEmpty: true }), name };
+  const locator: Locator = {
+    role: readString(record.role, joinPath(path, 'role'), { nonEmpty: true }),
+    name,
+  };
+  if (by !== undefined) locator.by = by;
+  return locator;
 }
 
+/** The locators this version knows; possibly none, when every one has an unknown `by`. */
 function readLocators(value: unknown, path: string): Locator[] {
   const items = readArray(value, path);
   if (items.length === 0) throw new Invalid('invalid_content', 'must not be empty', path);
-  return items.map((item, i) => readLocator(item, joinPath(path, i)));
+  return items
+    .map((item, i) => readLocator(item, joinPath(path, i)))
+    .filter((l): l is Locator => l !== undefined);
+}
+
+const TEMPLATE_PART = /\{([^{}]*)\}|[{}]/g;
+
+/** Capture groups in a pattern known to compile: an empty alternative always matches. */
+const captureGroups = (pattern: string): number =>
+  (new RegExp(`${pattern}|`).exec('')?.length ?? 1) - 1;
+
+/**
+ * `account.extract`: a pattern string, or `{ pattern, template }`. Older parsers require the
+ * string, so they reject a definition using a template and keep the version they hold (10.1).
+ */
+function readExtract(value: unknown, path: string): { extract: string; template?: string } {
+  const isObject = typeof value === 'object' && value !== null && !Array.isArray(value);
+  const record = isObject ? readRecord(value, path) : undefined;
+  if (record !== undefined) requireKeys(record, path, ['pattern']);
+  const patternPath = record === undefined ? path : joinPath(path, 'pattern');
+  const extract = readString(record === undefined ? value : record.pattern, patternPath, {
+    nonEmpty: true,
+  });
+  try {
+    new RegExp(extract);
+  } catch {
+    throw new Invalid('invalid_content', 'not a regular expression', patternPath);
+  }
+  if (record?.template === undefined) return { extract };
+  const templatePath = joinPath(path, 'template');
+  const template = readString(record.template, templatePath, { nonEmpty: true, max: 256 });
+  const groups = captureGroups(extract);
+  let usesGroup = false;
+  for (const [part, inner] of template.matchAll(TEMPLATE_PART)) {
+    if (inner === 'host') continue;
+    const group = inner === undefined || !/^[1-9]$/.test(inner) ? 0 : Number(inner);
+    if (group === 0) {
+      throw new Invalid('invalid_content', `unknown placeholder ${part}`, templatePath);
+    }
+    if (group > groups) {
+      throw new Invalid('invalid_content', `no capture group ${group}`, templatePath);
+    }
+    usesGroup = true;
+  }
+  if (!usesGroup) throw new Invalid('invalid_content', 'uses no capture group', templatePath);
+  return { extract, template };
 }
 
 // Site definitions ignore keys they don't know (spec 7, "Unknown fields"): a newer registry must
@@ -213,21 +291,16 @@ export function readSiteDefinition(value: unknown, path = ''): SiteDefinition {
     const aPath = joinPath(path, 'account');
     const account = readRecord(record.account, aPath);
     requireKeys(account, aPath, ['locator', 'extract']);
-    const extract = readString(account.extract, joinPath(aPath, 'extract'), { nonEmpty: true });
-    try {
-      new RegExp(extract);
-    } catch {
-      throw new Invalid('invalid_content', 'not a regular expression', joinPath(aPath, 'extract'));
-    }
-    definition.account = {
-      locator: readLocator(account.locator, joinPath(aPath, 'locator')),
-      extract,
-    };
-    if (account.caseSensitive !== undefined) {
-      definition.account.caseSensitive = readBoolean(
-        account.caseSensitive,
-        joinPath(aPath, 'caseSensitive')
-      );
+    const extract = readExtract(account.extract, joinPath(aPath, 'extract'));
+    const locator = readLocator(account.locator, joinPath(aPath, 'locator'));
+    const caseSensitive =
+      account.caseSensitive === undefined
+        ? undefined
+        : readBoolean(account.caseSensitive, joinPath(aPath, 'caseSensitive'));
+    // A locator of a kind this version doesn't know leaves the site without account detection.
+    if (locator !== undefined) {
+      definition.account = { locator, ...extract };
+      if (caseSensitive !== undefined) definition.account.caseSensitive = caseSensitive;
     }
   }
   if (record.intents !== undefined) {

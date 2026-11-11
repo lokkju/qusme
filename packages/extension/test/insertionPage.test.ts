@@ -4,10 +4,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   accessibleName,
   findByLocator,
+  MAX_SHADOW_DEPTH,
   namesFor,
+  openShadowRoots,
+  placeholdersOf,
   roleOf,
 } from '../src/insertion/page/accessible.ts';
 import {
+  accountFromMatch,
   createPageApi,
   defaultChain,
   detectAccount,
@@ -276,6 +280,89 @@ describe('roles and accessible names', () => {
   });
 });
 
+describe('placeholder locators', () => {
+  const WHATS_UP: Locator = {
+    role: 'textbox',
+    name: { en: ["What's up?"], de: ["Was gibt's?"] },
+    by: 'placeholder',
+  };
+  // Bluesky's TipTap composer: role textbox, no accessible name, the prompt on the empty paragraph.
+  const tiptap = (placeholder: string) =>
+    `<div id="editor" class="tiptap ProseMirror" role="textbox" contenteditable="true"><p data-placeholder="${placeholder}" class="is-empty is-editor-empty"><br></p></div>`;
+
+  it('matches the data-placeholder inside a TipTap editor, which no accessible name reads', () => {
+    document.body.innerHTML = tiptap("What's up?");
+    const editor = document.getElementById('editor') as Element;
+    expect(accessibleName(editor)).toBe('');
+    expect(placeholdersOf(editor)).toEqual(["What's up?"]);
+    expect(findByLocator(document, WHATS_UP)).toEqual([editor]);
+    expect(resolveTarget(document, [WHATS_UP])).toEqual({ target: editor, resolution: 'locator' });
+    // The same names as accessible names match nothing, as an older build reads the locator.
+    expect(findByLocator(document, { role: 'textbox', name: WHATS_UP.name })).toEqual([]);
+  });
+
+  it('matches placeholder attributes on the element itself, in the page language', () => {
+    document.documentElement.lang = 'de';
+    document.body.innerHTML = `<textarea id="a" placeholder="Was gibt's?" aria-label="Post"></textarea>`;
+    expect(findByLocator(document, WHATS_UP).map((e) => e.id)).toEqual(['a']);
+  });
+
+  it('never matches placeholder text outside an element with the role', () => {
+    document.body.innerHTML = `
+      <p data-placeholder="What's up?">elsewhere</p>
+      <div role="button"><p data-placeholder="What's up?"></p></div>
+      <input type="checkbox" placeholder="What's up?">
+      <div role="textbox" hidden><p data-placeholder="What's up?"></p></div>`;
+    expect(findByLocator(document, WHATS_UP)).toEqual([]);
+  });
+});
+
+describe('open shadow roots', () => {
+  const host = (parent: Element | ShadowRoot, html: string): ShadowRoot => {
+    const element = document.createElement('div');
+    parent.append(element);
+    const root = element.attachShadow({ mode: 'open' });
+    root.innerHTML = html;
+    return root;
+  };
+  const SHARE: Locator = { role: 'textbox', name: { en: ['Text editor for creating content'] } };
+  const quill =
+    '<span id="label">Text editor for creating content</span><div class="ql-editor" role="textbox" contenteditable="true" aria-labelledby="label"></div>';
+
+  it("finds a locator's match inside an open shadow root, ids scoped to that root", () => {
+    const root = host(document.body, quill);
+    const editor = root.querySelector('.ql-editor') as Element;
+    expect(findByLocator(document, SHARE)).toEqual([editor]);
+    expect(resolveTarget(document, [SHARE]).target).toBe(editor);
+  });
+
+  it('prefers the light DOM, and skips shadow content its host hides', () => {
+    const root = host(document.body, quill);
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<div id="light" role="textbox" aria-label="Text editor for creating content" contenteditable="true"></div>'
+    );
+    expect(findByLocator(document, SHARE).map((e) => e.id)).toEqual(['light']);
+    document.getElementById('light')?.remove();
+    (root.host as HTMLElement).hidden = true;
+    expect(findByLocator(document, SHARE)).toEqual([]);
+  });
+
+  it('descends into nested roots only to the depth limit, and never into closed ones', () => {
+    let parent: Element | ShadowRoot = document.body;
+    for (let depth = 1; depth < MAX_SHADOW_DEPTH; depth++) parent = host(parent, '');
+    const deepest = host(parent, quill);
+    expect(findByLocator(document, SHARE)).toEqual([deepest.querySelector('.ql-editor')]);
+    host(deepest, quill.replace('ql-editor', 'ql-editor too-deep'));
+    expect(openShadowRoots(document)).toHaveLength(MAX_SHADOW_DEPTH);
+    document.body.replaceChildren();
+    const closed = document.createElement('div');
+    document.body.append(closed);
+    closed.attachShadow({ mode: 'closed' }).innerHTML = quill;
+    expect(findByLocator(document, SHARE)).toEqual([]);
+  });
+});
+
 describe('account detection', () => {
   const accountButton = (label: string) => {
     document.body.innerHTML = `<nav><button aria-label="${label}"><span>Loki</span><span>@lokkju</span></button></nav>`;
@@ -295,6 +382,26 @@ describe('account detection', () => {
     expect(detectAccount(document, X_ACCOUNT)).toEqual({ account: 'lokkju' });
     document.documentElement.lang = 'de';
     expect(detectAccount(document, X_ACCOUNT)).toEqual({});
+  });
+
+  it('builds the account from a template with the capture groups and the page host', () => {
+    const match = /@([a-z]+)(?:@([a-z.]+))?/.exec('@lokkju') as RegExpExecArray;
+    expect(accountFromMatch(match, undefined, 'mastodon.social')).toBe('lokkju');
+    expect(accountFromMatch(match, '{1}@{host}', 'mastodon.social')).toBe('lokkju@mastodon.social');
+    expect(accountFromMatch(match, '{1}@example.com', '')).toBe('lokkju@example.com');
+    // A group that took no part in the match, or no host, gives no account.
+    expect(accountFromMatch(match, '{1}@{2}', 'mastodon.social')).toBeUndefined();
+    expect(accountFromMatch(match, '{1}@{host}', '')).toBeUndefined();
+    document.body.innerHTML =
+      '<nav aria-label="Main"><a href="/@lokkju"><bdi><strong>Loki</strong></bdi> <span>@lokkju</span></a></nav>';
+    const mastodonAccount: SiteAccount = {
+      locator: { role: 'navigation', name: { en: ['Main'] } },
+      extract: '@([A-Za-z0-9_]+)',
+      template: '{1}@{host}',
+    };
+    const host = document.location.hostname.toLowerCase();
+    expect(host).not.toBe('');
+    expect(detectAccount(document, mastodonAccount)).toEqual({ account: `lokkju@${host}` });
   });
 
   it('finds nothing without the element, a match or a valid pattern', () => {
