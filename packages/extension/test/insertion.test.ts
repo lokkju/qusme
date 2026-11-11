@@ -768,6 +768,7 @@ describe('keyboard picker (11.5)', () => {
       definitions: source,
       insertion: t.service,
       token: () => 'pick-token',
+      now: () => 3601,
       page: {
         detectAccounts: async (tabId, locators) => {
           detections.push(tabId);
@@ -789,12 +790,22 @@ describe('keyboard picker (11.5)', () => {
       {
         token: 'pick-token',
         state: 'ready',
-        here: [{ d: 'd1', text: 'Hello from the queue', meta: 'X · text' }],
+        here: [
+          {
+            d: 'd1',
+            text: 'Hello from the queue',
+            meta: { who: 'You', when: '1 h ago', count: { length: 20, max: 280, over: false } },
+          },
+        ],
         others: [
           {
             d: 'd3',
             text: 'For Mastodon',
-            meta: 'Mastodon as lokkju@mastodon.social · text · from Claude',
+            meta: {
+              who: 'Claude',
+              when: '59 min ago',
+              destination: 'Mastodon',
+            },
           },
         ],
         context: 'X as lokkju',
@@ -805,9 +816,9 @@ describe('keyboard picker (11.5)', () => {
   it('labels each account when detection finds none', async () => {
     const t = await pickerSetup();
     await t.picker.open({ id: 7, url: 'https://x.com/home' });
-    expect(t.opened[0]?.here.map((i) => [i.d, i.meta])).toEqual([
-      ['d1', 'X as lokkju · text'],
-      ['d2', 'X as qusme · text'],
+    expect(t.opened[0]?.here.map((i) => [i.d, i.meta.destination])).toEqual([
+      ['d1', 'x.com · lokkju'],
+      ['d2', 'x.com · qusme'],
     ]);
     expect(t.opened[0]?.context).toBe('');
   });

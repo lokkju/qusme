@@ -8,11 +8,25 @@ const view = (over: Partial<PickerView> = {}): PickerView => ({
   token: 'tok-1',
   state: 'ready',
   here: [
-    { d: 'd1', text: 'Shipped: drafts land in your composer.', meta: 'X · text · from Claude' },
-    { d: 'd2', text: 'Thread (1/4): what shipping a queue taught us', meta: 'X · text' },
-    { d: 'd3', text: 'Lunch is at noon', meta: 'X · text' },
+    {
+      d: 'd1',
+      text: 'Shipped: drafts land in your composer.',
+      meta: { who: 'Claude', when: '2 h ago', count: { length: 38, max: 280, over: false } },
+    },
+    {
+      d: 'd2',
+      text: 'Thread (1/4): what shipping a queue taught us',
+      meta: { who: 'You', when: 'yesterday' },
+    },
+    { d: 'd3', text: 'Lunch is at noon', meta: { who: 'You', when: '3 days ago' } },
   ],
-  others: [{ d: 'd9', text: 'A post for Mastodon', meta: 'Mastodon as @me · text' }],
+  others: [
+    {
+      d: 'd9',
+      text: 'A post for Mastodon',
+      meta: { who: 'You', when: 'just now', destination: 'mastodon.social · me' },
+    },
+  ],
   context: 'X as @lokkju',
   ...over,
 });
@@ -158,6 +172,35 @@ describe('keyboard picker in the page', () => {
     typeFilter(p, 'nothing like this');
     expect(options(p)).toEqual([]);
     expect(messageOf(p)).toBe('No drafts match.');
+  });
+
+  it('draws the shared row meta: who, where, when, and the count against the limit', () => {
+    textarea().focus();
+    const h = harness();
+    createPageApi(h.env).openPicker(
+      view({
+        here: [
+          {
+            d: 'd1',
+            text: 'Too long',
+            meta: {
+              who: '<b>Bot</b>',
+              when: '2 h ago',
+              count: { length: 301, max: 280, over: true },
+            },
+          },
+        ],
+        others: [],
+      })
+    );
+    const meta = h.handle().root.querySelector('[role="option"] .s');
+    expect([...(meta?.children ?? [])].map((c) => c.textContent)).toEqual([
+      '<b>Bot</b>',
+      '2 h ago',
+      '301 / 280',
+    ]);
+    expect(meta?.querySelector('b')).toBeNull();
+    expect(meta?.querySelector('.n')?.classList.contains('x')).toBe(true);
   });
 
   it('inserts the chosen draft on Enter: removes the host, refocuses the field, sends the pick', async () => {

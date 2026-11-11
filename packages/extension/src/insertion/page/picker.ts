@@ -11,6 +11,7 @@
  * user types a filter. Only trusted events act. Closing removes the host and every listener the
  * picker added; nothing stays behind.
  */
+import { countText, metaText, type RowSegment, rowSegments } from '../../drafts/rowFormat.ts';
 import type { PickerItem, PickerView } from '../protocol.ts';
 import { MONO, pageScheme, SANS, SERIF, schemeRules } from './scheme.ts';
 import { type EditableTarget, isTextControl } from './target.ts';
@@ -84,8 +85,13 @@ ${schemeRules('.p')}
 .o[aria-selected="true"] { background: var(--tint); }
 .t { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3;
   -webkit-box-orient: vertical; overflow: hidden; }
-.o .s { font-size: 12px; font-weight: 500; color: var(--muted); }
-.o[aria-selected="true"] .s { color: var(--accent); }
+.o .s { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 12px; color: var(--muted); }
+.o .s > span { flex: none; white-space: nowrap; }
+.o .s .w { color: var(--fg); font-weight: 500; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+.o .s .e { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.o .s .n { margin-left: auto; flex: none; font-variant-numeric: tabular-nums; }
+.o .s .n.x { color: var(--danger); font-weight: 600; }
+.o[aria-selected="true"] .s, .o[aria-selected="true"] .s .w { color: var(--accent); }
 .a { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 14px 12px; }
 .btn { all: unset; box-sizing: border-box; min-height: 34px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--edge);
   background: var(--surface); font: 500 13px/1 ${SANS}; cursor: pointer; display: inline-flex; align-items: center;
@@ -98,6 +104,14 @@ kbd { font: 11px ${MONO}; border: 1px solid var(--edge); border-bottom-width: 2p
   background: var(--surface); color: var(--fg); }
 [hidden] { display: none !important; }
 `;
+
+/** The popup's segment classes (ui/draftRow.tsx) in the picker's short names. */
+const SEGMENT_CLASS: Record<RowSegment['key'], string | undefined> = {
+  who: 'w',
+  destination: 'e',
+  field: undefined,
+  when: undefined,
+};
 
 /** The caret's box in a contenteditable target, else the target's box. */
 function anchorRect(target: EditableTarget): DOMRect {
@@ -116,7 +130,7 @@ function anchorRect(target: EditableTarget): DOMRect {
 }
 
 const matches = (item: PickerItem, words: string[]): boolean => {
-  const hay = `${item.text}\n${item.meta}`.toLocaleLowerCase();
+  const hay = `${item.text}\n${metaText(item.meta)}`.toLocaleLowerCase();
   return words.every((w) => hay.includes(w));
 };
 
@@ -214,7 +228,16 @@ export function mountPicker(
       li.setAttribute('role', 'option');
       li.setAttribute('aria-selected', String(index === selected));
       li.dataset.i = String(index);
-      li.append(el('span', 't', item.text), el('span', 's', item.meta));
+      // The popup's row meta (ui/draftRow.tsx), from the same segments: who, where, when, count.
+      const meta = el('span', 's');
+      rowSegments(item.meta).forEach((segment, i) => {
+        if (i > 0) meta.append(doc.createTextNode('·'));
+        meta.append(el('span', SEGMENT_CLASS[segment.key], segment.text));
+      });
+      if (item.meta.count !== undefined) {
+        meta.append(el('span', item.meta.count.over ? 'n x' : 'n', countText(item.meta.count)));
+      }
+      li.append(el('span', 't', item.text), meta);
       return li;
     };
     here.forEach((item, i) => {

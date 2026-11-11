@@ -4,6 +4,7 @@
  * {@link PageInsertRequest}; account detection sends the account locator and nothing else.
  */
 import type { InjectionStrategy, Locator, SiteAccount } from '@qusme/nostr';
+import type { RowData } from '../drafts/rowFormat.ts';
 
 /** How the user asked for the insertion; recorded as the `inserted` tag's method (7.1). */
 export const INSERT_METHODS = [
@@ -118,12 +119,9 @@ export const PAGE_SCRIPT_FILE = '/qusme-page.js';
  * extension's isolated world, so the page's scripts can't read it; the full value still crosses
  * only for the draft the user inserts, in {@link PageInsertRequest}.
  */
-export interface PickerItem {
-  d: string;
+export interface PickerItem extends RowData {
   /** The draft's text, cut to {@link PICKER_TEXT_CHARS} code points, for display and filtering. */
   text: string;
-  /** Site name, account and field, for the row's second line. */
-  meta: string;
 }
 
 /** How much of each draft the picker shows. */
