@@ -117,7 +117,7 @@ export function authorizePage(input: AuthorizePageInput): Page {
 <h1>Approve on a qus.me device</h1>
 <p class="client"><strong>${escapeHtml(input.clientName)}</strong> (${escapeHtml(input.clientHost)}) wants to submit drafts to your queue.</p>
 <p>Open qus.me on a paired device and enter this code, or scan it.</p>
-<div class="code" aria-label="Code">${escapeHtml(input.userCode)}</div>
+<div class="code" aria-label="Code" data-approval-code="${escapeHtml(input.userCode)}">${escapeHtml(input.userCode)}</div>
 <div class="qr" role="img" aria-label="QR code for ${escapeHtml(input.userCode)}">${qr}</div>
 <p class="status" id="status" aria-live="polite">Waiting for your device…</p>
 <noscript><p>This page checks for approval automatically; with scripts off, reload it after approving.</p></noscript>

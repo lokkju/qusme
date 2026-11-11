@@ -42,6 +42,8 @@ SERVICE_ORIGIN = "https://app.qus.me"
 # The tab the popup believes it opened over; matches the bundled X definition's `match`.
 TAB_URL = "https://x.com/compose/post"
 FRAME_URL = "x.com/compose/post"
+# The MCP client's sign-in tab, for approving an agent (authorize-page.ts renders it).
+AUTHORIZE_URL = f"{SERVICE_ORIGIN}/authorize/demo"
 # The browser frame's page area, in CSS pixels.
 PAGE_W, PAGE_H = 820, 616
 SCALE = 2
@@ -230,21 +232,26 @@ def picker_view(drafts: list[dict], now: int) -> dict:
 
 # Stubs for extension pages only: the active tab, the read-only account detection, the sync
 # request (the cache is seeded instead), the service permission prompt and the service's answer
-# to an approval code. Everything else is the real extension.
+# to an approval code. Everything else is the real extension. A popup opened with `?stub-tab=URL`
+# believes it opened over that tab; over the authorize page, the page read returns its code.
 INIT_SCRIPT = """
 (() => {
   if (location.protocol !== 'chrome-extension:') return;
   const cfg = %s;
   const def = (obj, name, fn) =>
     obj && Object.defineProperty(obj, name, { value: fn, configurable: true, writable: true });
+  const tabUrl = new URLSearchParams(location.search).get('stub-tab') ?? cfg.tabUrl;
+  const onAuthorize = tabUrl.startsWith(cfg.serviceOrigin + '/authorize/');
   def(chrome.tabs, 'query', async () =>
-    [{ id: 4242, index: 0, windowId: 1, active: true, url: cfg.tabUrl, title: 'Compose post' }]);
+    [{ id: 4242, index: 0, windowId: 1, active: true, url: tabUrl, title: 'Compose post' }]);
   def(chrome.scripting, 'executeScript', async (injection) =>
-    injection.files ? [{ frameId: 0, result: null }] : [{ frameId: 0, result: cfg.detected }]);
+    injection.files ? [{ frameId: 0, result: null }]
+      : [{ frameId: 0, result: onAuthorize ? cfg.approvalCode : cfg.detected }]);
   const send = chrome.runtime.sendMessage.bind(chrome.runtime);
   def(chrome.runtime, 'sendMessage', (message, ...rest) =>
     message && message.type === 'qusme.sync' ? Promise.resolve({ state: 'ok' }) : send(message, ...rest));
   def(chrome.permissions, 'request', async () => true);
+  def(chrome.permissions, 'contains', async () => true);
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
@@ -326,7 +333,7 @@ def q_mark(size: int) -> str:
     )
 
 
-def frame(page_img: Path, overlay: str, badge: str) -> str:
+def frame(page_img: Path, overlay: str, badge: str, url: str = FRAME_URL) -> str:
     """A plain browser window (no real browser's look) with the extension's toolbar button."""
     icon = data_uri(EXTENSION / "icon/32.png")
     count = f"<b>{badge}</b>" if badge else ""
@@ -334,7 +341,7 @@ def frame(page_img: Path, overlay: str, badge: str) -> str:
 <div class="win">
   <div class="chrome">
     <span class="dots"><i></i><i></i><i></i></span>
-    <span class="url">{FRAME_URL}</span>
+    <span class="url">{url}</span>
     <span class="ext"><img src="{icon}" alt="">{count}</span>
   </div>
   <div class="page"><img src="{data_uri(page_img)}" alt="">{overlay}</div>
@@ -364,7 +371,6 @@ FRAME_CSS = f"""
 .popup img, .card img {{ display: block; }}
 .card {{ position: absolute; border-radius: 10px; overflow: hidden; background: #fff;
          box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 24px 60px -12px rgba(28,28,26,.28); border: 1px solid #e2e1db; }}
-.further {{ position: absolute; font-size: 14px; color: #55554f; }}
 .caption {{ position: absolute; left: 56px; top: 0; bottom: 0; width: 300px; display: flex; flex-direction: column;
             justify-content: center; }}
 .caption .brand {{ display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; margin-bottom: 36px; }}
@@ -388,25 +394,6 @@ def popup_overlay(img: Path, max_h: int = 600) -> str:
         f'<div class="shade"></div><div class="popup" style="width:{w}px;height:{min(h, max_h)}px">'
         f'<img src="{data_uri(img)}" style="width:{w}px;height:{h}px" alt=""></div>'
     )
-
-
-def split_cards(img: Path, cut: int) -> str:
-    """A popup screen too tall for one view, as two cards: its top, and the rest further down."""
-    w, h = image_css_size(img)
-    uri = data_uri(img)
-    rest = h - cut
-    with Image.open(img) as im:
-        paper = "#%02x%02x%02x" % im.convert("RGB").getpixel((4, 4))
-    left = 1280 - 48 - 2 * w - 20
-    top = (800 - cut) // 2
-    second = top + 120
-    return f"""
-<div class="card" style="left:{left}px;top:{top}px;width:{w}px;height:{cut}px">
-  <img src="{uri}" style="width:{w}px;height:{h}px" alt=""></div>
-<div class="further" style="left:{left + w + 20}px;top:{second - 28}px">Further down</div>
-<div class="card" style="left:{left + w + 20}px;top:{second}px;width:{w}px;padding-top:10px;background:{paper}">
-  <div style="height:{rest}px;overflow:hidden">
-    <img src="{uri}" style="width:{w}px;height:{h}px;margin-top:-{cut}px" alt=""></div></div>"""
 
 
 def screenshot_html(title: str, body: str, right: str) -> str:
@@ -481,6 +468,7 @@ def main() -> None:
             "scopes": ["drafts:submit"],
             "expires_at": now + 600,
         },
+        "approvalCode": "QK7D-M4XR",
     }
     local = {
         "qusme.queue": {
@@ -563,19 +551,19 @@ def main() -> None:
         home_page.get_by_text("x.com · lanternworks").wait_for()
         home = shoot_popup(home_page, tmp / "home.png")
 
-        approve_page = popup(ctx, ext_id, "?approve=QK7D-M4XR")
-        approve_page.get_by_role("button", name="Look up").click()
-        approve_page.get_by_role("button", name="Approve").first.wait_for(timeout=15000)
+        # The MCP client's sign-in tab, and the popup opened over it: the code is read off the
+        # page and looked up, so the popup opens on the review.
+        signin = ctx.new_page()
+        signin.set_viewport_size({"width": PAGE_W, "height": PAGE_H})
+        html = subprocess.run(
+            ["node", str(HERE / "authorize-page.ts")], check=True, capture_output=True, text=True
+        ).stdout
+        signin.set_content(html)
+        signin_img = tmp / "signin.png"
+        signin.screenshot(path=str(signin_img))
+        approve_page = popup(ctx, ext_id, f"?stub-tab={AUTHORIZE_URL}")
+        approve_page.get_by_role("button", name="Approve", exact=True).wait_for(timeout=15000)
         approve = shoot_popup(approve_page, tmp / "approve.png")
-        # The second card starts between the destination list and the new-destinations box.
-        box = approve_page.locator("#app > div").bounding_box()
-        listed = approve_page.locator("fieldset ul").first.bounding_box()
-        toggle = (
-            approve_page.get_by_text("Let it propose new destinations")
-            .locator("xpath=ancestor::*[contains(@class, 'card')][1]")
-            .bounding_box()
-        )
-        approve_cut = int((listed["y"] + listed["height"] + toggle["y"]) / 2 - box["y"])
 
         canvas = ctx.new_page()
         badge = str(len(drafts))
@@ -597,9 +585,14 @@ def main() -> None:
             (
                 "03-approve-agent.png",
                 "You decide what an agent may draft.",
-                "Approve Claude or another MCP client with a short code, then choose its "
-                "destinations and how many drafts it may add.",
-                split_cards(approve, approve_cut),
+                "Open qus.me on Claude's sign-in page and the code is already filled in. "
+                "Choose the accounts it may draft for and how many drafts it may add.",
+                frame(
+                    signin_img,
+                    popup_overlay(approve),
+                    badge,
+                    url=AUTHORIZE_URL.removeprefix("https://"),
+                ),
             ),
             (
                 "04-setup.png",

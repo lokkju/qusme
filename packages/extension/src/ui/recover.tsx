@@ -49,7 +49,13 @@ export function lookupRelays(parsed: ParsedRecoveryInput, typedRelay: string): s
 }
 
 /** Recovery from the published backup (spec 6.1, 11.3). */
-export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBack: () => void }) {
+export function RecoverScreen(props: {
+  deps: SetupDeps;
+  /** Reached from Unlock's "Forgot your passphrase?": says what recovery does to this device. */
+  forgot?: boolean;
+  onDone: () => void;
+  onBack: () => void;
+}) {
   const { deps } = props;
   const [text, setText] = useState('');
   const [relayUrl, setRelayUrl] = useState('');
@@ -155,6 +161,12 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
   };
   return (
     <Screen title="Recover a queue" onBack={props.onBack}>
+      {props.forgot && (
+        <p class="mt-2 text-sm" data-forgot>
+          Your recovery code opens the queue without the passphrase. You choose a new passphrase for
+          this device next; it replaces the one you forgot.
+        </p>
+      )}
       <form onSubmit={open}>
         <Field
           id="recover-sheet"

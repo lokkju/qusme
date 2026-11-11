@@ -39,7 +39,7 @@ import {
 } from '../sync/state.ts';
 import { dismissPickerTip, pickerTipDismissed } from '../tips.ts';
 import { messageOf } from './app.tsx';
-import { Button } from './components.tsx';
+import { Button, groupLabel } from './components.tsx';
 import { DraftRow } from './draftRow.tsx';
 import { firstLine, SyncNote } from './drafts.tsx';
 
@@ -267,7 +267,6 @@ interface ViewProps {
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-const groupLabel = 'pt-3 pb-1.5 font-semibold text-[11px] text-muted uppercase tracking-[0.08em]';
 
 /** The panel's markup, separate from its effects so it renders in tests. */
 export function InsertView(props: ViewProps) {

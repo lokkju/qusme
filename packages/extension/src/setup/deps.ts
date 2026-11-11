@@ -47,6 +47,12 @@ export interface SetupDeps {
    */
   requestServicePermission: () => Promise<boolean>;
   /**
+   * Whether that permission is already granted, without asking. Flows that run with no user
+   * gesture (the approval lookup when the popup opens on a sign-in tab) check this instead of
+   * requesting. Absent means not known, so they wait for the click.
+   */
+  hasServicePermission?: () => Promise<boolean>;
+  /**
    * Asks the background to sync (spec 11.4) and resolves when it has; the popup calls it on open.
    * Absent where there is no background, as in tests of the setup flows.
    */
