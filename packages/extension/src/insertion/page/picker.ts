@@ -12,6 +12,7 @@
  * picker added; nothing stays behind.
  */
 import type { PickerItem, PickerView } from '../protocol.ts';
+import { MONO, pageScheme, SANS, SERIF, schemeRules } from './scheme.ts';
 import { type EditableTarget, isTextControl } from './target.ts';
 
 export type PickerCloseReason = 'pick' | 'escape' | 'blur' | 'navigation' | 'replaced';
@@ -56,46 +57,45 @@ const HOST_STYLE = [
 
 const STYLE = `
 :host { all: initial; }
+${schemeRules('.p')}
 .p {
-  --bg: #ffffff; --fg: #111418; --muted: #3b424d; --line: #d5dae0; --edge: #858d99;
-  --sel: #eaf1fc; --foot: #f7f8fa; --accent: #1f5fd1; --kbd: #ffffff;
   position: fixed; box-sizing: border-box; width: ${WIDTH}px; max-width: calc(100vw - ${2 * MARGIN}px);
   max-height: min(420px, calc(100vh - ${2 * MARGIN}px)); display: flex; flex-direction: column;
-  overflow: hidden; background: var(--bg); color: var(--fg); border: 1px solid var(--edge);
-  border-radius: 12px; box-shadow: 0 16px 40px rgba(17, 20, 24, .25);
-  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  overflow: hidden; background: var(--surface); color: var(--fg); border: 1px solid var(--edge);
+  border-radius: 12px; box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 18px 44px -10px var(--shadow);
+  font: 14px/1.45 ${SANS};
   text-align: left; direction: ltr; letter-spacing: normal; text-transform: none;
-}
-@media (prefers-color-scheme: dark) {
-  .p {
-    --bg: #1b1f24; --fg: #eef0f3; --muted: #b9c0ca; --line: #3b424d; --edge: #5c6370;
-    --sel: #1e3a66; --foot: #22272e; --accent: #7aa7f0; --kbd: #2b323c;
-  }
 }
 .p *, .p *::before, .p *::after { box-sizing: border-box; }
 .h { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-.b { flex: none; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--fg); color: var(--bg);
-  font-size: 12px; font-weight: 700; display: flex; align-items: center; }
+.b { flex: none; display: flex; align-items: center; gap: 7px; color: var(--fg);
+  font: 500 17px/1 ${SERIF}; }
+.q { width: 22px; height: 22px; border-radius: 5px; background: #1f5f4a; color: #ffffff;
+  display: flex; align-items: center; justify-content: center; font: 500 17px/1 ${SERIF}; padding-bottom: 3px; }
 .f { flex: 1; min-width: 0; min-height: 40px; border: 0; outline: none; background: transparent; color: inherit;
-  font: inherit; font-size: 16px; padding: 0 4px; margin: 0; }
+  font: inherit; font-size: 15px; padding: 0 4px; margin: 0; }
+.f::placeholder { color: var(--muted); opacity: 1; }
 .c { flex: none; max-width: 45%; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
 .m { margin: 0; padding: 12px 14px 4px; color: var(--fg); }
 .l { list-style: none; margin: 0; padding: 6px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
-.g { padding: 8px 8px 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
-.o { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
-.o[aria-selected="true"] { background: var(--sel); }
+.g { padding: 10px 10px 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.o { padding: 9px 10px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.o[aria-selected="true"] { background: var(--tint); }
 .t { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3;
   -webkit-box-orient: vertical; overflow: hidden; }
-.o .s { font-size: 12px; color: var(--muted); }
+.o .s { font-size: 12px; font-weight: 500; color: var(--muted); }
+.o[aria-selected="true"] .s { color: var(--accent); }
 .a { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 14px 12px; }
-.btn { all: unset; box-sizing: border-box; min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--edge);
-  font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; color: var(--fg); }
+.btn { all: unset; box-sizing: border-box; min-height: 34px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--edge);
+  background: var(--surface); font: 500 13px/1 ${SANS}; cursor: pointer; display: inline-flex; align-items: center;
+  color: var(--fg); }
+.btn:hover { border-color: var(--fg); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.k { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--line); background: var(--foot);
+.k { display: flex; flex-wrap: wrap; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--line); background: var(--band);
   font-size: 12px; color: var(--muted); }
-kbd { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; border: 1px solid var(--edge);
-  border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--kbd); color: var(--fg); }
+kbd { font: 11px ${MONO}; border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px;
+  background: var(--surface); color: var(--fg); }
 [hidden] { display: none !important; }
 `;
 
@@ -145,12 +145,17 @@ export function mountPicker(
   const style = el('style');
   style.textContent = STYLE;
 
-  const panel = el('div', 'p');
+  // The page's own scheme where it can be read, so a dark site gets a dark picker (scheme.ts).
+  const scheme = pageScheme(doc);
+  const panel = el('div', scheme === undefined ? 'p' : `p ${scheme}`);
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'qus.me drafts');
 
   const head = el('div', 'h');
-  const badge = el('span', 'b', 'qus.me');
+  const badge = el('span', 'b');
+  const mark = el('span', 'q', 'q');
+  mark.setAttribute('aria-hidden', 'true');
+  badge.append(mark, doc.createTextNode('qus.me'));
   const filter = el('input', 'f');
   filter.type = 'text';
   filter.autocomplete = 'off';
