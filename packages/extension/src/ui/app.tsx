@@ -13,6 +13,7 @@ import { FirstRunChecklist } from './firstRun.tsx';
 import { type InsertionUiDeps, InsertPanel } from './insert.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
 import { RecoverScreen } from './recover.tsx';
+import { RecoveryLookupCard } from './recoveryLookup.tsx';
 import { RelaySwapScreen } from './relays.tsx';
 
 export type Route =
@@ -229,6 +230,7 @@ function Unlocked(props: {
         onAddDestination={() => props.onRoute('add-destination')}
         onPair={() => props.onRoute('pair-source')}
       />
+      <RecoveryLookupCard deps={deps} />
       <InsertPanel
         store={deps.store}
         deps={props.insertion}

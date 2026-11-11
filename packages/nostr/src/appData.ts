@@ -33,6 +33,12 @@ export const D_DESTINATIONS = 'qus.me/destinations';
 export const D_SETTINGS = 'qus.me/settings';
 export const D_RECOVERY = 'qus.me/recovery';
 export const D_ROTATED = 'qus.me/rotated';
+/**
+ * The NIP-32 label namespace of the recovery backup's lookup tag (6.1): `["L", ns]` and
+ * `["l", <recoveryLookupTag>, ns]`. Relays index the single-letter `l`, so a device holding only
+ * the recovery code asks for `#l` and needs no npub.
+ */
+export const RECOVERY_LOOKUP_NAMESPACE = 'qus.me/recovery-lookup';
 
 /** `archive_retention_days` when unset on a queue on the hosted relay (spec 7.2, 9.2). */
 export const HOSTED_ARCHIVE_RETENTION_DAYS = 90;
@@ -430,15 +436,36 @@ function readNcryptsec(text: string): NcryptsecParams {
 export async function buildRecoveryBackup(
   signer: Signer,
   ncryptsec: string,
-  options: AppDataOptions = {}
+  options: AppDataOptions & { lookup?: string } = {}
 ): Promise<NostrEvent> {
   checkInput('ncryptsec', () => readNcryptsec(ncryptsec));
+  const extraTags =
+    options.lookup === undefined
+      ? options.extraTags
+      : withRecoveryLookup(options.extraTags, options.lookup);
   return signer.signEvent({
     kind: KIND_APP_DATA,
     created_at: options.createdAt ?? Math.floor(Date.now() / 1000),
-    tags: appDataTags(D_RECOVERY, options.extraTags),
+    tags: appDataTags(D_RECOVERY, extraTags),
     content: ncryptsec,
   });
+}
+
+/** `extraTags` with the recovery lookup label set to `lookup`, replacing any earlier one. */
+export function withRecoveryLookup(extraTags: string[][] | undefined, lookup: string): string[][] {
+  if (!isHex64(lookup)) throw new Error('lookup must be 64 lowercase hex characters');
+  const kept = (extraTags ?? []).filter(
+    (t) =>
+      !(t[0] === 'L' && t[1] === RECOVERY_LOOKUP_NAMESPACE) &&
+      !(t[0] === 'l' && t[2] === RECOVERY_LOOKUP_NAMESPACE)
+  );
+  return [...kept, ['L', RECOVERY_LOOKUP_NAMESPACE], ['l', lookup, RECOVERY_LOOKUP_NAMESPACE]];
+}
+
+/** The backup's lookup tag, or undefined for a backup published before it had one. */
+export function recoveryLookupOf(backup: { extraTags?: string[][] }): string | undefined {
+  const tag = backup.extraTags?.find((t) => t[0] === 'l' && t[2] === RECOVERY_LOOKUP_NAMESPACE);
+  return tag !== undefined && isHex64(tag[1]) ? tag[1] : undefined;
 }
 
 /**

@@ -49,12 +49,15 @@ export {
   parseRotationMarker,
   parseSettings,
   type QuotaCount,
+  RECOVERY_LOOKUP_NAMESPACE,
   type RecoveryBackup,
   type RetiredInboxKey,
   type RotationMarker,
   readDestinations,
   readSettings,
+  recoveryLookupOf,
   type Settings,
+  withRecoveryLookup,
 } from './appData.ts';
 export {
   type ConstraintName,
@@ -225,6 +228,7 @@ export {
   RECOVERY_WORDLIST,
   recoveryCodeToBase32,
   recoveryCodeToWords,
+  recoveryLookupTag,
   recoveryPassword,
 } from './recoveryCode.ts';
 export {

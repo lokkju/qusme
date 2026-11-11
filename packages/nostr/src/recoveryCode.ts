@@ -6,7 +6,9 @@
  * lowercase hex. Devices never keep the code.
  */
 
-import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
+import { hkdf } from '@noble/hashes/hkdf.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, randomBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { entropyToMnemonic, mnemonicToEntropy } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { CROCKFORD_ALPHABET } from './pairingCode.ts';
@@ -121,4 +123,19 @@ export function parseRecoveryCode(input: unknown): Uint8Array | undefined {
 export function recoveryPassword(bytes: Uint8Array): string {
   checkLength(bytes);
   return bytesToHex(bytes);
+}
+
+const LOOKUP_SALT = utf8ToBytes('qus.me/recovery-lookup');
+const LOOKUP_INFO = utf8ToBytes('v1');
+
+/**
+ * The backup's lookup tag (6.1): HKDF-SHA256 of the code's bytes, as 64 lowercase hex. The backup
+ * carries it, so a device holding only the code finds the backup without the queue npub. It says
+ * nothing to anyone without the code, and the code can't be worked back out of it: HKDF is one-way
+ * and the code is 128 random bits. Separate from {@link recoveryPassword}, so the tag gives no head
+ * start on the backup's scrypt.
+ */
+export function recoveryLookupTag(bytes: Uint8Array): string {
+  checkLength(bytes);
+  return bytesToHex(hkdf(sha256, bytes, LOOKUP_SALT, LOOKUP_INFO, 32));
 }

@@ -136,13 +136,13 @@ describe('recover screen', { timeout: 30_000 }, () => {
     );
     await settle();
     expect($('#recover-sheet-found').textContent).toBe(
-      'Queue ID found, recovery code found, 2 storage servers.'
+      'Recovery code found, Queue ID found, 2 storage servers.'
     );
     button('Recover').click();
     await until(() => root.textContent?.includes('Choose a passphrase') === true, 20_000);
   });
 
-  it('asks for a storage server only when the default ones do not have the queue', async () => {
+  it('offers another storage server when no relay asked has the queue', async () => {
     const net = network();
     net.add('wss://default-empty.example');
     const a = await createdDevice(net);
@@ -154,10 +154,36 @@ describe('recover screen', { timeout: 30_000 }, () => {
     await settle();
     button('Recover').click();
     await until(() => root.querySelector('#recover-relay') !== null);
-    expect(root.textContent).toContain('isn’t on the default storage servers');
+    expect(root.textContent).toContain(
+      'No recovery backup for that Queue ID on wss://default-empty.example'
+    );
     type('#recover-relay', STORAGE[0] as string);
     await settle();
     button('Recover').click();
     await until(() => root.textContent?.includes('Choose a passphrase') === true, 20_000);
+  });
+
+  it('recovers from the 12 words alone, with no Queue ID', async () => {
+    const net = network();
+    const a = await createdDevice(net);
+    const b = device(net);
+    b.deps.defaultStorageRelays = STORAGE;
+    mount(<RecoverScreen deps={b.deps} onDone={() => {}} onBack={() => {}} />);
+    type('#recover-sheet', a.words);
+    await settle();
+    expect($('#recover-sheet-found').textContent).toBe(
+      'Recovery code found, no Queue ID (not needed).'
+    );
+    button('Recover').click();
+    await until(() => root.textContent?.includes('Choose a passphrase') === true, 20_000);
+  });
+
+  it('says plainly when the text is not a recovery code', async () => {
+    const b = device(network());
+    mount(<RecoverScreen deps={b.deps} onDone={() => {}} onBack={() => {}} />);
+    type('#recover-sheet', 'abandon ability able about above absent absorb abstract');
+    await settle();
+    button('Recover').click();
+    await until(() => root.textContent?.includes('That is not a recovery code') === true);
   });
 });
