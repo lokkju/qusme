@@ -58,7 +58,7 @@ describe('toolbar badge', () => {
       });
     }
     expect(badgeFor({ ...none, activeDrafts: 1, pendingDestinations: 2 }).title).toBe(
-      'qus.me: 1 draft; 2 new destinations'
+      'qus.me: 1 draft; 2 accounts waiting for your OK'
     );
   });
 

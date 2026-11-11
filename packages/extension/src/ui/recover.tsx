@@ -42,7 +42,7 @@ export function lookupRelays(parsed: ParsedRecoveryInput, typedRelay: string): s
   if (typedRelay.trim() !== '') {
     const clean = cleanRelayUrl(typedRelay);
     if (clean === undefined)
-      throw new SetupError(`${typedRelay.trim()} is not a wss:// relay URL.`);
+      throw new SetupError(`${typedRelay.trim()} is not a wss:// server address.`);
     if (!relays.includes(clean)) relays.unshift(clean);
   }
   return relays;
@@ -86,14 +86,14 @@ export function RecoverScreen(props: {
         <p class="mt-2 text-sm">This device holds the queue key and is unlocked.</p>
         {!result.relayListFound && (
           <p class="mt-2 text-sm">
-            The queue’s relay list was not found, so this device uses the relays it found the backup
-            on.
+            The queue’s server list wasn’t found, so this device uses the servers it found the
+            backup on.
           </p>
         )}
         {result.lookupAdded === false && (
           <p class="mt-2 text-sm">
-            The backup could not be updated to be found by the recovery code alone, so keep the
-            Queue ID with your recovery code.
+            The backup couldn’t be updated, so recovery still needs the Queue ID; keep it with your
+            recovery code.
           </p>
         )}
         {!result.settingsFound && (

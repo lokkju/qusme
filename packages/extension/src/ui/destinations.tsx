@@ -63,9 +63,9 @@ export function detectionMessage(detection: Detection, siteName: string): string
     case 'detected':
       return undefined;
     case 'no_tab':
-      return "qus.me can't read this tab.";
+      return "qus.me can't read this tab; type the account.";
     case 'other_site':
-      return `This tab isn't on ${siteName}.`;
+      return `This tab isn't on ${siteName}; open it there, or type the account.`;
     case 'no_locator':
       return `${siteName}'s definition can't tell which account is signed in; type it.`;
     case 'undetected':
@@ -98,7 +98,7 @@ export function DestinationItem(props: {
       <p class="font-medium text-sm">{props.shown}</p>
       {details.length > 0 && <p class="text-muted text-xs">{details.join(' · ')}</p>}
       {d.status === 'pending' && (
-        <p class="text-xs">Proposed by an agent; confirm or reject it under Agents.</p>
+        <p class="text-xs">Proposed by an agent; allow or reject it under Agents.</p>
       )}
       {props.confirming ? (
         <div class="mt-2">
