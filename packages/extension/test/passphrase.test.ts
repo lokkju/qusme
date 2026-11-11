@@ -2,6 +2,7 @@ import { RECOVERY_WORDLIST } from '@qusme/nostr';
 import { describe, expect, it } from 'vitest';
 import {
   checkPassphrase,
+  MIN_PASSPHRASE_BITS,
   PASSPHRASE_RULE,
   passphraseStrength,
   SUGGESTED_WORDS,
@@ -71,14 +72,29 @@ describe('passphrase rule, strength and suggestions (#73)', () => {
       '0123456789',
       '!@#$%^&*-_=+?',
     ];
-    const pick = (set: string): string =>
-      set[(crypto.getRandomValues(new Uint32Array(1))[0] as number) % set.length] as string;
+    // mulberry32 with a fixed seed: the same 300 strings on every run.
+    let seed = 0x5eed_0016;
+    const next = (): number => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return (t ^ (t >>> 14)) >>> 0;
+    };
+    const pick = (set: string): string => set[next() % set.length] as string;
+    const all = classes.join('');
+    let accepted = 0;
     for (let i = 0; i < 300; i += 1) {
       const chars = classes.map(pick);
-      const all = classes.join('');
       while (chars.length < 16) chars.push(pick(all));
-      expect(checkPassphrase(chars.join(''))).toMatchObject({ ok: true });
+      const check = checkPassphrase(chars.join(''));
+      // Strength is never the reason: the estimate always clears the minimum.
+      expect(check.bits).toBeGreaterThanOrEqual(MIN_PASSPHRASE_BITS);
+      // A random string may still hold a run, a repeat or a common word, which the rule refuses
+      // on purpose; anything else must pass.
+      if (check.ok) accepted += 1;
+      else expect(check.problem).toMatch(/^(Too repetitive|Contains a very common password)/);
     }
+    expect(accepted).toBeGreaterThan(290);
   });
 
   it('refuses 12 lowercase letters and says how many it needs', () => {
