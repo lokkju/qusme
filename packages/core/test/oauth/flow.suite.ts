@@ -415,6 +415,7 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
         scopes: ['drafts:submit'],
         queuePubkey,
         storageRelays: RELAYS,
+        storageGrantAt: null,
       });
 
       // Refresh rotates the refresh token.

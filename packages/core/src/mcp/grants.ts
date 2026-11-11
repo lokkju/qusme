@@ -13,7 +13,7 @@ import {
   type Signer,
   SUBMITTERS_KINDS,
 } from '@qusme/nostr';
-import type { RelayReader } from '../oauth/relayReader.ts';
+import { checkStorageRelays, type RelayReader } from '../oauth/relayReader.ts';
 import type { AgentAuth } from '../oauth/server.ts';
 
 export interface FoundGrant {
@@ -99,6 +99,24 @@ export function createGrantCache(options: GrantCacheOptions): GrantCache {
   }
 
   return agentCache(options, read);
+}
+
+/**
+ * The storage relays to move the agent's binding to, when its grant names a different set than
+ * the binding's and is newer than the grant the binding last moved for (spec 7.4, 8.4); otherwise
+ * undefined. The grant must come from {@link GrantCache}, which keeps only grants signed by the
+ * bound queue for this agent. A grant without `storage`, or whose relays fail the checks an
+ * approval's relays pass (`checkStorageRelays`: `wss://`, allowed hosts, at most 5), moves nothing.
+ */
+export function storageMoveFor(agent: AgentAuth, found: FoundGrant): string[] | undefined {
+  const { storage } = found.grant;
+  if (storage === undefined) return undefined;
+  if (agent.storageGrantAt !== null && found.createdAt <= agent.storageGrantAt) return undefined;
+  const relays = checkStorageRelays(storage);
+  if (typeof relays === 'string') return undefined;
+  const bound = new Set(agent.storageRelays);
+  if (relays.length === bound.size && relays.every((url) => bound.has(url))) return undefined;
+  return relays;
 }
 
 /** The queue's current submitters list as the service reads it: the public `p` tags. */

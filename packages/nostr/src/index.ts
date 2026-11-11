@@ -18,6 +18,7 @@ export {
   DEFAULT_SUBMISSION_EXPIRATION_DAYS,
   type GrantDestination,
   type GrantQuota,
+  MAX_GRANT_STORAGE_RELAYS,
   MAX_MIN_POW,
   MAX_SUBMISSION_EXPIRATION_DAYS,
   parseAgentGrant,

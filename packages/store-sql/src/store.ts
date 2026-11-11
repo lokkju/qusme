@@ -425,6 +425,32 @@ export function createStore(db: QusmeDb) {
         .returning();
       return out;
     },
+    /**
+     * Moves an unrevoked binding of `queuePubkey` to the storage relays of an agent grant signed at
+     * `grantCreatedAt` (spec 8.4), only if no grant at least as new moved it before. Returns the
+     * updated binding, or undefined when the guard refused it.
+     */
+    async moveStorage(
+      agentKeyId: string,
+      queuePubkey: string,
+      storageRelays: string[],
+      grantCreatedAt: number,
+      now: number
+    ): Promise<Binding | undefined> {
+      const [out] = await db
+        .update(bindings)
+        .set({ storageRelays, storageGrantAt: grantCreatedAt, updatedAt: now })
+        .where(
+          and(
+            eq(bindings.agentKeyId, agentKeyId),
+            eq(bindings.queuePubkey, queuePubkey),
+            isNull(bindings.revokedAt),
+            or(isNull(bindings.storageGrantAt), lt(bindings.storageGrantAt, grantCreatedAt))
+          )
+        )
+        .returning();
+      return out;
+    },
     async revoke(agentKeyId: string, now: number): Promise<Binding | undefined> {
       const [out] = await db
         .update(bindings)

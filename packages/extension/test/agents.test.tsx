@@ -537,6 +537,8 @@ describe('agent approval against the service', { timeout: 30_000 }, () => {
         submission_expiration_days: 14,
         quota: { max_submissions: 5, period: 'day' },
         expires_at: null,
+        // The queue's storage relays, which the service follows after a swap (7.4, 8.4).
+        storage: STORAGE,
       });
     }
 
@@ -988,12 +990,14 @@ describe('editing an agent grant', { timeout: 30_000 }, () => {
     const one = await h.approved((c) => ({ ...c, label: 'Mine' }));
     const pubkey = one.request.agentPubkey;
     // A grant a newer build wrote: unknown keys, an extra tag and proof of work this form leaves.
+    // It has no storage, as grants from before 7.4 named it; the edit adds the queue's.
     const before = await grantOn(h, pubkey);
     const newer = await buildAgentGrant(
       h.queue,
       pubkey,
       {
         ...before.grant,
+        storage: undefined,
         min_pow: 1,
         extra: { future: 'top' },
         quota: { ...before.grant.quota, extra: { burst: 2 } },
@@ -1040,6 +1044,7 @@ describe('editing an agent grant', { timeout: 30_000 }, () => {
           { site: 'x', account: 'lokkju', fields: ['text'], extra: { color: 'teal' } },
           { site: 'x', account: 'alt', fields: ['text'], override: X_ALT.override },
         ],
+        storage: STORAGE,
       });
       expect(edited.extraTags).toEqual([['future', 'kept']]);
       const list = newestOn(h.net, url, KIND_SUBMITTERS, h.queuePubkey) as NostrEvent;
@@ -1103,9 +1108,9 @@ describe('editing an agent grant', { timeout: 30_000 }, () => {
     expect(await shareDestination(X_ALT.id, [one.request.agentPubkey], h.deps)).toEqual([
       one.request.agentPubkey,
     ]);
-    expect(
-      (await grantOn(h, one.request.agentPubkey)).grant.destinations.map((d) => d.account)
-    ).toEqual(['lokkju', 'alt']);
+    const shared = (await grantOn(h, one.request.agentPubkey)).grant;
+    expect(shared.destinations.map((d) => d.account)).toEqual(['lokkju', 'alt']);
+    expect(shared.storage).toEqual(STORAGE);
     expect(
       (await grantOn(h, two.request.agentPubkey)).grant.destinations.map((d) => d.account)
     ).toEqual(['lokkju']);

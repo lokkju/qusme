@@ -104,6 +104,11 @@ export interface AgentAuth {
   /** From the agent key's binding, so a rotation rebind (spec 6.1) moves every token with it. */
   queuePubkey: string;
   storageRelays: string[];
+  /**
+   * The `created_at` of the grant whose `storage` the relays came from, or null while they are
+   * the approval's (8.4).
+   */
+  storageGrantAt: number | null;
 }
 
 export interface McpAuthEnv {
@@ -934,6 +939,7 @@ export function createOAuth(options: OAuthOptions) {
         scopes,
         queuePubkey: live.binding.queuePubkey,
         storageRelays: live.binding.storageRelays,
+        storageGrantAt: live.binding.storageGrantAt,
       });
       await next();
     });

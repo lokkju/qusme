@@ -961,6 +961,120 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
       expect(inbox.published).toHaveLength(1);
     });
 
+    describe('storage relays carried in the grant (7.4, 8.4)', () => {
+      const MOVED = ['wss://storage.example/', 'wss://storage3.example/'];
+      const OTHER = ['wss://storage4.example/'];
+
+      /** Publishes a grant signed by `signer` (the queue by default) to `relays` only. */
+      async function grantOn(
+        relays: string[],
+        agentPubkey: string,
+        input: Partial<AgentGrantInput>,
+        at: number,
+        signer: Signer = queue
+      ) {
+        const event = await buildAgentGrant(
+          signer,
+          agentPubkey,
+          { ...baseGrant(), ...input },
+          { createdAt: at }
+        );
+        storage.publish(event, relays);
+        return event;
+      }
+
+      async function listOn(relays: string[], agents: string[], at: number) {
+        const labels = Object.fromEntries(
+          agents.map((a) => [a, { label: 'Example Agent', authorized_at: at }])
+        );
+        storage.publish(await buildSubmittersList(queue, labels, { createdAt: at }), relays);
+      }
+
+      const lastRead = (kind: 'grant' | 'submitters') =>
+        storage.queries.findLast((q) =>
+          kind === 'grant'
+            ? q.query.filter['#d'] !== undefined
+            : q.query.filter.kinds?.includes(KIND_SUBMITTERS)
+        );
+
+      it('moves the binding to a newer grant’s storage relays and reads there from then on', async () => {
+        const notices: McpNotice[] = [];
+        const noticing = makeApp({ notice: (n) => notices.push(n) });
+        const agent = await bindAgent();
+        await listOn([...STORAGE, ...MOVED], [agent.key.pubkey], clock - 30);
+        // The swap's republished grant: newer, naming the new list, on the surviving relay too.
+        await grantOn([...STORAGE, ...MOVED], agent.key.pubkey, { storage: MOVED }, clock - 5);
+        const client = await connect(agent.token, noticing);
+        expect((await call(client, 'list_destinations')).isError).toBeFalsy();
+        expect(lastRead('grant')?.query.relays).toEqual(STORAGE);
+        const binding = await h.store.bindings.get(agent.key.id);
+        expect(binding?.storageRelays).toEqual(MOVED);
+        expect(binding?.storageGrantAt).toBe(clock - 5);
+        expect(notices).toEqual([
+          { event: 'storage_relays_moved', agentPubkey: agent.key.pubkey, queuePubkey },
+        ]);
+
+        expect((await call(client, 'create_draft', draft('after the swap'))).isError).toBeFalsy();
+        expect(lastRead('grant')?.query.relays).toEqual(MOVED);
+        expect(lastRead('submitters')?.query.relays).toEqual(MOVED);
+        expect(notices).toHaveLength(1);
+      });
+
+      it('ignores an older grant, a forged one, and one naming relays it would not connect to', async () => {
+        const agent = await bindAgent();
+        await listOn([...STORAGE, ...MOVED, ...OTHER], [agent.key.pubkey], clock - 30);
+        await grantOn(STORAGE, agent.key.pubkey, { storage: MOVED }, clock - 5);
+        const client = await connect(agent.token);
+        expect((await call(client, 'list_destinations')).isError).toBeFalsy();
+        expect((await h.store.bindings.get(agent.key.id))?.storageRelays).toEqual(MOVED);
+
+        // MOVED kept only an older grant, naming other relays: it does not move the binding back.
+        await grantOn(MOVED, agent.key.pubkey, { storage: OTHER }, clock - 10);
+        expect((await call(client, 'list_destinations')).isError).toBeFalsy();
+        expect(await h.store.bindings.get(agent.key.id)).toMatchObject({
+          storageRelays: MOVED,
+          storageGrantAt: clock - 5,
+        });
+
+        // A newer grant signed by another key is not the queue's.
+        const stranger = createLocalSigner(generateSecretKey());
+        await grantOn(MOVED, agent.key.pubkey, { storage: OTHER }, clock + 100, stranger);
+        expect((await call(client, 'list_destinations')).isError).toBeFalsy();
+        expect((await h.store.bindings.get(agent.key.id))?.storageRelays).toEqual(MOVED);
+
+        // A newer queue grant naming a host the service refuses to connect to moves nothing.
+        await grantOn(MOVED, agent.key.pubkey, { storage: ['wss://relay.internal'] }, clock - 1);
+        expect((await call(client, 'list_destinations')).isError).toBeFalsy();
+        expect(await h.store.bindings.get(agent.key.id)).toMatchObject({
+          storageRelays: MOVED,
+          storageGrantAt: clock - 5,
+        });
+      });
+
+      it('keeps the binding for a grant without storage, and for a revoked agent', async () => {
+        const agent = await bindAgent();
+        await listOn(STORAGE, [agent.key.pubkey], clock - 30);
+        await grant(agent.key.pubkey, {}, clock - 5);
+        const client = await connect(agent.token);
+        expect((await call(client, 'list_destinations')).isError).toBeFalsy();
+        expect(await h.store.bindings.get(agent.key.id)).toMatchObject({
+          storageRelays: STORAGE,
+          storageGrantAt: null,
+        });
+        // The same relays in another order are the same list.
+        await grant(agent.key.pubkey, { storage: [...STORAGE].reverse() }, clock - 4);
+        expect((await call(client, 'list_destinations')).isError).toBeFalsy();
+        expect((await h.store.bindings.get(agent.key.id))?.storageGrantAt).toBeNull();
+
+        await listOn(STORAGE, [], clock - 3);
+        await grant(agent.key.pubkey, { storage: MOVED }, clock - 2);
+        expect((await call(client, 'list_destinations')).structuredContent?.error).toBe(
+          'grant_revoked'
+        );
+        expect((await h.store.bindings.get(agent.key.id))?.storageRelays).toEqual(STORAGE);
+      });
+    });
+
     it('answers a 2025-era client over the stateless fallback', async () => {
       const agent = await bindAgent();
       await grant(agent.key.pubkey);

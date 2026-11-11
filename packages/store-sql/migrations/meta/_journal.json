@@ -36,6 +36,13 @@
       "when": 1794252963513,
       "tag": "0004_drop_pairing_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794385417536,
+      "tag": "0005_binding_storage_grant_at",
+      "breakpoints": true
     }
   ]
 }
