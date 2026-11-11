@@ -94,13 +94,37 @@ describe('first-run checklist', { timeout: 30_000 }, () => {
 
   it('shows the connector address with a copy button and what is left', () => {
     const html = view({ agent: false, destination: true, device: false, dismissed: false });
-    expect(html).toContain('Connect Claude: add a custom connector');
+    expect(html).toContain('Connect an agent');
     expect(html).toContain('value="https://app.qus.me/mcp"');
     expect(html).toContain('Copy');
     expect(html).toContain('1 of 3 done');
-    expect(html).toContain('Add your X account');
+    expect(html).toContain('Add the account you post from');
     expect(html).toContain('(done)');
     expect(html).toContain('Pair your phone');
+    expect(html).toContain('optional');
     expect(html).toContain('Hide this checklist');
+    // Names no particular app or site in the item titles (critique H7).
+    expect(html).not.toContain('Claude');
+    expect(html).not.toContain('Add your X account');
+  });
+
+  it('opens with the queue as a ticked line naming its servers by host', () => {
+    const html = renderToString(
+      <ChecklistView
+        state={{ agent: false, destination: false, device: false, dismissed: false }}
+        serviceOrigin={ORIGIN}
+        servers={['wss://relay.primal.net', 'wss://relay.ditto.pub/']}
+        onAddDestination={() => {}}
+        onPair={() => {}}
+        onSkipPair={() => {}}
+      />
+    );
+    expect(html).toContain('Your queue is ready');
+    expect(html).toContain('Queue stored on 2 servers');
+    expect(html).toContain('relay.primal.net and relay.ditto.pub.');
+    expect(html).toContain('0 of 3 done');
+    expect(html).not.toContain('wss://');
+    // Without onDismiss (the create flow's last step), no Hide.
+    expect(html).not.toContain('Hide this checklist');
   });
 });

@@ -4,6 +4,7 @@ import {
   type CreateDraft,
   cleanRelayList,
   confirmRecoveryCode,
+  confirmRecoveryWords,
   DEFAULT_INBOX_RELAYS,
   DEFAULT_STORAGE_RELAYS,
   finishCreate,
@@ -32,11 +33,14 @@ import {
   Screen,
   saveFile,
 } from './components.tsx';
+import { FirstRunChecklist, listJoin, serverHost } from './firstRun.tsx';
 
 /**
- * The create flow (spec 11.3): passphrase, relays, the recovery sheet, then the typed
- * confirmation, which publishes. The relays come before the sheet so the sheet names the relays
- * the queue is actually created on.
+ * The create flow (spec 11.3): passphrase, servers, the recovery sheet, then the typed
+ * confirmation, which publishes, and the first-run checklist. The servers come before the sheet
+ * so the sheet names the servers the queue is actually created on. The server step checks the
+ * suggested servers as it opens and shows one line; editing them is under "Use other servers"
+ * (critique F2). The confirmation asks for three of the twelve words, or the whole code (F3).
  */
 type Step = 'passphrase' | 'relays' | 'sheet' | 'confirm' | 'done';
 
@@ -46,9 +50,9 @@ const lines = (text: string): string[] => text.split(/\s+/).filter(Boolean);
 export function QueueFacts(props: { npub: string; storageRelays: readonly string[] }) {
   return (
     <dl class="mt-3 flex flex-col gap-1 text-sm">
-      <dt class="font-semibold text-ink-2 text-xs uppercase">Queue ID (npub)</dt>
+      <dt class="font-semibold text-ink-2 text-xs uppercase">Queue ID</dt>
       <dd class="break-all font-mono text-xs">{props.npub}</dd>
-      <dt class="mt-2 font-semibold text-ink-2 text-xs uppercase">Storage servers (relays)</dt>
+      <dt class="mt-2 font-semibold text-ink-2 text-xs uppercase">Storage servers</dt>
       {props.storageRelays.map((url) => (
         <dd key={url} class="font-mono text-xs">
           {url}
@@ -104,10 +108,20 @@ export function RecoverySheetView(props: { sheet: RecoverySheet }) {
   );
 }
 
+const sameList = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
+/** "Word 3, 7 and 11": the positions the confirmation asks for, counted from 1. */
+const wordNumbers = (positions: readonly number[]) => listJoin(positions.map((p) => String(p + 1)));
+
 export function CreateScreen(props: {
   deps: SetupDeps;
+  /** Leaves the flow from its last step ("Go to drafts"). */
   onDone: () => void;
   onBack: () => void;
+  /** The checklist's "Add by hand" and "Pair" on the last step; both go home without them. */
+  onAddAccount?: () => void;
+  onPair?: () => void;
   /** Tests pass a deterministic passphrase suggestion. */
   suggest?: () => string;
 }) {
@@ -119,6 +133,9 @@ export function CreateScreen(props: {
   const [again, setAgain] = useState('');
   const [saved, setSaved] = useState(false);
   const [typed, setTyped] = useState('');
+  // The confirmation: three words by default, or the whole code in either form.
+  const [confirmBy, setConfirmBy] = useState<'words' | 'code'>('words');
+  const [typedWords, setTypedWords] = useState<string[]>(['', '', '']);
   const [storage, setStorage] = useState(DEFAULT_STORAGE_RELAYS.join('\n'));
   const [inbox, setInbox] = useState(DEFAULT_INBOX_RELAYS.join('\n'));
   const [chosen, setChosen] = useState<{ storage: string[]; inbox: string[] }>();
@@ -131,7 +148,8 @@ export function CreateScreen(props: {
   useEffect(() => () => wipeDraft(draft), [draft]);
 
   const relayKey = `${storage}\n--\n${inbox}`;
-  const probesPassed = probedFor === relayKey && results.length > 0 && results.every((r) => r.ok);
+  const probed = probedFor === relayKey && results.length > 0;
+  const probesPassed = probed && results.every((r) => r.ok);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -144,6 +162,28 @@ export function CreateScreen(props: {
       setBusy(false);
     }
   };
+
+  const probe = () =>
+    run(async () => {
+      const storageRelays = cleanRelayList(lines(storage), 'storage server');
+      const inboxRelays = cleanRelayList(lines(inbox), 'inbox server');
+      setResults([]);
+      const all = await probeRelays(
+        [
+          ...storageRelays.map((url) => ({ url, role: 'storage' as const })),
+          ...inboxRelays.map((url) => ({ url, role: 'inbox' as const })),
+        ],
+        deps
+      );
+      setResults(all);
+      setProbedFor(relayKey);
+    });
+
+  // The server step checks what it would use as soon as it opens, so the user has nothing to
+  // press unless a server fails or they want others (critique F2).
+  useEffect(() => {
+    if (step === 'relays' && probedFor !== relayKey && !busy) void probe();
+  }, [step]);
 
   if (step === 'passphrase') {
     return (
@@ -171,67 +211,88 @@ export function CreateScreen(props: {
   }
 
   if (step === 'relays') {
-    const probe = () =>
-      run(async () => {
-        const storageRelays = cleanRelayList(lines(storage), 'storage relay');
-        const inboxRelays = cleanRelayList(lines(inbox), 'inbox relay');
-        setResults([]);
-        const all = await probeRelays(
-          [
-            ...storageRelays.map((url) => ({ url, role: 'storage' as const })),
-            ...inboxRelays.map((url) => ({ url, role: 'inbox' as const })),
-          ],
-          deps
-        );
-        setResults(all);
-        setProbedFor(relayKey);
-      });
     const next = () => {
       setError(undefined);
       setChosen({
-        storage: cleanRelayList(lines(storage), 'storage relay'),
-        inbox: cleanRelayList(lines(inbox), 'inbox relay'),
+        storage: cleanRelayList(lines(storage), 'storage server'),
+        inbox: cleanRelayList(lines(inbox), 'inbox server'),
       });
-      // New relays make a new sheet, which the user has to save again.
+      // New servers make a new sheet, which the user has to save again.
       setSaved(false);
       setStep('sheet');
     };
+    const storageHosts = lines(storage).map(serverHost);
+    const inboxHosts = lines(inbox).map(serverHost);
+    const suggested =
+      sameList(lines(storage), DEFAULT_STORAGE_RELAYS) &&
+      sameList(lines(inbox), DEFAULT_INBOX_RELAYS);
+    const failed = probed && !probesPassed;
+    const count = `${storageHosts.length} ${suggested ? 'public ' : ''}${storageHosts.length === 1 ? 'server' : 'servers'}`;
     return (
-      <Screen title="Choose relays" onBack={() => setStep('passphrase')}>
+      <Screen title="Storage servers" onBack={() => setStep('passphrase')}>
         <p class="mt-2 text-sm">
-          Storage relays hold the encrypted queue. The inbox relay receives drafts from agents and
-          must show them only to you. Each is checked before it is saved.
+          Your queue is kept encrypted on storage servers, and drafts from your agents arrive
+          through an inbox server. Only your devices can read either.
         </p>
-        <Field id="storage-relays" label="Storage relays, one per line">
-          <textarea
-            id="storage-relays"
-            rows={3}
-            class={`${inputClass} font-mono`}
-            spellcheck={false}
-            value={storage}
-            onInput={(e) => setStorage(e.currentTarget.value)}
-          />
-        </Field>
-        <Field id="inbox-relays" label="Inbox relay">
-          <textarea
-            id="inbox-relays"
-            rows={1}
-            class={`${inputClass} font-mono`}
-            spellcheck={false}
-            value={inbox}
-            onInput={(e) => setInbox(e.currentTarget.value)}
-          />
-        </Field>
-        {results.length > 0 && <ProbeResults results={results} />}
-        <ErrorText message={error} />
-        <div class="mt-3 flex gap-2">
-          <Button variant={probesPassed ? 'plain' : 'primary'} disabled={busy} onClick={probe}>
-            {busy ? 'Checking…' : 'Check relays'}
-          </Button>
-          <Button disabled={busy || !probesPassed} onClick={next}>
-            Next
-          </Button>
+        <div role="status" class="mt-3 card p-3" data-server-check>
+          <p class="flex items-center gap-2 font-semibold text-sm">
+            {probesPassed && (
+              <span
+                aria-hidden="true"
+                class="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-accent text-on-accent text-xs"
+              >
+                ✓
+              </span>
+            )}
+            {busy
+              ? `Checking ${count}…`
+              : probesPassed
+                ? `${count}, checked`
+                : failed
+                  ? `${results.filter((r) => !r.ok).length} of ${results.length} servers didn't pass the check`
+                  : count}
+          </p>
+          <p class="mt-1 text-ink-2 text-xs">
+            Stored on {listJoin(storageHosts)}; drafts arrive through {listJoin(inboxHosts)}.
+          </p>
         </div>
+        {failed && <ProbeResults results={results} />}
+        <details class="mt-3 text-sm" open={failed || !suggested}>
+          <summary class="cursor-pointer text-muted text-xs">Use other servers</summary>
+          <Field id="storage-relays" label="Storage servers, one per line">
+            <textarea
+              id="storage-relays"
+              rows={3}
+              class={`${inputClass} font-mono`}
+              spellcheck={false}
+              value={storage}
+              onInput={(e) => setStorage(e.currentTarget.value)}
+            />
+          </Field>
+          <Field id="inbox-relays" label="Inbox server">
+            <textarea
+              id="inbox-relays"
+              rows={1}
+              class={`${inputClass} font-mono`}
+              spellcheck={false}
+              value={inbox}
+              onInput={(e) => setInbox(e.currentTarget.value)}
+            />
+          </Field>
+          <Button
+            variant="plain"
+            size="sm"
+            class="mt-2"
+            disabled={busy || probesPassed}
+            onClick={() => void probe()}
+          >
+            {busy ? 'Checking…' : 'Check servers'}
+          </Button>
+        </details>
+        <ErrorText message={error} />
+        <Button class="mt-3" disabled={busy || !probesPassed} onClick={next}>
+          Next
+        </Button>
       </Screen>
     );
   }
@@ -262,10 +323,19 @@ export function CreateScreen(props: {
   }
 
   if (step === 'confirm') {
+    const positions = draft.checkPositions;
     const submit = (event: Event) => {
       event.preventDefault();
-      if (!confirmRecoveryCode(draft, typed)) {
-        setError('That is not the code shown. Check what you wrote down.');
+      const ok =
+        confirmBy === 'words'
+          ? confirmRecoveryWords(draft, typedWords)
+          : confirmRecoveryCode(draft, typed);
+      if (!ok) {
+        setError(
+          confirmBy === 'words'
+            ? `Those aren't words ${wordNumbers(positions)} of the code shown. Check what you wrote down.`
+            : 'That is not the code shown. Check what you wrote down.'
+        );
         return;
       }
       void run(async () => {
@@ -281,9 +351,12 @@ export function CreateScreen(props: {
         setPassphrase('');
         setAgain('');
         setTyped('');
+        setTypedWords(['', '', '']);
         setStep('done');
       });
     };
+    const entered =
+      confirmBy === 'words' ? typedWords.every((w) => w.trim() !== '') : typed.trim() !== '';
     return (
       <Screen title="Confirm and create" onBack={() => setStep('sheet')}>
         <form onSubmit={submit}>
@@ -291,22 +364,77 @@ export function CreateScreen(props: {
             Check that your sheet has this Queue ID and these storage servers.
           </p>
           <QueueFacts npub={sheet.npub} storageRelays={sheet.storageRelays} />
-          <Field
-            id="code-typed"
-            label="Type the recovery code"
-            hint="The 12 words, or the 26-character code."
-          >
-            <textarea
-              id="code-typed"
-              rows={3}
-              class={`${inputClass} font-mono`}
-              autocomplete="off"
-              spellcheck={false}
-              value={typed}
-              aria-describedby="code-typed-hint"
-              onInput={(e) => setTyped(e.currentTarget.value)}
-            />
-          </Field>
+          {confirmBy === 'words' ? (
+            <fieldset class="mt-3">
+              <legend class="font-medium text-sm">
+                Type words {wordNumbers(positions)} of your recovery code
+              </legend>
+              <div class="mt-1 grid grid-cols-3 gap-2">
+                {positions.map((position, i) => (
+                  <div key={position} class="flex flex-col gap-1">
+                    <label for={`check-word-${i}`} class="text-muted text-xs">
+                      Word {position + 1}
+                    </label>
+                    <input
+                      id={`check-word-${i}`}
+                      class={`${inputClass} font-mono`}
+                      autocomplete="off"
+                      autocapitalize="off"
+                      spellcheck={false}
+                      value={typedWords[i]}
+                      onInput={(e) => {
+                        const value = e.currentTarget.value;
+                        setTypedWords((words) => words.map((w, j) => (j === i ? value : w)));
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <p class="mt-1 text-xs">
+                <button
+                  type="button"
+                  class="link"
+                  onClick={() => {
+                    setError(undefined);
+                    setConfirmBy('code');
+                  }}
+                >
+                  Type the whole code instead
+                </button>
+              </p>
+            </fieldset>
+          ) : (
+            <>
+              <Field
+                id="code-typed"
+                label="Type the recovery code"
+                hint="The 12 words, or the 26-character code."
+              >
+                <textarea
+                  id="code-typed"
+                  rows={3}
+                  class={`${inputClass} font-mono`}
+                  autocomplete="off"
+                  spellcheck={false}
+                  value={typed}
+                  aria-describedby="code-typed-hint"
+                  onInput={(e) => setTyped(e.currentTarget.value)}
+                />
+              </Field>
+              <p class="mt-1 text-xs">
+                <button
+                  type="button"
+                  class="link"
+                  onClick={() => {
+                    setError(undefined);
+                    setConfirmBy('words');
+                  }}
+                >
+                  Type three words instead
+                </button>
+              </p>
+            </>
+          )}
           <div class="mt-3 flex items-start gap-2">
             <input
               id="sheet-saved"
@@ -321,12 +449,12 @@ export function CreateScreen(props: {
           </div>
           <ErrorText message={error} />
           <div class="mt-3 flex gap-2">
-            <Button type="submit" disabled={busy || !saved || typed.trim() === ''}>
+            <Button type="submit" disabled={busy || !saved || !entered}>
               {busy ? 'Creating…' : 'Create queue'}
             </Button>
             {error !== undefined && draft.confirmed && (
               <Button variant="plain" disabled={busy} onClick={() => setStep('relays')}>
-                Change relays
+                Change servers
               </Button>
             )}
           </div>
@@ -335,12 +463,18 @@ export function CreateScreen(props: {
     );
   }
 
+  // The last step is the first-run checklist, with the queue as its first, ticked line (F6).
   return (
-    <Screen title="Queue created">
-      <p class="mt-2 text-sm">This device holds the queue key and is unlocked.</p>
-      <Button class="mt-3" onClick={props.onDone}>
-        Done
+    <section class="flex flex-col" aria-labelledby="first-run-title">
+      <FirstRunChecklist
+        deps={deps}
+        dismissible={false}
+        onAddDestination={props.onAddAccount ?? props.onDone}
+        onPair={props.onPair ?? props.onDone}
+      />
+      <Button class="mt-4" onClick={props.onDone}>
+        Go to drafts
       </Button>
-    </Screen>
+    </section>
   );
 }

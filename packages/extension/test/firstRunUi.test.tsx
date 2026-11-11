@@ -3,8 +3,11 @@
  * The create and recover screens driven in happy-dom against the fake relays: the passphrase
  * feedback and suggestion (#73), the recovery sheet at setup and pasted at recovery (#71).
  */
+
+import { KIND_DRAFT_WRAP } from '@qusme/nostr';
 import { render } from 'preact';
 import { afterEach, describe, expect, it } from 'vitest';
+import { DEFAULT_INBOX_RELAYS, DEFAULT_STORAGE_RELAYS } from '../src/setup/create.ts';
 import { recoverySheetText } from '../src/setup/recoverySheet.ts';
 import { CreateScreen } from '../src/ui/create.tsx';
 import { RecoverScreen } from '../src/ui/recover.tsx';
@@ -64,56 +67,155 @@ describe('create screen', { timeout: 30_000 }, () => {
     expect(button('Next').disabled).toBe(false);
   });
 
-  it('shows the Queue ID and storage servers with the code, then confirms both and creates', async () => {
-    const net = network();
+  /** Through the passphrase step to the server step. */
+  async function toServers(net: ReturnType<typeof network>, onDone = () => {}) {
     const d = device(net);
-    let done = false;
     mount(
-      <CreateScreen
-        deps={d.deps}
-        onDone={() => {
-          done = true;
-        }}
-        onBack={() => {}}
-        suggest={() => SUGGESTED}
-      />
+      <CreateScreen deps={d.deps} onDone={onDone} onBack={() => {}} suggest={() => SUGGESTED} />
     );
     button('Suggest one').click();
     await settle();
     button('Next').click();
     await settle();
-    type('#storage-relays', STORAGE.join('\n'));
-    type('#inbox-relays', INBOX.join('\n'));
-    await settle();
-    button('Check relays').click();
-    await until(() => !button('Next').disabled);
-    button('Next').click();
-    await settle();
+    return d;
+  }
 
+  /** The sheet's words, then on to the confirmation. */
+  async function sheetThenConfirm(): Promise<string[]> {
     expect(root.textContent).toContain('Save your recovery sheet');
-    const npub = root.querySelector('dd')?.textContent ?? '';
-    expect(npub).toMatch(/^npub1/);
-    for (const url of STORAGE) expect(root.textContent).toContain(url);
-    expect(root.textContent).toContain('Queue ID (npub)');
-    expect(root.textContent).toContain('Storage servers (relays)');
-    button('Download recovery sheet');
-    button('Printable version');
     const words = [...root.querySelectorAll('ol li')].map((li) => li.textContent ?? '');
     expect(words).toHaveLength(12);
     button('Next').click();
     await settle();
+    return words;
+  }
+
+  /** The word numbers the confirmation asks for, counted from 1, from its labels. */
+  const askedFor = (): number[] =>
+    [...root.querySelectorAll('label[for^="check-word-"]')].map((l) =>
+      Number(l.textContent?.replace('Word ', ''))
+    );
+
+  it('checks the suggested servers on open and shows them as one line', async () => {
+    const net = network();
+    for (const url of DEFAULT_STORAGE_RELAYS) net.add(url);
+    for (const url of DEFAULT_INBOX_RELAYS)
+      net.add(url, { restrictGiftWraps: true, refuseKinds: [KIND_DRAFT_WRAP] });
+    await toServers(net);
+    expect(root.textContent).toContain('Storage servers');
+    const line = () => $('[data-server-check]').textContent ?? '';
+    // Checked without a click; Next is the only thing to press (F2).
+    await until(() => line().includes('2 public servers, checked'));
+    expect(line()).toContain('Stored on relay.primal.net and relay.ditto.pub');
+    expect(line()).toContain('drafts arrive through auth.nostr1.com');
+    expect(root.textContent).not.toContain('Nostr');
+    // The addresses are under "Use other servers", closed.
+    const details = root.querySelector('details') as HTMLDetailsElement;
+    expect(details.querySelector('summary')?.textContent).toBe('Use other servers');
+    expect(details.open).toBe(false);
+    expect(details.querySelector('#storage-relays')).not.toBeNull();
+    expect(button('Next').disabled).toBe(false);
+  });
+
+  it('confirms with three of the twelve words, then shows the checklist as its last step', async () => {
+    const net = network();
+    for (const url of DEFAULT_STORAGE_RELAYS) net.add(url);
+    for (const url of DEFAULT_INBOX_RELAYS)
+      net.add(url, { restrictGiftWraps: true, refuseKinds: [KIND_DRAFT_WRAP] });
+    let done = false;
+    const d = await toServers(net, () => {
+      done = true;
+    });
+    await until(() => !button('Next').disabled);
+    button('Next').click();
+    await settle();
+
+    const npub = root.querySelector('dd')?.textContent ?? '';
+    expect(npub).toMatch(/^npub1/);
+    expect(root.textContent).toContain('Queue ID');
+    expect(root.textContent).not.toContain('(npub)');
+    expect(root.textContent).not.toContain('(relays)');
+    button('Download recovery sheet');
+    button('Printable version');
+    const words = await sheetThenConfirm();
 
     expect(root.textContent).toContain(npub);
+    const asked = askedFor();
+    expect(asked).toHaveLength(3);
+    expect(new Set(asked).size).toBe(3);
+    expect(asked).toEqual([...asked].sort((a, b) => a - b));
+    expect(root.querySelector('legend')?.textContent).toBe(
+      `Type words ${asked[0]}, ${asked[1]} and ${asked[2]} of your recovery code`
+    );
+    expect(root.querySelector('#code-typed')).toBeNull();
+    $<HTMLInputElement>('#sheet-saved').click();
+    await settle();
+    // A word from the wrong position is refused.
+    const wrong = words.find((_, i) => !asked.includes(i + 1)) as string;
+    type('#check-word-0', wrong);
+    type('#check-word-1', words[(asked[1] as number) - 1] as string);
+    type('#check-word-2', words[(asked[2] as number) - 1] as string);
+    await settle();
+    button('Create queue').click();
+    await settle();
+    expect(root.querySelector('[role="alert"]')?.textContent).toBe(
+      `Those aren't words ${asked[0]}, ${asked[1]} and ${asked[2]} of the code shown. Check what you wrote down.`
+    );
+    expect(await d.store.record()).toBeUndefined();
+    // Case and spaces don't matter.
+    type('#check-word-0', ` ${(words[(asked[0] as number) - 1] as string).toUpperCase()} `);
+    await settle();
+    button('Create queue').click();
+    await until(() => root.textContent?.includes('Your queue is ready') === true, 20_000);
+    expect((await d.store.record())?.storageRelays).toEqual([...DEFAULT_STORAGE_RELAYS]);
+
+    // The done step is the checklist: the queue ticked, the connector address with Copy (F6).
+    expect(root.textContent).toContain('Queue stored on 2 servers');
+    expect(root.textContent).toContain('relay.primal.net and relay.ditto.pub.');
+    expect(root.textContent).toContain('Connect an agent');
+    expect($<HTMLInputElement>('[aria-label="Connector address"]').value).toBe(
+      'https://app.qus.me/mcp'
+    );
+    button('Copy');
+    expect(root.textContent).toContain('Add the account you post from');
+    expect(root.textContent).toContain('Pair your phone');
+    expect(root.textContent).not.toContain('Hide this checklist');
+    button('Go to drafts').click();
+    expect(done).toBe(true);
+  });
+
+  it('takes other servers when the suggested ones fail, and the whole code instead of words', async () => {
+    const net = network();
+    const d = await toServers(net);
+    const line = () => $('[data-server-check]').textContent ?? '';
+    // The suggested servers aren't on this network: the check fails and says so.
+    await until(() => line().includes("didn't pass the check"));
+    expect(line()).toContain("3 of 3 servers didn't pass the check");
+    expect((root.querySelector('details') as HTMLDetailsElement).open).toBe(true);
+    expect(button('Next').disabled).toBe(true);
+    type('#storage-relays', STORAGE.join('\n'));
+    type('#inbox-relays', INBOX.join('\n'));
+    await settle();
+    button('Check servers').click();
+    await until(() => !button('Next').disabled);
+    expect(line()).toContain('2 servers, checked');
+    expect(line()).not.toContain('public');
+    button('Next').click();
+    await settle();
+    for (const url of STORAGE) expect(root.textContent).toContain(url);
+    const words = await sheetThenConfirm();
+
+    button('Type the whole code instead').click();
+    await settle();
+    expect(root.querySelector('#check-word-0')).toBeNull();
     type('#code-typed', words.join(' '));
     await settle();
     expect(button('Create queue').disabled).toBe(true);
     $<HTMLInputElement>('#sheet-saved').click();
     await settle();
     button('Create queue').click();
-    await until(() => root.textContent?.includes('Queue created') === true, 20_000);
+    await until(() => root.textContent?.includes('Your queue is ready') === true, 20_000);
     expect((await d.store.record())?.storageRelays).toEqual(STORAGE);
-    button('Done').click();
-    expect(done).toBe(true);
   });
 });
 

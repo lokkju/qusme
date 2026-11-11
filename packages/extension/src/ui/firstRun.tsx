@@ -1,6 +1,8 @@
 /**
- * The first-run checklist on the unlocked home screen (src/firstRun.ts has the rules for each
- * item). It shows until every item is ticked or the user hides it.
+ * The first-run checklist (src/firstRun.ts has the rules for each item): the create flow's last
+ * step, then the home list's empty state until every item is ticked or the user hides it
+ * (critique F6, H7). The first line is the queue itself, always ticked, naming the servers it is
+ * stored on.
  */
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
@@ -17,20 +19,46 @@ import { Button, CopyButton, inputClass } from './components.tsx';
 /** The MCP endpoint a custom connector points at. */
 export const mcpUrl = (serviceOrigin: string): string => `${serviceOrigin}/mcp`;
 
-function Item(props: { done: boolean; title: string; children?: ComponentChildren }) {
+/** A relay URL's host, for naming servers to the user ("relay.primal.net"). */
+export function serverHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/** "a", "a and b", "a, b and c". */
+export function listJoin(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+function Item(props: {
+  done: boolean;
+  title: string;
+  note?: string;
+  /** Shown under a ticked item too (the queue line names its servers). */
+  detail?: string;
+  children?: ComponentChildren;
+}) {
   return (
-    <li class="card p-3">
-      <div class="flex items-center gap-2">
-        <span
-          aria-hidden="true"
-          class={`flex h-5 w-5 flex-none items-center justify-center rounded-full text-on-accent text-xs ${props.done ? 'bg-accent' : 'border-2 border-line-strong'}`}
-        >
-          {props.done ? '✓' : ''}
-        </span>
-        <span class="font-semibold text-sm">{props.title}</span>
-        <span class="sr-only">{props.done ? '(done)' : '(to do)'}</span>
+    <li class="flex gap-3 border-line border-b py-3 last:border-b-0">
+      <span
+        aria-hidden="true"
+        class={`mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full text-on-accent text-xs ${props.done ? 'bg-accent' : 'border-2 border-line-strong'}`}
+      >
+        {props.done ? '✓' : ''}
+      </span>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm">
+          <span class="font-semibold">{props.title}</span>
+          {props.note !== undefined && <span class="text-muted"> {props.note}</span>}
+          <span class="sr-only">{props.done ? ' (done)' : ' (to do)'}</span>
+        </p>
+        {props.detail !== undefined && <p class="mt-0.5 text-ink-2 text-xs">{props.detail}</p>}
+        {!props.done && props.children}
       </div>
-      {!props.done && props.children}
     </li>
   );
 }
@@ -39,61 +67,80 @@ function Item(props: { done: boolean; title: string; children?: ComponentChildre
 export function ChecklistView(props: {
   state: ChecklistState;
   serviceOrigin: string;
+  /** The queue's storage relays, named by host on the first line. */
+  servers?: readonly string[];
   onAddDestination: () => void;
   onPair: () => void;
   onSkipPair: () => void;
-  onDismiss: () => void;
+  /** Hides the checklist for good; the create flow's last step leaves it out. */
+  onDismiss?: () => void;
 }) {
   const { state } = props;
   if (checklistDone(state)) return null;
   const url = mcpUrl(props.serviceOrigin);
+  const hosts = (props.servers ?? []).map(serverHost);
   return (
     <section class="mt-3" aria-labelledby="first-run-title">
-      <div class="flex items-baseline justify-between">
-        <h2 id="first-run-title" class="font-semibold">
-          Get started
-        </h2>
-        <span class="text-muted text-xs">{checklistCount(state)} of 3 done</span>
-      </div>
-      <ul class="mt-2 flex flex-col gap-2">
-        <Item done={state.agent} title="Connect Claude: add a custom connector">
-          <p class="mt-2 text-ink-2 text-xs">
-            In Claude: Settings, Connectors, Add custom connector, then paste this address. Claude
-            then shows a code; enter it under “Approve an agent”.
+      <h2 id="first-run-title" class="font-medium font-serif text-xl leading-tight">
+        Your queue is ready
+      </h2>
+      <p class="mt-1 text-muted text-xs">
+        Connect an agent and add your account, and drafts can start arriving.{' '}
+        {checklistCount(state)} of 3 done.
+      </p>
+      <ul class="mt-1">
+        <Item
+          done
+          title={
+            hosts.length === 0
+              ? 'Queue created'
+              : `Queue stored on ${hosts.length} ${hosts.length === 1 ? 'server' : 'servers'}`
+          }
+          {...(hosts.length > 0 && { detail: `${listJoin(hosts)}.` })}
+        />
+        <Item done={state.agent} title="Connect an agent">
+          <p class="mt-0.5 text-ink-2 text-xs">
+            In your AI app, add a custom connector with this address. It then shows a code; open
+            qus.me on that page to approve it.
           </p>
           <div class="mt-2 flex gap-2">
             <input
               readOnly
               aria-label="Connector address"
-              class={`${inputClass} font-mono`}
+              class={`${inputClass} py-1.5 font-mono`}
               value={url}
             />
-            <CopyButton text={url} />
+            <CopyButton text={url} size="sm" />
           </div>
         </Item>
-        <Item done={state.destination} title="Add your X account">
-          <p class="mt-2 text-ink-2 text-xs">
-            The account drafts go to. On x.com, the extension can read which account is signed in.
+        <Item done={state.destination} title="Add the account you post from">
+          <p class="mt-0.5 text-ink-2 text-xs">
+            Open x.com, Bluesky, Mastodon or LinkedIn signed in and click the qus.me button; it
+            reads which account is signed in.
           </p>
-          <Button class="mt-2" onClick={props.onAddDestination}>
-            Add a destination
+          <Button variant="plain" size="sm" class="mt-2" onClick={props.onAddDestination}>
+            Add by hand
           </Button>
         </Item>
-        <Item done={state.device} title="Pair your phone">
-          <p class="mt-2 text-ink-2 text-xs">
-            A second device keeps your queue if you lose this one, and shows your drafts there.
+        <Item done={state.device} title="Pair your phone" note="optional">
+          <p class="mt-0.5 text-ink-2 text-xs">
+            Keeps the queue if you lose this computer, and shows your drafts there.
           </p>
           <div class="mt-2 flex gap-2">
-            <Button onClick={props.onPair}>Pair</Button>
-            <Button variant="plain" onClick={props.onSkipPair}>
+            <Button variant="plain" size="sm" onClick={props.onPair}>
+              Pair
+            </Button>
+            <Button variant="plain" size="sm" onClick={props.onSkipPair}>
               Skip
             </Button>
           </div>
         </Item>
       </ul>
-      <Button variant="plain" size="xs" class="mt-2" onClick={props.onDismiss}>
-        Hide this checklist
-      </Button>
+      {props.onDismiss !== undefined && (
+        <Button variant="plain" size="xs" class="mt-1" onClick={props.onDismiss}>
+          Hide this checklist
+        </Button>
+      )}
     </section>
   );
 }
@@ -103,18 +150,23 @@ export function FirstRunChecklist(props: {
   deps: AgentDeps;
   onAddDestination: () => void;
   onPair: () => void;
+  /** False on the create flow's last step: Hide is left out there. */
+  dismissible?: boolean;
+  /** Reports whether the checklist is on screen, so the home list can drop its empty line. */
+  onShown?: (shown: boolean) => void;
 }) {
   const { deps } = props;
   const [state, setState] = useState<ChecklistState>();
-  const [pubkey, setPubkey] = useState<string>();
+  const [record, setRecord] = useState<{ pubkey: string; storageRelays: string[] }>();
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const record = await deps.store.record();
+      const stored = await deps.store.record();
       const loaded = await loadChecklist(deps).catch(() => undefined);
       if (cancelled) return;
-      setPubkey(record?.pubkey);
+      if (stored !== undefined)
+        setRecord({ pubkey: stored.pubkey, storageRelays: [...stored.storageRelays] });
       setState(loaded);
     })();
     return () => {
@@ -122,19 +174,27 @@ export function FirstRunChecklist(props: {
     };
   }, [deps]);
 
-  if (state === undefined || pubkey === undefined) return null;
+  const shown = state !== undefined && record !== undefined && !checklistDone(state);
+  useEffect(() => {
+    props.onShown?.(shown);
+  }, [shown]);
+
+  if (state === undefined || record === undefined) return null;
   const save = (patch: Parameters<typeof updateFirstRun>[2], next: Partial<ChecklistState>) => {
     setState({ ...state, ...next });
-    void updateFirstRun(deps.store.local, pubkey, patch);
+    void updateFirstRun(deps.store.local, record.pubkey, patch);
   };
   return (
     <ChecklistView
       state={state}
       serviceOrigin={deps.serviceOrigin}
+      servers={record.storageRelays}
       onAddDestination={props.onAddDestination}
       onPair={props.onPair}
       onSkipPair={() => save({ device: 'skipped' }, { device: true })}
-      onDismiss={() => save({ dismissed: true }, { dismissed: true })}
+      {...(props.dismissible !== false && {
+        onDismiss: () => save({ dismissed: true }, { dismissed: true }),
+      })}
     />
   );
 }
