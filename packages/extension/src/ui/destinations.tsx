@@ -85,9 +85,9 @@ export function DestinationItem(props: {
 }) {
   const { destination: d } = props;
   return (
-    <li class="rounded border border-ink/20 p-2">
+    <li class="card p-3">
       <p class="font-medium text-sm">{d.label}</p>
-      <p class="text-ink/70 text-xs">
+      <p class="text-muted text-xs">
         {props.siteName}
         {props.custom && ' (custom)'} · {d.account}
         {d.override !== null && ' · override'}
@@ -101,34 +101,25 @@ export function DestinationItem(props: {
           <div class="mt-1 flex gap-2">
             <Button
               variant="danger"
-              class="px-2 py-1 text-sm"
+              size="sm"
               disabled={props.busy}
               onClick={() => props.onRemove(d)}
             >
               Remove and dismiss its drafts
             </Button>
-            <Button
-              variant="plain"
-              class="px-2 py-1 text-sm"
-              onClick={() => props.onAskRemove(undefined)}
-            >
+            <Button variant="plain" size="sm" onClick={() => props.onAskRemove(undefined)}>
               Keep
             </Button>
           </div>
         </div>
       ) : (
         <div class="mt-2 flex gap-2">
-          <Button
-            variant="plain"
-            class="px-2 py-1 text-sm"
-            disabled={props.busy}
-            onClick={() => props.onEdit(d)}
-          >
+          <Button variant="plain" size="sm" disabled={props.busy} onClick={() => props.onEdit(d)}>
             Edit
           </Button>
           <Button
             variant="plain"
-            class="px-2 py-1 text-sm"
+            size="sm"
             disabled={props.busy}
             onClick={() => props.onAskRemove(d)}
           >
@@ -234,7 +225,7 @@ export function AddDestinationForm(props: {
       : 'Site / account';
   return (
     <form
-      class="mt-2 rounded border border-ink/20 p-2"
+      class="mt-2 card p-3"
       aria-labelledby="add-destination-title"
       onSubmit={(e) => {
         e.preventDefault();
@@ -289,7 +280,8 @@ export function AddDestinationForm(props: {
       {!custom && props.canDetect && (
         <Button
           variant="plain"
-          class="mt-1 px-2 py-1 text-sm"
+          size="sm"
+          class="mt-1"
           disabled={props.busy !== undefined}
           onClick={props.onDetect}
         >
@@ -309,7 +301,7 @@ export function AddDestinationForm(props: {
         >
           <textarea
             id="destination-match"
-            class={inputClass}
+            class={`${inputClass} font-mono`}
             rows={2}
             spellcheck={false}
             value={values.patterns}
@@ -361,7 +353,7 @@ export function EditDestinationForm(props: {
   const { destination: d } = props;
   return (
     <form
-      class="mt-2 rounded border border-ink/20 p-2"
+      class="mt-2 card p-3"
       aria-labelledby="edit-destination-title"
       onSubmit={(e) => {
         e.preventDefault();
@@ -371,7 +363,7 @@ export function EditDestinationForm(props: {
       <h2 id="edit-destination-title" class="font-semibold text-sm">
         Edit {d.label}
       </h2>
-      <p class="text-ink/70 text-xs">
+      <p class="text-muted text-xs">
         Site {d.site}, account {d.account}
       </p>
       <Field id="edit-destination-label" label="Label">
@@ -390,7 +382,7 @@ export function EditDestinationForm(props: {
       >
         <textarea
           id="edit-destination-override"
-          class={inputClass}
+          class={`${inputClass} font-mono`}
           rows={6}
           spellcheck={false}
           value={props.override}

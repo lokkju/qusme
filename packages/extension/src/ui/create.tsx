@@ -46,9 +46,9 @@ const lines = (text: string): string[] => text.split(/\s+/).filter(Boolean);
 export function QueueFacts(props: { npub: string; storageRelays: readonly string[] }) {
   return (
     <dl class="mt-3 flex flex-col gap-1 text-sm">
-      <dt class="font-semibold text-ink/80 text-xs uppercase">Queue ID (npub)</dt>
+      <dt class="font-semibold text-ink-2 text-xs uppercase">Queue ID (npub)</dt>
       <dd class="break-all font-mono text-xs">{props.npub}</dd>
-      <dt class="mt-2 font-semibold text-ink/80 text-xs uppercase">Storage servers (relays)</dt>
+      <dt class="mt-2 font-semibold text-ink-2 text-xs uppercase">Storage servers (relays)</dt>
       {props.storageRelays.map((url) => (
         <dd key={url} class="font-mono text-xs">
           {url}
@@ -63,8 +63,8 @@ export function RecoverySheetView(props: { sheet: RecoverySheet }) {
   const { sheet } = props;
   return (
     <>
-      <div class="mt-3 rounded border border-ink/20 p-3">
-        <p class="font-semibold text-ink/80 text-xs uppercase">Recovery code</p>
+      <div class="mt-3 card p-3">
+        <p class="font-semibold text-ink-2 text-xs uppercase">Recovery code</p>
         <ol class="mt-1 grid list-decimal grid-cols-3 gap-x-6 gap-y-1 pl-6 font-mono text-sm">
           {sheet.words.map((word, i) => (
             <li key={i}>{word}</li>
@@ -206,7 +206,7 @@ export function CreateScreen(props: {
           <textarea
             id="storage-relays"
             rows={3}
-            class={inputClass}
+            class={`${inputClass} font-mono`}
             spellcheck={false}
             value={storage}
             onInput={(e) => setStorage(e.currentTarget.value)}
@@ -216,7 +216,7 @@ export function CreateScreen(props: {
           <textarea
             id="inbox-relays"
             rows={1}
-            class={inputClass}
+            class={`${inputClass} font-mono`}
             spellcheck={false}
             value={inbox}
             onInput={(e) => setInbox(e.currentTarget.value)}
@@ -299,7 +299,7 @@ export function CreateScreen(props: {
             <textarea
               id="code-typed"
               rows={3}
-              class={inputClass}
+              class={`${inputClass} font-mono`}
               autocomplete="off"
               spellcheck={false}
               value={typed}

@@ -29,11 +29,7 @@ export function DeadRelayNotice(props: {
   return (
     <>
       {props.relays.map((relay) => (
-        <div
-          key={relay.url}
-          role="alert"
-          class="mb-2 rounded border border-danger/50 p-2 text-danger text-sm"
-        >
+        <div key={relay.url} role="alert" class="mb-2 card-danger p-3 text-danger text-sm">
           <p>
             The storage server <span class="break-all font-mono">{relay.url}</span> is keeping
             nothing: it accepted none of the last {relay.failures} saves, since {day(relay.since)},
@@ -41,13 +37,13 @@ export function DeadRelayNotice(props: {
             be saved everywhere until this server is replaced.
           </p>
           {relay.lastReason !== undefined && (
-            <details class="mt-1 text-ink/70 text-xs">
+            <details class="mt-1 text-muted text-xs">
               <summary class="cursor-pointer">Details</summary>
               <p>Its last answer: {relay.lastReason}</p>
             </details>
           )}
           {props.onReplace !== undefined && (
-            <Button class="mt-2 px-2 py-1 text-sm" onClick={() => props.onReplace?.(relay.url)}>
+            <Button size="sm" class="mt-2" onClick={() => props.onReplace?.(relay.url)}>
               Replace this server
             </Button>
           )}
@@ -134,7 +130,7 @@ export function RelaySwapScreen(props: {
         <Field id="replacement-url" label="Server address">
           <input
             id="replacement-url"
-            class={inputClass}
+            class={`${inputClass} font-mono`}
             placeholder="wss://"
             spellcheck={false}
             value={typed}
@@ -192,7 +188,7 @@ function SwapDone(props: { deps: SwapDeps; dead: string; result: SwapResult; onB
               type="password"
               autocomplete="off"
               spellcheck={false}
-              class={inputClass}
+              class={`${inputClass} font-mono`}
               value={code}
               onInput={(e) => setCode(e.currentTarget.value)}
             />

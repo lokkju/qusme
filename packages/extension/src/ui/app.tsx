@@ -129,7 +129,11 @@ export function App(props: {
   }
 
   return (
-    <div class="min-w-[22rem] max-w-md bg-paper p-4 text-ink">
+    <div class="min-w-[22rem] max-w-md bg-paper px-4 pt-3 pb-4 text-ink">
+      <div class="mb-3 flex items-center gap-2 border-line border-b pb-3" aria-hidden="true">
+        <span class="q-mark">q</span>
+        <span class="font-medium font-serif text-[1.375rem] leading-none">qus.me</span>
+      </div>
       {body}
       {props.openInTab &&
         route !== 'home' &&
@@ -139,8 +143,8 @@ export function App(props: {
         route !== 'relay-swap' &&
         route !== 'destinations' &&
         route !== 'add-destination' && (
-          <p class="mt-4 text-xs">
-            <button type="button" class="underline" onClick={props.openInTab}>
+          <p class="mt-4 text-muted text-xs">
+            <button type="button" class="link" onClick={props.openInTab}>
               Open in a tab
             </button>{' '}
             so this stays open while you use your other device.
@@ -223,7 +227,7 @@ function Unlocked(props: {
     props.onChange();
   };
   return (
-    <Screen title="qus.me">
+    <Screen title="qus.me" hideTitle>
       <FirstRunChecklist
         deps={deps}
         onAddDestination={() => props.onRoute('add-destination')}
@@ -261,8 +265,8 @@ function Unlocked(props: {
           Lock
         </Button>
       </div>
-      <details class="mt-4 rounded border border-ink/20 p-2">
-        <summary class="cursor-pointer font-medium text-sm">Settings and about</summary>
+      <details class="mt-4 card p-3">
+        <summary class="font-medium text-sm">Settings and about</summary>
         <div class="mt-3 flex items-start gap-2">
           <input
             id="stay-unlocked"
@@ -276,7 +280,7 @@ function Unlocked(props: {
             <label for="stay-unlocked" class="font-medium text-sm">
               Stay unlocked on this device
             </label>
-            <p id="stay-unlocked-warning" class="text-ink/70 text-xs">
+            <p id="stay-unlocked-warning" class="text-muted text-xs">
               Keeps the queue key unencrypted on this computer so a browser restart doesn't ask for
               the passphrase. Anyone with access to this browser profile can then read and change
               the queue.
@@ -303,7 +307,7 @@ function QueueAbout(props: { pubkey: string }) {
           Queue ID: <span class="break-all font-mono">{npubEncode(props.pubkey)}</span>
         </p>
       ) : (
-        <button type="button" class="mt-1 text-xs underline" onClick={() => setShown(true)}>
+        <button type="button" class="mt-1 text-xs link" onClick={() => setShown(true)}>
           Show Queue ID
         </button>
       )}

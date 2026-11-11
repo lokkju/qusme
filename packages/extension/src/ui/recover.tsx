@@ -158,7 +158,7 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
           <textarea
             id="recover-sheet"
             rows={8}
-            class={inputClass}
+            class={`${inputClass} font-mono`}
             spellcheck={false}
             autocomplete="off"
             value={text}
@@ -166,7 +166,7 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
             onInput={(e) => setText(e.currentTarget.value)}
           />
         </Field>
-        <p id="recover-sheet-found" class="mt-1 text-ink/70 text-xs" aria-live="polite">
+        <p id="recover-sheet-found" class="mt-1 text-muted text-xs" aria-live="polite">
           {text.trim() === '' ? '' : foundSummary(parsed)}
         </p>
         {needRelay && (
@@ -177,7 +177,7 @@ export function RecoverScreen(props: { deps: SetupDeps; onDone: () => void; onBa
           >
             <input
               id="recover-relay"
-              class={inputClass}
+              class={`${inputClass} font-mono`}
               spellcheck={false}
               placeholder="wss://"
               value={relayUrl}

@@ -88,10 +88,10 @@ function dateOf(expiresAt: number | null): string {
 export function RequestSummary(props: { request: AuthorizationRequest }) {
   const { request } = props;
   return (
-    <div class="mt-3 rounded bg-ink/5 p-3">
-      <p class="text-ink/70 text-xs">Code {request.code} · this agent calls itself</p>
+    <div class="mt-3 card-band p-3">
+      <p class="text-muted text-xs">Code {request.code} · this agent calls itself</p>
       <p class="font-semibold text-lg break-words">{request.clientName}</p>
-      <p class="mt-2 text-ink/70 text-xs">Published by (the host of its client ID)</p>
+      <p class="mt-2 text-muted text-xs">Published by (the host of its client ID)</p>
       <p class="font-mono font-bold text-2xl break-all" data-client-host>
         {request.clientHost}
       </p>
@@ -99,25 +99,25 @@ export function RequestSummary(props: { request: AuthorizationRequest }) {
         Only approve if you just connected an agent from {request.clientHost}.
       </p>
       {request.clientName.toLowerCase() !== request.clientHost.toLowerCase() && (
-        <p class="mt-2 text-ink/70 text-xs">
+        <p class="mt-2 text-muted text-xs">
           The name is whatever the client says it is. Approve only if you started this from a client
           you trust and the host above is the one you expect.
         </p>
       )}
       <details class="mt-2 text-xs">
-        <summary class="cursor-pointer text-ink/70">Details</summary>
+        <summary class="cursor-pointer text-muted">Details</summary>
         <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
-          <dt class="text-ink/70">Client ID</dt>
+          <dt class="text-muted">Client ID</dt>
           <dd class="break-all font-mono">{request.clientId}</dd>
           {request.redirectHost !== undefined && (
             <>
-              <dt class="text-ink/70">Returns to</dt>
+              <dt class="text-muted">Returns to</dt>
               <dd class="break-all font-mono">{request.redirectHost}</dd>
             </>
           )}
-          <dt class="text-ink/70">Scope</dt>
+          <dt class="text-muted">Scope</dt>
           <dd class="font-mono">{request.scopes.join(' ')}</dd>
-          <dt class="text-ink/70">Agent key</dt>
+          <dt class="text-muted">Agent key</dt>
           <dd class="font-mono">{shortNpub(request.agentPubkey)}</dd>
         </dl>
       </details>
@@ -128,7 +128,7 @@ export function RequestSummary(props: { request: AuthorizationRequest }) {
 /** Above Approve when the agent would be able to draft nothing (UX audit 4.7). */
 export function NothingSharedWarning(props: { name: string }) {
   return (
-    <div role="alert" class="mt-3 rounded border border-danger/50 bg-danger/5 p-3">
+    <div role="alert" class="mt-3 card-danger p-3">
       <p class="font-semibold text-sm">This agent won't be able to draft anything</p>
       <p class="mt-1 text-xs">
         Nothing is shared with {props.name} and it can't propose new destinations, so every draft it
@@ -176,7 +176,7 @@ export function ApprovalDone(props: { name: string; shared: string[]; onDone: ()
   const tick = (
     <span
       aria-hidden="true"
-      class="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-accent text-white text-xs"
+      class="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-accent text-on-accent text-xs"
     >
       ✓
     </span>
@@ -206,7 +206,7 @@ export function ApprovalDone(props: { name: string; shared: string[]; onDone: ()
           </li>
         </ol>
       </div>
-      <p class="mt-3 text-ink/70 text-xs">
+      <p class="mt-3 text-muted text-xs">
         {props.shared.length === 0 ? 'Shared: nothing yet.' : `Shared: ${props.shared.join(', ')}.`}
       </p>
       <Button class="mt-4" onClick={props.onDone}>
@@ -253,7 +253,7 @@ export function GrantForm(props: {
       <fieldset class="mt-3">
         <legend class="font-medium text-sm">Where it may draft</legend>
         {destinations.length === 0 ? (
-          <p class="text-ink/70 text-xs">
+          <p class="text-muted text-xs">
             The queue has no confirmed destinations yet. Without any, the agent can draft only if
             you allow new destinations below.
           </p>
@@ -262,7 +262,7 @@ export function GrantForm(props: {
             {destinations.map((d) => {
               const choice = chosen(d.id);
               return (
-                <li key={d.id} class="rounded border border-ink/20 p-2">
+                <li key={d.id} class="card p-3">
                   <label class="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -286,7 +286,7 @@ export function GrantForm(props: {
         )}
       </fieldset>
 
-      <div class="mt-3 flex items-start gap-2 rounded border border-accent/40 bg-accent/5 p-2">
+      <div class="mt-3 flex items-start gap-2 card-tint p-3">
         <input
           id="allow-new-destinations"
           type="checkbox"
@@ -299,14 +299,14 @@ export function GrantForm(props: {
           <label for="allow-new-destinations" class="font-medium text-sm">
             Let it propose new destinations
           </label>
-          <p id="allow-new-destinations-hint" class="text-ink/70 text-xs">
+          <p id="allow-new-destinations-hint" class="text-muted text-xs">
             Off: it drafts only where you chose above. On: it may draft for any site and account;
             each new one waits as pending until you confirm it.
           </p>
         </div>
       </div>
 
-      <div class="mt-3 flex gap-2">
+      <div class="grid grid-cols-2 gap-3">
         <Field id="quota-max" label="Quota">
           <input
             id="quota-max"
@@ -425,7 +425,7 @@ export function ApproveAgentScreen(props: {
           <Field id="approval-code" label="Code or link">
             <input
               id="approval-code"
-              class={inputClass}
+              class={`${inputClass} font-mono`}
               autocomplete="off"
               spellcheck={false}
               placeholder="ABCD-1234"
@@ -539,7 +539,7 @@ export function AgentItem(props: {
   const [confirming, setConfirming] = useState(false);
   if (agent.pendingRevocation !== undefined) {
     return (
-      <li class="rounded border border-danger/40 p-2">
+      <li class="card-danger p-3">
         <p class="font-medium text-sm">{agentName(agent)}</p>
         {agent.binding !== undefined && (
           <p class="font-mono font-semibold text-xs">{agent.binding.clientHost}</p>
@@ -547,37 +547,33 @@ export function AgentItem(props: {
         <p class="text-danger text-sm" role="status">
           Revoked on your devices; finishing with qus.me…
         </p>
-        <p class="text-ink/70 text-xs">
+        <p class="text-muted text-xs">
           Until qus.me is told, the agent may still look like it works in its client, though your
           devices refuse its drafts. qus.me tries again on each sync.
         </p>
         {agent.pendingRevocation.lastError !== undefined && (
-          <p class="text-ink/70 text-xs">Last try: {agent.pendingRevocation.lastError}</p>
+          <p class="text-muted text-xs">Last try: {agent.pendingRevocation.lastError}</p>
         )}
-        <Button
-          class="mt-2 px-2 py-1 text-sm"
-          disabled={props.busy}
-          onClick={() => props.onRetry(agent)}
-        >
+        <Button size="sm" class="mt-2" disabled={props.busy} onClick={() => props.onRetry(agent)}>
           Retry
         </Button>
       </li>
     );
   }
   return (
-    <li class="rounded border border-ink/20 p-2">
+    <li class="card p-3">
       <p class="font-medium text-sm">{agentName(agent)}</p>
       {agent.binding !== undefined && (
         <p class="text-xs">
           <span class="font-mono font-semibold">{agent.binding.clientHost}</span>
           {agent.label !== undefined && agent.label !== agent.binding.clientName && (
-            <span class="text-ink/70"> · calls itself {agent.binding.clientName}</span>
+            <span class="text-muted"> · calls itself {agent.binding.clientName}</span>
           )}
         </p>
       )}
-      <p class="font-mono text-ink/70 text-xs">{shortNpub(agent.agentPubkey)}</p>
+      <p class="font-mono text-muted text-xs">{shortNpub(agent.agentPubkey)}</p>
       {agent.grant !== undefined && (
-        <p class="text-ink/70 text-xs">
+        <p class="text-muted text-xs">
           {agent.grant.destinations.length} destination
           {agent.grant.destinations.length === 1 ? '' : 's'}
           {agent.grant.allow_new_destinations && ', may propose new ones'}, up to{' '}
@@ -585,7 +581,7 @@ export function AgentItem(props: {
         </p>
       )}
       {agent.grant !== undefined && agent.counts !== undefined && (
-        <p class="text-ink/70 text-xs" data-agent-counts>
+        <p class="text-muted text-xs" data-agent-counts>
           {PERIOD_NOW[agent.grant.quota.period]}: {agent.counts.accepted} accepted
           {agent.counts.discarded > 0 && `, ${agent.counts.discarded} discarded`}
         </p>
@@ -600,13 +596,13 @@ export function AgentItem(props: {
         <div class="mt-2 flex gap-2">
           <Button
             variant="danger"
-            class="px-2 py-1 text-sm"
+            size="sm"
             disabled={props.busy}
             onClick={() => props.onRevoke(agent)}
           >
             Revoke now
           </Button>
-          <Button variant="plain" class="px-2 py-1 text-sm" onClick={() => setConfirming(false)}>
+          <Button variant="plain" size="sm" onClick={() => setConfirming(false)}>
             Keep
           </Button>
         </div>
@@ -615,7 +611,7 @@ export function AgentItem(props: {
           {agent.listed && agent.grant !== undefined && props.onEdit !== undefined && (
             <Button
               variant="plain"
-              class="px-2 py-1 text-sm"
+              size="sm"
               disabled={props.busy}
               onClick={() => props.onEdit?.(agent)}
             >
@@ -624,7 +620,7 @@ export function AgentItem(props: {
           )}
           <Button
             variant="plain"
-            class="px-2 py-1 text-sm"
+            size="sm"
             disabled={props.busy}
             onClick={() => setConfirming(true)}
           >
@@ -655,22 +651,18 @@ export function PendingItem(props: {
   const into = confirmed.find((d) => d.id === merging);
   const selectId = `merge-${destination.id}`;
   return (
-    <li class="rounded border border-ink/20 p-2">
+    <li class="card p-3">
       <p class="text-sm">{destination.label}</p>
-      <p class="text-ink/70 text-xs">
+      <p class="text-muted text-xs">
         Site {destination.site}, account {destination.account}
       </p>
       <div class="mt-2 flex gap-2">
-        <Button
-          class="px-2 py-1 text-sm"
-          disabled={props.busy}
-          onClick={() => props.onConfirm(destination)}
-        >
+        <Button size="sm" disabled={props.busy} onClick={() => props.onConfirm(destination)}>
           Confirm
         </Button>
         <Button
           variant="danger"
-          class="px-2 py-1 text-sm"
+          size="sm"
           disabled={props.busy}
           onClick={() => props.onReject(destination)}
         >
@@ -682,14 +674,14 @@ export function PendingItem(props: {
         (merging === undefined ? (
           <button
             type="button"
-            class="mt-2 text-xs underline"
+            class="mt-2 text-xs link"
             disabled={props.busy}
             onClick={() => setMerging(confirmed[0]?.id)}
           >
             Merge into an existing destination…
           </button>
         ) : (
-          <div class="mt-2 rounded bg-ink/5 p-2">
+          <div class="mt-2 card-band p-3">
             <label for={selectId} class="font-medium text-xs">
               Move its drafts to
             </label>
@@ -705,22 +697,18 @@ export function PendingItem(props: {
                 </option>
               ))}
             </select>
-            <p class="mt-1 text-ink/70 text-xs">
+            <p class="mt-1 text-muted text-xs">
               Its drafts become drafts for the destination you choose, and it leaves the list.
             </p>
             <div class="mt-2 flex gap-2">
               <Button
-                class="px-2 py-1 text-sm"
+                size="sm"
                 disabled={props.busy || into === undefined}
                 onClick={() => into !== undefined && props.onMerge?.(destination, into)}
               >
                 Merge
               </Button>
-              <Button
-                variant="plain"
-                class="px-2 py-1 text-sm"
-                onClick={() => setMerging(undefined)}
-              >
+              <Button variant="plain" size="sm" onClick={() => setMerging(undefined)}>
                 Cancel
               </Button>
             </div>
@@ -784,7 +772,7 @@ export function AgentsList(props: {
           </ul>
         )}
         {view.bindingsError !== undefined && (
-          <p class="mt-2 text-ink/70 text-xs">
+          <p class="mt-2 text-muted text-xs">
             The service's list is missing ({view.bindingsError}), so client names and hosts may be
             missing too.
           </p>
@@ -816,7 +804,7 @@ export function EditGrantView(props: {
         <p class="font-mono font-semibold text-xs">{agent.binding.clientHost}</p>
       )}
       {props.start.dropped.length > 0 && (
-        <p class="mt-2 text-ink/70 text-xs" data-dropped>
+        <p class="mt-2 text-muted text-xs" data-dropped>
           No longer among your destinations, so saving removes them from this agent:{' '}
           {props.start.dropped.map((d) => `${d.site} / ${d.account}`).join(', ')}.
         </p>
@@ -848,7 +836,7 @@ export function ShareOfferView(props: {
 }) {
   if (props.candidates.length === 0) return null;
   return (
-    <div class="mt-3 rounded border border-accent/40 bg-accent/5 p-2" data-share-offer>
+    <div class="mt-3 card-tint p-3" data-share-offer>
       <p class="font-medium text-sm">Share {props.destination.label} with</p>
       <ul class="mt-1 flex flex-col gap-1">
         {props.candidates.map((a) => (
@@ -866,13 +854,13 @@ export function ShareOfferView(props: {
       </ul>
       <div class="mt-2 flex gap-2">
         <Button
-          class="px-2 py-1 text-sm"
+          size="sm"
           disabled={props.busy || props.chosen.length === 0}
           onClick={props.onShare}
         >
           Share
         </Button>
-        <Button variant="plain" class="px-2 py-1 text-sm" onClick={props.onSkip}>
+        <Button variant="plain" size="sm" onClick={props.onSkip}>
           Not now
         </Button>
       </div>
