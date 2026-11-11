@@ -232,7 +232,7 @@ describe('site pages', () => {
   it('the privacy policy names the contact address and its date, and no draft marker', () => {
     const html = read('privacy.html');
     expect(html).toContain('mailto:info@qus.me');
-    expect(html).toContain('datetime="2026-11-09"');
+    expect(html).toContain('datetime="2026-11-11"');
     expect(html).not.toMatch(/\[draft|to be reviewed/i);
   });
 

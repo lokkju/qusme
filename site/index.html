@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>qus.me: drafts wait in line, you post them</title>
-<meta name="description" content="qus.me keeps drafts from you and from AI agents like Claude in an end-to-end encrypted queue. Press Alt+Q in a post box, pick one, and click Post yourself.">
+<meta name="description" content="Claude and other AI agents write drafts into a queue only your devices can read. On X, Bluesky, Mastodon or LinkedIn, press Alt+Q in the post box, pick a draft, edit it and click Post yourself. qus.me never posts.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -30,7 +30,7 @@
 <section class="wrap hero" aria-labelledby="hero-title">
 <p class="eyebrow">A queue of drafts for your browser</p>
 <h1 class="display" id="hero-title">Drafts wait in line. You post them.</h1>
-<p class="lede">qus.me collects drafts from you and from AI agents like Claude, and keeps them in a queue only your devices can read. When you're ready, press Alt+Q in a post box, pick a draft, change it if you like, and click Post yourself. qus.me never posts anything.</p>
+<p class="lede">Tell Claude what to write and the drafts land in your queue, encrypted so that only your devices can read them. On X, Bluesky, Mastodon or LinkedIn, press Alt+Q in the post box, pick a draft, fix what you want and click Post. Nothing goes out until you click it; qus.me never posts.</p>
 <div class="actions">
 <a class="button button-primary" href="https://chromewebstore.google.com/detail/qusme/mggkjolhneabgkhokenopabgkcakfhpo">Add to Chrome</a>
 <a class="button button-secondary" href="#install">Firefox</a>
@@ -63,23 +63,23 @@
 
 <section class="band-surface" aria-labelledby="who-posts">
 <div class="wrap section stack">
-<h2 class="title" id="who-posts">You post. The bot doesn't.</h2>
+<h2 class="title" id="who-posts">Agents fill the queue. You click Post.</h2>
 <div class="grid grid-2">
 <div class="card">
 <h3 class="label-heading">An agent you approve can</h3>
 <ul class="list">
 <li>Add drafts to your queue</li>
-<li>Draft only for the destinations you chose for it</li>
-<li>Add only as many drafts as you allow, per day, week or month</li>
+<li>Draft only for the accounts you picked for it</li>
+<li>Add only as many drafts as you allow: a number per day, week or month</li>
 </ul>
 </div>
 <div class="card">
 <h3 class="label-heading">Only you can</h3>
 <ul class="list">
-<li>Read what's in your queue</li>
+<li>Read the queue</li>
 <li>Pick a draft, edit it and put it in the post box</li>
 <li>Click Post</li>
-<li>Revoke an agent, at any time</li>
+<li>Revoke an agent; from then on the service refuses its drafts</li>
 </ul>
 </div>
 </div>
@@ -89,20 +89,20 @@
 <section class="wrap section stack" id="how" aria-labelledby="how-title">
 <h2 class="title" id="how-title">How it works</h2>
 <ol class="steps">
-<li><span class="step-number" aria-hidden="true">1</span><h3>Install the extension</h3><p class="muted">Add qus.me to Chrome or Firefox.</p></li>
-<li><span class="step-number" aria-hidden="true">2</span><h3>Create your queue</h3><p class="muted">The extension makes your queue's key on this device and locks it with your passphrase. It gives you a recovery code and a recovery sheet; keep them somewhere safe, because they get your queue back on a new device.</p></li>
-<li><span class="step-number" aria-hidden="true">3</span><h3>Connect Claude</h3><p class="muted">Add https://app.qus.me/mcp to Claude, approve it in the extension, and choose where it may draft and how many drafts it may add.</p></li>
-<li><span class="step-number" aria-hidden="true">4</span><h3>Insert and post</h3><p class="muted">In a post box, press Alt+Q, pick a draft, read it over and click Post yourself.</p></li>
+<li><span class="step-number" aria-hidden="true">1</span><h3>Install the extension</h3><p class="muted">Add qus.me to Chrome or Firefox. It asks for no access to any site: it touches a page only when you press Alt+Q, click Insert or use the right-click menu on that page.</p></li>
+<li><span class="step-number" aria-hidden="true">2</span><h3>Create your queue</h3><p class="muted">Pick a passphrase. The extension makes your queue's key on this device, locks it with that passphrase and shows you a 12-word recovery code once, with a recovery sheet you can save. Write the code down: it, or a device you've already set up, is the only way onto a new device.</p></li>
+<li><span class="step-number" aria-hidden="true">3</span><h3>Connect Claude</h3><p class="muted">Add https://app.qus.me/mcp to Claude. Claude shows a short code; type it into the extension, then choose which accounts Claude may draft for and how many drafts it may add per day, week or month. Other MCP agents connect the same way, each with its own approval.</p></li>
+<li><span class="step-number" aria-hidden="true">4</span><h3>Insert and post</h3><p class="muted">On X, Bluesky, Mastodon or LinkedIn, click into the post box and press Alt+Q. Pick a draft, read it, change what you like and click Post. The site gets a post you typed; the picker only fills the box.</p></li>
 </ol>
 </section>
 
 <section class="band" id="privacy" aria-labelledby="privacy-title">
 <div class="wrap section stack">
-<h2 class="title" id="privacy-title">Your drafts are yours to read</h2>
+<h2 class="title" id="privacy-title">Nobody else can read your queue</h2>
 <div class="grid grid-3">
-<div class="card"><h3>Encrypted before they leave</h3><p class="muted">Every draft is encrypted with a key only your devices hold. The Nostr relays that store your queue keep data they can't open.</p></div>
-<div class="card"><h3>Agents write, they don't read</h3><p class="muted">An agent you approve can drop drafts into your queue. It can't read the queue. You choose its destinations and its limit, and you can revoke it.</p></div>
-<div class="card"><h3>No tracking</h3><p class="muted">No analytics, no ads, and no selling your data. When an agent submits a draft, app.qus.me sees it only while checking it and doesn't keep it.</p></div>
+<div class="card"><h3>Encrypted before it leaves your device</h3><p class="muted">Each draft is encrypted on your device with a key only your devices hold, then stored on public Nostr relays (servers anyone can use to pass messages along). A relay holds data it can't open.</p></div>
+<div class="card"><h3>An agent sees only what it wrote</h3><p class="muted">An approved agent drops drafts into your queue through app.qus.me. It can't list the queue, read your other drafts or see what you posted. You set its accounts and its limit, and you can revoke it from the popup.</p></div>
+<div class="card"><h3>No tracking</h3><p class="muted">No analytics, no ads, no selling your data. app.qus.me sees an agent's draft only while it checks and encrypts it, then forgets it, and it never holds the key to your queue.</p></div>
 </div>
 <p><a href="/privacy">Read the privacy policy</a></p>
 </div>
@@ -115,20 +115,20 @@
 <div class="grid grid-2">
 <div class="card">
 <h3>Chrome</h3>
-<p>qus.me is on the Chrome Web Store. It works in other Chromium browsers too, such as Edge and Brave.</p>
+<p>qus.me is on the Chrome Web Store and runs in Edge, Brave and the other Chromium browsers.</p>
 <div class="actions">
 <a class="button button-primary" href="https://chromewebstore.google.com/detail/qusme/mggkjolhneabgkhokenopabgkcakfhpo">Add to Chrome</a>
 </div>
 </div>
 <div class="card">
 <h3>Firefox</h3>
-<p>qus.me is in review at Firefox Add-ons. Until it's listed, install it from the latest release on GitHub:</p>
+<p>qus.me is in review at Firefox Add-ons. Until it's listed, load it from the latest GitHub release:</p>
 <ol class="list">
 <li>Download the Firefox zip from the <a href="https://github.com/lokkju/qusme/releases?q=extension-v">latest release</a>.</li>
 <li>Open <code>about:debugging</code> and choose This Firefox.</li>
 <li>Click Load Temporary Add-on and pick the zip.</li>
 </ol>
-<p class="muted">Firefox keeps a temporary add-on only until it restarts. The Firefox Add-ons listing brings a signed build that stays.</p>
+<p class="muted">Firefox drops a temporary add-on when it restarts; the Add-ons listing will bring a signed build that stays.</p>
 <!-- Once listed: replace the steps with a button to addons.mozilla.org/firefox/addon/<listing slug>/, add it to EXTERNAL and the CSP test's allowed hosts in packages/entry-worker/test/site.test.ts, and point the hero's Firefox button at it. -->
 </div>
 </div>
@@ -141,7 +141,7 @@
 <div class="grid grid-2">
 <div class="stack">
 <h2 class="title" id="connect-title">Connect Claude</h2>
-<p class="muted">qus.me is a remote MCP server. Add it to Claude, then approve the connection in the extension: Claude shows a short code, you enter it in the extension and choose the destinations Claude may draft for. In Claude's apps, add the URL as a custom connector; in Claude Code, use one of the snippets.</p>
+<p class="muted">qus.me is a remote MCP server. In the Claude apps, add the URL below as a custom connector; in Claude Code, use one of the snippets. The first time Claude connects, it shows a short code: enter it in the extension and choose the accounts Claude may draft for and how many drafts it may add. Any other MCP client connects the same way and gets its own approval.</p>
 <label class="field-label" for="mcp-url">MCP server URL</label>
 <div class="copy-field">
 <input id="mcp-url" type="text" readonly value="https://app.qus.me/mcp">
@@ -172,7 +172,7 @@
 
 <section class="wrap section stack" id="who-sees" aria-labelledby="who-sees-title">
 <h2 class="title" id="who-sees-title">Who can see what</h2>
-<p class="muted">The plain answer for every party that touches your queue, including us.</p>
+<p class="muted">Every party that touches your queue, us included.</p>
 <div class="table-wrap">
 <table aria-labelledby="who-sees-title">
 <thead>
@@ -195,9 +195,9 @@
 <tr>
 <th scope="row">An agent you approve</th>
 <td data-label="Read your queue">No</td>
-<td data-label="Add drafts"><span class="yes">Yes</span>, for the destinations you allow, up to its limit</td>
+<td data-label="Add drafts"><span class="yes">Yes</span>, for the accounts you allow, up to its limit</td>
 <td data-label="Post for you">No</td>
-<td data-label="What it does see">Only the drafts it writes</td>
+<td data-label="What it does see">Only the drafts it wrote</td>
 </tr>
 <tr>
 <th scope="row">The Nostr relays that store your queue</th>
@@ -211,7 +211,7 @@
 <td data-label="Read your queue">No</td>
 <td data-label="Add drafts">Passes an approved agent's drafts along, encrypted</td>
 <td data-label="Post for you">No</td>
-<td data-label="What it does see">An agent's draft only while checking it, not kept; your approvals; hashed IP addresses for rate limits</td>
+<td data-label="What it does see">An agent's draft only while checking it, never kept; your approvals; hashed IP addresses for rate limits</td>
 </tr>
 </tbody>
 </table>
@@ -223,11 +223,12 @@
 <div class="wrap narrow section stack">
 <h2 class="title" id="faq-title">Questions</h2>
 <div class="faq">
-<div><h3>Does qus.me post for me?</h3><p class="muted">No. It puts the draft you pick into the post box. You read it, edit it if you want, and click Post. qus.me never posts.</p></div>
-<div><h3>Can the agent read my drafts?</h3><p class="muted">No. Agents can add drafts to your queue, but they can't read it. The queue is encrypted with a key only your devices hold.</p></div>
-<div><h3>What sites work?</h3><p class="muted">Sites with a post box. X is built in, and you can add others, like LinkedIn or Facebook, as your own destinations. Alt+Q opens the picker in the field you're typing in.</p></div>
-<div><h3>What if I lose my device?</h3><p class="muted">Use the recovery code or recovery sheet you saved when you created the queue, or pair the new device from another one you already set up. Without the code and with no other device, the queue can't be recovered; nobody else holds its key.</p></div>
-<div><h3>What does it cost?</h3><p class="muted">It's free while in beta.</p></div>
+<div><h3>Does qus.me post for me?</h3><p class="muted">No. It puts the draft you pick into the post box, the same as if you had pasted it. You read it, edit it and click Post. There is no setting that posts for you.</p></div>
+<div><h3>Can the agent read my drafts?</h3><p class="muted">No. An agent sends drafts in through app.qus.me, which encrypts each one to your queue. Neither the agent nor app.qus.me holds the key that opens the queue, so neither can read it; the agent sees only what it wrote.</p></div>
+<div><h3>Which agents work?</h3><p class="muted">Anything that speaks MCP over HTTP: the Claude apps, Claude Code and other MCP clients. Each one gets its own approval, its own accounts and its own limit, and you can revoke any of them on its own.</p></div>
+<div><h3>What sites work?</h3><p class="muted">X, Bluesky, Mastodon and LinkedIn come built in; for Mastodon you give your server's address. You can add another site yourself as a destination, and Alt+Q opens the picker in whatever field you're typing in.</p></div>
+<div><h3>What if I lose my device?</h3><p class="muted">Enter your 12-word recovery code, or paste the recovery sheet, on the new device; or pair it from another device you already set up. Without the code and without another device the queue is gone: nobody else holds its key, us included.</p></div>
+<div><h3>What does it cost?</h3><p class="muted">Nothing while it's in beta.</p></div>
 </div>
 </div>
 </section>
@@ -235,7 +236,7 @@
 <section class="band">
 <div class="wrap narrow section stack">
 <h2 class="label-heading">How it's built</h2>
-<p class="muted">Your queue is a Nostr key pair made in the extension. Drafts are encrypted end to end before they're published to Nostr relays, so relays hold only ciphertext. Agents reach your queue through the MCP server at app.qus.me after you approve them with OAuth; the server seals their drafts to your queue's inbox and can't read the queue itself. The code is open source on <a href="https://github.com/lokkju/qusme">GitHub</a>.</p>
+<p class="muted">Your queue is a Nostr key pair, made in the extension and never sent anywhere. Drafts are encrypted end to end and published to Nostr relays, which hold only ciphertext. Agents reach the queue through the MCP server at app.qus.me after you approve them over OAuth; the server seals each draft to your queue's inbox and holds no key that opens the queue. The code is open source on <a href="https://github.com/lokkju/qusme">GitHub</a>.</p>
 </div>
 </section>
 </main>
