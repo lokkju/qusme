@@ -327,7 +327,7 @@ FRAME_CSS = f"""
         justify-content: center; background: #e2e1db; }}
 .ext img {{ width: 20px; height: 20px; }}
 .ext b {{ position: absolute; right: -5px; bottom: -3px; min-width: 16px; height: 16px; border-radius: 8px;
-          background: #1F6FEB; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center;
+          background: #1f5f4a; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center;
           justify-content: center; padding: 0 4px; }}
 .page {{ position: relative; width: {PAGE_W}px; height: {PAGE_H}px; overflow: hidden; }}
 .page > img {{ width: {PAGE_W}px; height: {PAGE_H}px; display: block; }}
