@@ -334,7 +334,7 @@ export function GrantForm(props: {
               const label = labelOf(d);
               const fields = fieldsOf(source, d);
               return (
-                <li key={d.id} class="border-line border-b px-4 py-2">
+                <li key={d.id} class="border-line border-b px-4 py-1.5">
                   <label class="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -365,7 +365,7 @@ export function GrantForm(props: {
         )}
       </fieldset>
 
-      <div class="-mx-4 flex items-start gap-2 border-line border-b px-4 py-2">
+      <div class="-mx-4 flex items-start gap-2 border-line border-b px-4 py-1.5">
         <input
           id="allow-new-destinations"
           type="checkbox"
@@ -384,7 +384,7 @@ export function GrantForm(props: {
         </div>
       </div>
 
-      <div class="mt-3 card-band px-3 py-2" data-limits>
+      <div class="mt-2 card-band px-3 py-2" data-limits>
         <div class="flex items-start gap-3">
           <p class="flex-1 text-xs" id="limits-summary">
             <span class="font-semibold">Limits:</span> {limitsSummary(choices)}
