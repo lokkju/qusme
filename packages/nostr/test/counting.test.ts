@@ -4,6 +4,7 @@ import {
   countCodePoints,
   countGraphemes,
   countLength,
+  countMastodon,
   FIELD_VALUE_MAX_BYTES,
   type FieldConstraints,
   parseSiteDefinition,
@@ -179,6 +180,34 @@ describe('validateFieldValue', () => {
     const [text] = definition.fields;
     if (text === undefined) throw new Error('no field');
     expect(validateFieldValue(FAMILY.repeat(300), text)).toMatchObject({ ok: true, length: 300 });
+  });
+});
+
+describe('mastodon counter', () => {
+  it.each<[string, string, number]>([
+    ['plain text', 'hello', 5],
+    ['graphemes', `${FAMILY}${FLAG_JP}`, 2],
+    ['a long URL counts 23', `see https://example.com/${'a'.repeat(80)}`, 4 + 23],
+    ['a short URL counts 23', 'https://t.co', 23],
+    ['two URLs', 'https://a.com http://b.org/x', 23 + 1 + 23],
+    // Mastodon extracts URLs only with a protocol.
+    ['a bare domain counts as typed', 'example.com/path', 16],
+    ['a remote mention counts as its local part', '@lokkju@mastodon.social hi', 7 + 3],
+    ['a local mention is unchanged', '@lokkju hi', 10],
+    ['an email address is no mention', 'me@example.com', 14],
+    ['a mention followed by a URL scheme is no mention', '@lokkju://x', 11],
+    // A mention inside a URL belongs to the URL, which starts first.
+    ['a URL holding a mention', 'https://example.social/@lokkju@mastodon.social', 23],
+  ])('%s', (_label, text, expected) => {
+    expect(countMastodon(text)).toBe(expected);
+    expect(countLength(text, 'mastodon')).toBe(expected);
+  });
+
+  it('validates a field against it', () => {
+    const value = `${'a'.repeat(476)} https://example.com/${'b'.repeat(200)}`;
+    expect(validateFieldValue(value, field({ maxLength: 500, counter: 'mastodon' }))).toMatchObject(
+      { ok: true, counter: 'mastodon', length: 500 }
+    );
   });
 });
 
