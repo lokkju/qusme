@@ -1,7 +1,7 @@
 /**
  * A small notice the insertion script shows in the page when it needs the user: click into the
- * field, press Ctrl/Cmd+V, or why the insertion failed. It never shows draft text, and its text is
- * set with `textContent`.
+ * field, press Ctrl/Cmd+V, why the insertion failed, or that a picked draft went in (with Undo).
+ * It never shows draft text, and its text is set with `textContent`.
  *
  * Like the keyboard picker, it lives in a closed shadow root on a plain `<div>` with no qus.me id,
  * class or attribute, so the page's scripts can neither find it by name nor reach into it. The
@@ -15,6 +15,12 @@ import { pageScheme, SANS, schemeRules } from './scheme.ts';
 export interface Prompt {
   update(message: string): void;
   remove(): void;
+}
+
+/** A button in the notice beside its text, such as Undo. */
+export interface PromptAction {
+  label: string;
+  onClick(): void;
 }
 
 /** What {@link showPrompt} returns: a {@link Prompt} plus the elements it made. */
@@ -53,6 +59,9 @@ ${schemeRules('.b')}
   display: flex; gap: 10px; align-items: flex-start; box-sizing: border-box;
   text-align: left; direction: ltr; letter-spacing: normal; text-transform: none;
 }
+.a { all: unset; cursor: pointer; flex: none; color: var(--accent); font-weight: 600; text-decoration: underline;
+  text-underline-offset: 2px; }
+.a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .x { all: unset; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; color: var(--muted); }
 .x:hover { color: var(--fg); }
 .x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
@@ -61,8 +70,16 @@ ${schemeRules('.b')}
 /** The notice currently shown in each document, held here rather than marked in the page. */
 const current = new WeakMap<Document, PromptHandle>();
 
-/** Shows `message` at the bottom right of the page until removed or closed. */
-export function showPrompt(doc: Document, message: string, onClose?: () => void): PromptHandle {
+/**
+ * Shows `message` at the bottom right of the page until removed or closed, with `action` as a
+ * button beside it when given; a trusted click on the action removes the notice and runs it.
+ */
+export function showPrompt(
+  doc: Document,
+  message: string,
+  onClose?: () => void,
+  action?: PromptAction
+): PromptHandle {
   current.get(doc)?.remove();
   const host = doc.createElement('div');
   host.setAttribute('style', HOST_STYLE);
@@ -80,7 +97,16 @@ export function showPrompt(doc: Document, message: string, onClose?: () => void)
   close.className = 'x';
   close.textContent = '×';
   close.setAttribute('aria-label', 'Close');
-  box.append(text, close);
+  box.append(text);
+  let actionButton: HTMLButtonElement | undefined;
+  if (action !== undefined) {
+    actionButton = doc.createElement('button');
+    actionButton.type = 'button';
+    actionButton.className = 'a';
+    actionButton.textContent = action.label;
+    box.append(actionButton);
+  }
+  box.append(close);
   root.append(style, box);
 
   const prompt: PromptHandle = {
@@ -97,6 +123,11 @@ export function showPrompt(doc: Document, message: string, onClose?: () => void)
   close.addEventListener('click', () => {
     prompt.remove();
     onClose?.();
+  });
+  actionButton?.addEventListener('click', (event) => {
+    if (!event.isTrusted) return;
+    prompt.remove();
+    action?.onClick();
   });
   current.set(doc, prompt);
   doc.documentElement.append(host);

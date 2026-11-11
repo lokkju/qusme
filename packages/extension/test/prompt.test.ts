@@ -39,6 +39,27 @@ describe('in-page notice', () => {
     expect(promptShown(document)).toBe(true);
   });
 
+  it('offers an action beside its text that only a trusted click runs, once', () => {
+    let undone = 0;
+    const p = showPrompt(document, 'qus.me: inserted.', undefined, {
+      label: 'Undo',
+      onClick: () => {
+        undone++;
+      },
+    });
+    const buttons = [...p.root.querySelectorAll('button')];
+    expect(buttons.map((b) => b.textContent)).toEqual(['Undo', '×']);
+    const undo = buttons[0] as HTMLButtonElement;
+    undo.click();
+    expect(undone).toBe(0);
+    expect(p.host.isConnected).toBe(true);
+    const click = new MouseEvent('click', { bubbles: true });
+    Object.defineProperty(click, 'isTrusted', { value: true });
+    undo.dispatchEvent(click);
+    expect(undone).toBe(1);
+    expect(p.host.isConnected).toBe(false);
+  });
+
   it('updates its text in place', () => {
     const p = showPrompt(document, 'first');
     p.update('second');

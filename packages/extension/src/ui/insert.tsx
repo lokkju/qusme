@@ -10,6 +10,7 @@
  * page. Every draft string is a JSX text child, which Preact sets as text.
  */
 import { type Destination, displayAccount, type SiteAccount } from '@qusme/nostr';
+import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import {
   addDestination,
@@ -264,6 +265,12 @@ interface ViewProps {
   onReplaceRelay?: ((url: string) => void) | undefined;
   /** Runs the sync again, for the sync error line. */
   onSync?: (() => void) | undefined;
+  /**
+   * The first-run checklist: the empty state while there are no drafts, else under the list.
+   * `onboardingShown` says whether it renders anything, so the empty line can step aside.
+   */
+  onboarding?: ComponentChildren;
+  onboardingShown?: boolean | undefined;
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -347,7 +354,8 @@ export function InsertView(props: ViewProps) {
           </Button>
         </div>
       ))}
-      {total === 0 ? (
+      {total === 0 && props.onboarding}
+      {total === 0 && props.onboardingShown === true ? null : total === 0 ? (
         <p class="mt-3 text-ink-2 text-sm">
           {!synced
             ? props.syncing
@@ -395,6 +403,7 @@ export function InsertView(props: ViewProps) {
           )}
         </>
       )}
+      {total > 0 && props.onboarding}
       {armed !== undefined && (
         <div class="mt-3 card-accent p-3">
           <p class="text-xs">Set for right-click:</p>
@@ -494,6 +503,9 @@ export function InsertPanel(props: {
   onContext?: (chip: string | undefined) => void;
   /** How many accounts agents proposed are waiting, for the menu's count. */
   onPendingCount?: (count: number) => void;
+  /** The first-run checklist (see {@link InsertView}). */
+  onboarding?: ComponentChildren;
+  onboardingShown?: boolean;
 }) {
   const { store, deps, setup } = props;
   const { onContext, onPendingCount } = props;
@@ -795,6 +807,8 @@ export function InsertPanel(props: {
       onPair={props.onPair}
       onAgents={props.onAgents}
       onReplaceRelay={props.onReplaceRelay}
+      onboarding={props.onboarding}
+      onboardingShown={props.onboardingShown}
     />
   );
 }

@@ -6,6 +6,7 @@ import type { SiteAccount } from '@qusme/nostr';
 import { browser } from 'wxt/browser';
 import { badgeUpdater, changesBadge } from '../badge.ts';
 import { PICKER_COMMAND } from '../commands.ts';
+import { restoreDraft } from '../drafts/manage.ts';
 import { type KeyStore, SESSION_ARMED, SESSION_DRAFTS, SESSION_INSERTION } from '../keyStore.ts';
 import { readDraftCache } from '../sync/state.ts';
 import type { InsertionUiDeps } from '../ui/insert.tsx';
@@ -13,7 +14,7 @@ import { readArmed } from './armed.ts';
 import type { SiteDefinitionSource } from './definitions.ts';
 import { MENU_CHOOSE, MENU_INSERT, menuItem } from './menu.ts';
 import { INSERT_MESSAGE, RETRY_RECORD_MESSAGE } from './messages.ts';
-import { type PickerPage, PickerService, readPickMessage } from './picker.ts';
+import { type PickerPage, PickerService, readPickMessage, readUndoMessage } from './picker.ts';
 import {
   PAGE_API_GLOBAL,
   PAGE_SCRIPT_FILE,
@@ -180,6 +181,7 @@ export function installInsertion(
     definitions,
     page: scriptingPicker,
     insertion: service,
+    restore: (d) => restoreDraft(d, { store }),
   });
   // The shortcut grants activeTab on the tab it was pressed in (spec 11.2); the tab's URL is
   // readable from then until it navigates.
@@ -202,6 +204,7 @@ export function installInsertion(
     const type = (message as { type?: unknown } | null)?.type;
     let work: Promise<unknown> | undefined;
     const pick = sender.tab?.id === undefined ? undefined : readPickMessage(message);
+    const undo = sender.tab?.id === undefined ? undefined : readUndoMessage(message);
     if (sender.tab === undefined && type === INSERT_MESSAGE) {
       const { tabId, d } = message as { tabId?: unknown; d?: unknown };
       if (typeof tabId !== 'number' || typeof d !== 'string') return false;
@@ -211,6 +214,9 @@ export function installInsertion(
     } else if (sender.tab?.id !== undefined && pick !== undefined) {
       // The user chose a draft in the picker.
       work = picker.pick(sender.tab.id, sender.frameId, pick);
+    } else if (sender.tab?.id !== undefined && undo !== undefined) {
+      // The success notice's Undo after a pick.
+      work = picker.undo(sender.tab.id, undo);
     } else if (sender.tab?.id !== undefined && type === PICKER_POPUP_MESSAGE) {
       // The picker's "Open qus.me". Firefox refuses openPopup outside a user action, and the
       // page then tells the user to click the toolbar button.

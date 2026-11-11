@@ -1,7 +1,7 @@
 /**
  * Creating a new queue (spec 11.3): generate the queue key and the inbox key, choose a passphrase,
- * show the recovery code once and confirm it was saved, choose and probe storage relays and an
- * inbox relay (9.1), then publish the kind 10013, the settings and the recovery backup, and store
+ * choose and probe storage relays and an inbox relay (9.1), show the recovery code once and
+ * confirm it was saved (three of its words, or the whole code), then publish the kind 10013, the settings and the recovery backup, and store
  * the key. Nothing is published before the code is confirmed (6.1).
  */
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -43,8 +43,32 @@ export interface CreateDraft {
   readonly words: string[];
   readonly base32: string;
   readonly recoveryCode: Uint8Array;
+  /**
+   * The three word positions (0-based, ascending) the confirmation asks for, drawn at random when
+   * the draft is made. Not secret: they say which words to type, not what the words are.
+   */
+  readonly checkPositions: readonly number[];
   /** Set by {@link confirmRecoveryCode}; {@link finishCreate} refuses to publish without it. */
   confirmed: boolean;
+}
+
+/** How many words the confirmation asks for. */
+export const CHECK_WORDS = 3;
+
+/** {@link CHECK_WORDS} distinct positions out of `count`, ascending, from `random`. */
+export function pickCheckPositions(
+  count: number,
+  random: (array: Uint32Array<ArrayBuffer>) => Uint32Array = (a) => crypto.getRandomValues(a)
+): number[] {
+  const positions = Array.from({ length: count }, (_, i) => i);
+  // A partial Fisher-Yates shuffle; the modulo bias over 2^32 is far below anything that matters
+  // for choosing which words to ask for.
+  const draws = random(new Uint32Array(CHECK_WORDS));
+  for (let i = 0; i < CHECK_WORDS; i++) {
+    const j = i + ((draws[i] ?? 0) % (count - i));
+    [positions[i], positions[j]] = [positions[j] as number, positions[i] as number];
+  }
+  return positions.slice(0, CHECK_WORDS).sort((a, b) => a - b);
 }
 
 export function startCreate(): CreateDraft {
@@ -57,6 +81,7 @@ export function startCreate(): CreateDraft {
     pubkey,
     npub: npubEncode(pubkey),
     words: recoveryCodeToWords(recoveryCode),
+    checkPositions: pickCheckPositions(12),
     base32: formatRecoveryBase32(recoveryCodeToBase32(recoveryCode)),
     recoveryCode,
     confirmed: false,
@@ -64,8 +89,8 @@ export function startCreate(): CreateDraft {
 }
 
 /**
- * The user typed the code back, in either form, to show it was saved (6.1). True and marks the
- * draft confirmed when it matches.
+ * The user typed the whole code back, in either form, to show it was saved (6.1). True and marks
+ * the draft confirmed when it matches.
  */
 export function confirmRecoveryCode(draft: CreateDraft, typed: string): boolean {
   const bytes = parseRecoveryCode(typed);
@@ -74,6 +99,23 @@ export function confirmRecoveryCode(draft: CreateDraft, typed: string): boolean 
     bytes.length === draft.recoveryCode.length &&
     bytes.every((b, i) => b === draft.recoveryCode[i]);
   bytes?.fill(0);
+  if (match) draft.confirmed = true;
+  return match;
+}
+
+/**
+ * The user typed the words at {@link CreateDraft.checkPositions}, in that order, to show the code
+ * was saved (6.1). Case and surrounding spaces are ignored. True and marks the draft confirmed
+ * when every word matches. This proves the user has the code at hand, not that the other nine
+ * words were written down correctly (spec 11.3).
+ */
+export function confirmRecoveryWords(draft: CreateDraft, typed: readonly string[]): boolean {
+  const match =
+    typed.length === draft.checkPositions.length &&
+    draft.checkPositions.every((position, i) => {
+      const word = draft.words[position];
+      return word !== undefined && word !== '' && typed[i]?.trim().toLowerCase() === word;
+    });
   if (match) draft.confirmed = true;
   return match;
 }

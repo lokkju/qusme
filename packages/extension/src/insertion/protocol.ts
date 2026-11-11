@@ -136,7 +136,7 @@ export interface PickerView {
   here: PickerItem[];
   /** Every other active draft, behind a toggle. */
   others: PickerItem[];
-  /** The detected accounts, as "X as @lokkju". */
+  /** The detected accounts, as "@lokkju" (the page says which site). */
   context: string;
 }
 
@@ -152,6 +152,20 @@ export interface PickerPickMessage {
   token: string;
   d: string;
 }
+
+/**
+ * The page script's success notice asks the background to undo a picked insertion: restore the
+ * draft to `active` (7.1). `token` is the one-time token the pick's answer carried (`undo`), good
+ * for that draft in that tab only and for {@link PICKER_UNDO_SECONDS}.
+ */
+export const PICKER_UNDO_MESSAGE = 'qusme.picker.undo';
+export interface PickerUndoMessage {
+  type: typeof PICKER_UNDO_MESSAGE;
+  token: string;
+}
+
+/** How long a pick's Undo stays good in the background; the notice shows for less. */
+export const PICKER_UNDO_SECONDS = 60;
 
 /** The page script's picker asks the background to open the popup (to unlock, say). */
 export const PICKER_POPUP_MESSAGE = 'qusme.picker.popup';

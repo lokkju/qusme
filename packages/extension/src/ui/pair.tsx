@@ -85,11 +85,11 @@ export function PairScreen(props: {
           <Field
             id="pair-input"
             label="Pairing link or code"
-            hint="A nostrpair:// link, or 8 letters and digits."
+            hint="Paste the pairing link, or type the 8-character code."
           >
-            <textarea
+            <input
               id="pair-input"
-              rows={3}
+              type="text"
               class={`${inputClass} font-mono`}
               spellcheck={false}
               autocomplete="off"

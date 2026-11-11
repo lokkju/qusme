@@ -28,7 +28,12 @@ import {
   matchesPattern,
 } from '../src/insertion/matching.ts';
 import { MENU_CHOOSE, MENU_INSERT, menuItem } from '../src/insertion/menu.ts';
-import { PickerService, pickerText, readPickMessage } from '../src/insertion/picker.ts';
+import {
+  PickerService,
+  pickerText,
+  readPickMessage,
+  readUndoMessage,
+} from '../src/insertion/picker.ts';
 import type { PageInsertRequest, PageOutcome, PickerView } from '../src/insertion/protocol.ts';
 import { InsertionService, readPageDone } from '../src/insertion/service.ts';
 import {
@@ -39,6 +44,7 @@ import {
   SESSION_INSERTION,
   SESSION_UNLOCKED,
 } from '../src/keyStore.ts';
+import { SetupError } from '../src/setup/deps.ts';
 import { MemoryStorageArea } from '../src/storage.ts';
 import { type CachedDraft, readDraftCache, writeDraftCache } from '../src/sync/state.ts';
 import { network, STORAGE } from './helpers.ts';
@@ -808,7 +814,7 @@ describe('keyboard picker (11.5)', () => {
             },
           },
         ],
-        context: 'X as lokkju',
+        context: '@lokkju',
       },
     ]);
   });
@@ -849,6 +855,85 @@ describe('keyboard picker (11.5)', () => {
     });
     // The draft armed in the popup stays armed; the picker never armed its own.
     expect((await readArmed(t.session))?.d).toBe('d2');
+  });
+
+  it('gives a recorded pick a one-time Undo for that tab that restores the draft', async () => {
+    const t = await pickerSetup({ detected: 'lokkju' });
+    const restored: string[] = [];
+    let now = 3601;
+    let tokens = 0;
+    const picker = new PickerService({
+      ...t.picker.deps,
+      token: () => `token-${++tokens}`,
+      now: () => now,
+      restore: async (d) => {
+        restored.push(d);
+      },
+    });
+    await picker.open({ id: 7, url: 'https://x.com/home' });
+    const result = await picker.pick(7, 0, {
+      type: 'qusme.picker.pick',
+      token: 'token-1',
+      d: 'd1',
+    });
+    expect(result).toEqual({
+      state: 'inserted',
+      strategy: 'paste',
+      recorded: true,
+      undo: 'token-2',
+    });
+    const undo = (token: string) => ({ type: 'qusme.picker.undo', token }) as const;
+    expect(await picker.undo(7, undo('wrong'))).toEqual({ state: 'expired' });
+    expect(await picker.undo(8, undo('token-2'))).toEqual({ state: 'expired' });
+    expect(restored).toEqual([]);
+    expect(await picker.undo(7, undo('token-2'))).toEqual({ state: 'restored' });
+    expect(restored).toEqual(['d1']);
+    // Once only.
+    expect(await picker.undo(7, undo('token-2'))).toEqual({ state: 'expired' });
+
+    // A token past its minute is refused.
+    const t2 = await pickerSetup({ detected: 'lokkju' });
+    const late = new PickerService({ ...picker.deps, store: t2.store, insertion: t2.service });
+    await late.open({ id: 7, url: 'https://x.com/home' });
+    const second = await late.pick(7, 0, { type: 'qusme.picker.pick', token: 'token-3', d: 'd1' });
+    expect(second).toMatchObject({ state: 'inserted', undo: 'token-4' });
+    now += 61;
+    expect(await late.undo(7, undo('token-4'))).toEqual({ state: 'expired' });
+    expect(restored).toEqual(['d1']);
+    expect(readUndoMessage({ type: 'qusme.picker.undo', token: 't' })).toEqual({
+      type: 'qusme.picker.undo',
+      token: 't',
+    });
+    expect(readUndoMessage({ type: 'qusme.picker.undo' })).toBeUndefined();
+  });
+
+  it('offers no Undo without a restore, and reports a failed restore', async () => {
+    const t = await pickerSetup({ detected: 'lokkju' });
+    await t.picker.open({ id: 7, url: 'https://x.com/home' });
+    const plain = await t.picker.pick(7, 0, {
+      type: 'qusme.picker.pick',
+      token: 'pick-token',
+      d: 'd1',
+    });
+    expect(plain).toMatchObject({ state: 'inserted', recorded: true });
+    expect(plain).not.toHaveProperty('undo');
+
+    const t2 = await pickerSetup({ detected: 'lokkju' });
+    let tokens = 0;
+    const failing = new PickerService({
+      ...t2.picker.deps,
+      token: () => `f-${++tokens}`,
+      restore: async () => {
+        throw new SetupError('A storage relay refused it.');
+      },
+    });
+    await failing.open({ id: 7, url: 'https://x.com/home' });
+    const result = await failing.pick(7, 0, { type: 'qusme.picker.pick', token: 'f-1', d: 'd1' });
+    expect(result).toMatchObject({ undo: 'f-2' });
+    expect(await failing.undo(7, { type: 'qusme.picker.undo', token: 'f-2' })).toEqual({
+      state: 'failed',
+      message: 'A storage relay refused it.',
+    });
   });
 
   it('refuses a stale token, another tab, an unlisted or gone draft, and a replayed pick', async () => {

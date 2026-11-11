@@ -226,7 +226,7 @@ def picker_view(drafts: list[dict], now: int) -> dict:
         "state": "ready",
         "here": [item(d, False) for d in active if d["site"] == "x"],
         "others": [item(d, True) for d in active if d["site"] != "x"],
-        "context": "X as lanternworks",
+        "context": "@lanternworks",
     }
 
 

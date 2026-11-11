@@ -38,7 +38,9 @@ describe('popup UI', () => {
     const d = device(network());
     const html = renderToString(<CreateScreen deps={d.deps} onDone={() => {}} onBack={() => {}} />);
     expect(html).toContain('Passphrase for this device');
-    expect(html).toContain('no other paired device remains, the queue is lost');
+    // Both statements spec 6.1 requires, in two lines (critique F5).
+    expect(html).toContain('Forget the passphrase: the recovery code restores the queue.');
+    expect(html).toContain('Lose the code too, with no other device paired: the queue is gone.');
   });
 
   it('cuts a draft to its first line', () => {

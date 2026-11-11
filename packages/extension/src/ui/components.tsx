@@ -338,12 +338,13 @@ export function saveFile(name: string, type: string, content: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** The statement spec 6.1 requires at setup. */
+/** The statement spec 6.1 requires at setup, in two lines (critique F5). */
 export function LossWarning() {
   return (
-    <p class="card-warn mt-3 p-3 text-sm">
-      If you forget the passphrase, the recovery code restores the queue. If you lose the recovery
-      code and no other paired device remains, the queue is lost.
+    <p class="card-warn mt-3 px-3 py-2 text-xs">
+      Forget the passphrase: the recovery code restores the queue.
+      <br />
+      Lose the code too, with no other device paired: the queue is gone.
     </p>
   );
 }

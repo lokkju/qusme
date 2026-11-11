@@ -14,13 +14,17 @@ import {
 } from '@qusme/nostr';
 import { describe, expect, it } from 'vitest';
 import {
+  CHECK_WORDS,
   cleanRelayList,
   confirmRecoveryCode,
+  confirmRecoveryWords,
   DEFAULT_INBOX_RELAYS,
   DEFAULT_STORAGE_RELAYS,
   finishCreate,
+  pickCheckPositions,
   probeRelays,
   startCreate,
+  wipeDraft,
 } from '../src/setup/create.ts';
 import { SetupError } from '../src/setup/deps.ts';
 import { device, INBOX, network, PASSPHRASE, STORAGE } from './helpers.ts';
@@ -47,6 +51,42 @@ describe('create flow (spec 11.3)', { timeout: 30_000 }, () => {
     expect(draft.confirmed).toBe(true);
     const other = startCreate();
     expect(confirmRecoveryCode(other, other.words.join('  '))).toBe(true);
+  });
+
+  it('asks for three distinct words at random positions and confirms them in order', () => {
+    const draft = startCreate();
+    const positions = draft.checkPositions;
+    expect(positions).toHaveLength(CHECK_WORDS);
+    expect(new Set(positions).size).toBe(3);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    for (const p of positions) expect(p >= 0 && p < 12).toBe(true);
+    const words = positions.map((p) => draft.words[p] as string);
+    expect(confirmRecoveryWords(draft, [words[0] as string, words[1] as string])).toBe(false);
+    expect(confirmRecoveryWords(draft, [...words].reverse())).toBe(false);
+    expect(draft.confirmed).toBe(false);
+    expect(
+      confirmRecoveryWords(
+        draft,
+        words.map((w) => ` ${w.toUpperCase()}\t`)
+      )
+    ).toBe(true);
+    expect(draft.confirmed).toBe(true);
+    // Wiped words can never confirm.
+    const wiped = startCreate();
+    wipeDraft(wiped);
+    expect(confirmRecoveryWords(wiped, ['', '', ''])).toBe(false);
+  });
+
+  it('draws the positions from the random source without repeats', () => {
+    // A source that always draws 0 takes the first three positions.
+    expect(pickCheckPositions(12, (a) => a.fill(0))).toEqual([0, 1, 2]);
+    // One that always draws the maximum still yields three distinct positions.
+    const top = pickCheckPositions(12, (a) => a.fill(0xffffffff));
+    expect(new Set(top).size).toBe(3);
+    // Over many real draws every position comes up.
+    const seen = new Set<number>();
+    for (let i = 0; i < 400; i++) for (const p of pickCheckPositions(12)) seen.add(p);
+    expect(seen.size).toBe(12);
   });
 
   it('publishes nothing until the code is confirmed', async () => {

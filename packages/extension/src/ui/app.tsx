@@ -98,7 +98,15 @@ export function App(props: {
   if (status === undefined) {
     body = <p>Loading…</p>;
   } else if (route === 'create') {
-    body = <CreateScreen deps={deps} onDone={home} onBack={home} />;
+    body = (
+      <CreateScreen
+        deps={deps}
+        onDone={home}
+        onBack={home}
+        onAddAccount={() => setRoute('add-destination')}
+        onPair={() => setRoute('pair-source')}
+      />
+    );
   } else if (route === 'pair' || (status.state === 'empty' && pending !== undefined)) {
     body = <PairScreen deps={deps} pending={pending} onDone={home} onBack={home} />;
   } else if (route === 'recover') {
@@ -210,11 +218,11 @@ export function App(props: {
         class={`min-h-0 flex-1 overflow-y-auto px-4 pt-3 ${showHome ? '' : 'pb-4 has-[[data-bottom-bar]]:pb-0'}`}
       >
         {body}
+        {/* Only pairing involves the other device, and the popup closes when the user turns to it (F4). */}
         {props.openInTab &&
-          (route === 'create' ||
-            route === 'pair' ||
-            route === 'recover' ||
-            route === 'pair-source') && (
+          (route === 'pair' ||
+            route === 'pair-source' ||
+            (status?.state === 'empty' && pending !== undefined)) && (
             <p class="mt-4 text-muted text-xs">
               <button type="button" class="link" onClick={props.openInTab}>
                 Open in a tab
@@ -231,7 +239,8 @@ function Welcome(props: { onRoute: (route: Route) => void }) {
   return (
     <Screen title="Set up qus.me">
       <p class="mt-2 text-sm">
-        Your drafts queue lives encrypted on Nostr relays. This device needs the queue key.
+        Drafts from you and your agents, inserted into the post box on x.com, Bluesky, Mastodon or
+        LinkedIn. You still press Post.
       </p>
       <div class="mt-4 flex flex-col gap-2">
         <Button onClick={() => props.onRoute('create')}>Create a new queue</Button>
@@ -242,6 +251,7 @@ function Welcome(props: { onRoute: (route: Route) => void }) {
           Recover with the recovery code
         </Button>
       </div>
+      <p class="mt-3 text-muted text-xs">Encrypted end to end; only your devices can read it.</p>
     </Screen>
   );
 }
@@ -338,16 +348,22 @@ function Unlocked(props: {
   onPendingCount?: (count: number) => void;
 }) {
   const { deps } = props;
+  // The checklist is the list's empty state while it shows (critique F6, B's first run).
+  const [checklistShown, setChecklistShown] = useState(false);
   return (
     <section class="flex flex-col" aria-labelledby="screen-title">
-      <FirstRunChecklist
-        deps={deps}
-        onAddDestination={() => props.onRoute('add-destination')}
-        onPair={() => props.onRoute('pair-source')}
-      />
       <RecoveryLookupCard deps={deps} />
       <InsertPanel
         store={deps.store}
+        onboarding={
+          <FirstRunChecklist
+            deps={deps}
+            onAddDestination={() => props.onRoute('add-destination')}
+            onPair={() => props.onRoute('pair-source')}
+            onShown={setChecklistShown}
+          />
+        }
+        onboardingShown={checklistShown}
         deps={props.insertion}
         setup={deps}
         onPair={() => props.onRoute('pair')}
