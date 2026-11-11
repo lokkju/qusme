@@ -202,7 +202,8 @@ export function readAgentGrant(value: unknown, options: { keepExtra?: boolean } 
         ? null
         : readInteger(record.expires_at, 'content.expires_at', { min: 0 }),
   };
-  if (record.storage !== undefined) grant.storage = readGrantStorage(record.storage, 'content.storage');
+  if (record.storage !== undefined)
+    grant.storage = readGrantStorage(record.storage, 'content.storage');
   if (keepExtra && quotaExtra !== undefined) grant.quota.extra = quotaExtra;
   if (keepExtra && extra !== undefined) grant.extra = extra;
   return grant;

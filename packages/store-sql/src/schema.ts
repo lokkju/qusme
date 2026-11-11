@@ -188,6 +188,11 @@ export const bindings = sqliteTable(
      * service reads the agent's grant and the submitters list.
      */
     storageRelays: text('storage_relays', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    /**
+     * The `created_at` of the agent grant whose `storage` the relays came from (spec 7.4, 8.4), or
+     * null while they are the ones the approval named. Only a newer grant moves them again.
+     */
+    storageGrantAt: integer('storage_grant_at'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
     revokedAt: integer('revoked_at'),

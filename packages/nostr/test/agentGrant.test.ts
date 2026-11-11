@@ -165,7 +165,10 @@ describe('agent grant (spec 7.4)', () => {
       nine,
     ];
     for (const storage of bad) {
-      expectError(await parseAgentGrant(grantWith({ ...input, storage }), agent), 'invalid_content');
+      expectError(
+        await parseAgentGrant(grantWith({ ...input, storage }), agent),
+        'invalid_content'
+      );
     }
     await expect(
       buildAgentGrant(queue, agentPubkey, { ...input, storage: ['ws://relay.example'] })
