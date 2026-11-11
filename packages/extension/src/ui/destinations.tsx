@@ -19,6 +19,7 @@ import {
   loadDestinations,
   removeDestination,
 } from '../agents/destinations.ts';
+import { destinationLabel } from '../drafts/row.ts';
 import type { SiteDefinitionSource } from '../insertion/definitions.ts';
 import { type DetectDeps, type Detection, detectForSite } from '../insertion/detect.ts';
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
@@ -75,7 +76,10 @@ export function detectionMessage(detection: Detection, siteName: string): string
 /** One destination with its controls. */
 export function DestinationItem(props: {
   destination: Destination;
-  siteName: string;
+  /** The one destination format (drafts/row.ts): its label, else `host · account`. */
+  shown: string;
+  /** `host · account`, repeated under a label the user gave it. */
+  plain: string;
   custom: boolean;
   busy: boolean;
   confirming: boolean;
@@ -84,14 +88,15 @@ export function DestinationItem(props: {
   onRemove: (d: Destination) => void;
 }) {
   const { destination: d } = props;
+  const details = [
+    props.shown === props.plain ? undefined : props.plain,
+    props.custom ? 'custom site' : undefined,
+    d.override === null ? undefined : 'override',
+  ].filter((part) => part !== undefined);
   return (
     <li class="card p-3">
-      <p class="font-medium text-sm">{d.label}</p>
-      <p class="text-muted text-xs">
-        {props.siteName}
-        {props.custom && ' (custom)'} · {d.account}
-        {d.override !== null && ' · override'}
-      </p>
+      <p class="font-medium text-sm">{props.shown}</p>
+      {details.length > 0 && <p class="text-muted text-xs">{details.join(' · ')}</p>}
       {d.status === 'pending' && (
         <p class="text-xs">Proposed by an agent; confirm or reject it under Agents.</p>
       )}
@@ -143,7 +148,7 @@ export function DestinationList(props: {
 }) {
   const { source } = props;
   if (props.destinations.length === 0) {
-    return <p class="mt-2 text-sm">No destinations yet. Add the accounts you post as.</p>;
+    return <p class="mt-2 text-sm">No accounts yet. Add the accounts you post as.</p>;
   }
   const ordered = [
     ...props.destinations.filter((d) => d.status === 'confirmed'),
@@ -153,12 +158,12 @@ export function DestinationList(props: {
     <ul class="mt-2 flex flex-col gap-2">
       {ordered.map((d) => {
         const official = source.official(d.site);
-        const name = typeof official?.name === 'string' ? official.name : d.site;
         return (
           <DestinationItem
             key={d.id}
             destination={d}
-            siteName={name}
+            shown={destinationLabel(source, d.site, d.account, d)}
+            plain={destinationLabel(source, d.site, d.account, { label: '', override: d.override })}
             custom={official === undefined}
             busy={props.busy}
             confirming={props.confirmingId === d.id}
@@ -233,7 +238,7 @@ export function AddDestinationForm(props: {
       }}
     >
       <h2 id="add-destination-title" class="font-semibold text-sm">
-        Add a destination
+        Add an account
       </h2>
       <Field id="destination-site" label="Site">
         <select
@@ -514,7 +519,7 @@ export function DestinationsScreen(props: {
               deps
             );
             setShared(added);
-            return `Added ${added.label}.`;
+            return `Added ${destinationLabel(definitions, added.site, added.account, added)}.`;
           })
         }
       />
@@ -549,7 +554,7 @@ export function DestinationsScreen(props: {
               definitions,
               deps
             );
-            return `Saved ${edited.label}.`;
+            return `Saved ${destinationLabel(definitions, edited.site, edited.account, edited)}.`;
           })
         }
       />
@@ -578,7 +583,7 @@ export function DestinationsScreen(props: {
             onRemove={(d) =>
               void run('Removing…', async () => {
                 const { dismissed } = await removeDestination(d.id, deps, definitions);
-                return `Removed ${d.label} and dismissed ${dismissed} draft${dismissed === 1 ? '' : 's'}.`;
+                return `Removed ${destinationLabel(definitions, d.site, d.account, d)} and dismissed ${dismissed} draft${dismissed === 1 ? '' : 's'}.`;
               })
             }
           />
@@ -592,7 +597,7 @@ export function DestinationsScreen(props: {
             setMode({ mode: 'add', values: emptyAdd(choices) });
           }}
         >
-          Add a destination
+          Add an account
         </Button>
         <ErrorText message={error} />
       </>
@@ -600,7 +605,7 @@ export function DestinationsScreen(props: {
   }
 
   return (
-    <Screen title="Destinations" onBack={props.onBack}>
+    <Screen title="Accounts" onBack={props.onBack}>
       {body}
       {notice !== undefined && (
         <p role="status" class="mt-3 text-sm">

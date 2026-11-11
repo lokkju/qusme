@@ -158,6 +158,18 @@ html body {
   }
 }
 
+/* A key name, as the picker's footer shows it. */
+@utility kbd {
+  font: 11px var(--font-mono);
+  border: 1px solid var(--color-line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  white-space: nowrap;
+}
+
 /* The q mark, as on site/favicon.svg: a white serif q on a green rounded square. */
 @utility q-mark {
   display: inline-flex;
