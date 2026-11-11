@@ -1,16 +1,18 @@
 // @vitest-environment happy-dom
 /**
  * The home screen's draft list driven in happy-dom: one click inserts a row's draft without
- * arming it, a failure leaves nothing armed, expanding shows the whole text and offers arming for
- * the context menu, and the home screen shows no npub until Settings and about asks for it.
+ * arming it, a failure leaves nothing armed, expanding shows Edit, Dismiss and setting it for the
+ * context menu, an Elsewhere row offers "Insert here anyway" only once expanded, the toolbar's
+ * chip and menu (with the Agents count), and no npub until Settings asks for it.
  */
 import { render } from 'preact';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readArmed } from '../src/insertion/armed.ts';
 import { definitionSource } from '../src/insertion/definitions.ts';
 import type { InsertResponse } from '../src/insertion/service.ts';
-import { type CachedDraft, writeDraftCache } from '../src/sync/state.ts';
+import { type CachedDraft, readDraftCache, writeDraftCache } from '../src/sync/state.ts';
 import { App } from '../src/ui/app.tsx';
+import { DraftRow } from '../src/ui/draftRow.tsx';
 import { type InsertionUiDeps, InsertPanel } from '../src/ui/insert.tsx';
 import { createdDevice, network, until } from './helpers.ts';
 
@@ -28,6 +30,18 @@ function mount(node: preact.ComponentChild) {
 
 const buttons = (text: string): HTMLButtonElement[] =>
   [...root.querySelectorAll('button')].filter((b) => b.textContent?.trim() === text);
+const menuItem = (text: string): HTMLButtonElement => {
+  const found = [...root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) =>
+    b.textContent?.trim().startsWith(text)
+  );
+  if (found === undefined) throw new Error(`no menu item ${text}`);
+  return found;
+};
+const menuButton = (): HTMLButtonElement => {
+  const found = root.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+  if (found === null) throw new Error('no menu button');
+  return found;
+};
 const rowOf = (d: string): HTMLElement => {
   const row = root.querySelector<HTMLElement>(`[data-draft="${d}"]`);
   if (row === null) throw new Error(`no row ${d}`);
@@ -84,7 +98,6 @@ describe('draft list in the popup', { timeout: 30_000 }, () => {
     await until(() => root.querySelector('[data-draft="d1"]') !== null);
     expect(root.textContent).toContain('For this page');
     expect(root.textContent).toContain('Elsewhere');
-    expect(root.textContent).toContain('Signed in to x as lokkju.');
     buttonIn(rowOf('d1'), 'Insert').click();
     await until(() => root.querySelector('[role="status"]') !== null);
     expect(inserts).toEqual([[7, 'd1']]);
@@ -96,7 +109,9 @@ describe('draft list in the popup', { timeout: 30_000 }, () => {
     const { a, deps, inserts } = await setup({ state: 'failed', reason: 'exhausted' });
     mount(<InsertPanel store={a.store} deps={deps} />);
     await until(() => root.querySelector('[data-draft="d2"]') !== null);
-    buttonIn(rowOf('d2'), 'Insert').click();
+    buttonIn(rowOf('d2'), 'Show all').click();
+    await until(() => [...rowOf('d2').querySelectorAll('button')].length > 1);
+    buttonIn(rowOf('d2'), 'Insert here anyway').click();
     await until(() => root.querySelector('[role="status"]') !== null);
     expect(inserts).toEqual([[7, 'd2']]);
     expect(root.querySelector('[role="status"]')?.textContent).toBe(
@@ -106,27 +121,126 @@ describe('draft list in the popup', { timeout: 30_000 }, () => {
     expect(root.textContent).not.toContain('Armed for right-click');
   });
 
-  it('expands a row to its full text and arms it for the context menu on request', async () => {
+  it('expands a row to its actions and sets it for the context menu on request', async () => {
     const { a, deps } = await setup({ state: 'failed', reason: 'exhausted' });
     mount(<InsertPanel store={a.store} deps={deps} />);
     await until(() => root.querySelector('[data-draft="d1"]') !== null);
-    expect(rowOf('d1').textContent).not.toContain('second line');
-    buttonIn(rowOf('d1'), 'Show all').click();
-    await until(() => rowOf('d1').textContent?.includes('second line') === true);
-    buttonIn(rowOf('d1'), 'Arm for right-click').click();
-    await until(() => root.textContent?.includes('Armed for right-click:') === true);
+    const text = () => rowOf('d1').querySelector('p.text-sm');
+    expect(text()?.className).toContain('line-clamp-3');
+    expect(buttons('Edit')).toHaveLength(0);
+    const toggle = buttonIn(rowOf('d1'), 'Show all');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    toggle.click();
+    await until(() => text()?.className.includes('whitespace-pre-wrap') === true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    buttonIn(rowOf('d1'), 'Set for right-click').click();
+    await until(() => root.textContent?.includes('Set for right-click:') === true);
     expect((await readArmed(a.store.session))?.d).toBe('d1');
-    buttons('Disarm')[0]?.click();
-    await until(() => !root.textContent?.includes('Armed for right-click:'));
+    buttons('Clear')[0]?.click();
+    await until(() => !root.textContent?.includes('Set for right-click:'));
     expect(await readArmed(a.store.session)).toBeUndefined();
   });
 
-  it('keeps the npub off the home screen until Settings and about shows it', async () => {
+  it('offers Edit and Dismiss on an expanded row, only when drafts can be changed', async () => {
+    const row = {
+      d: 'r1',
+      text: 'Draft text',
+      meta: { who: 'You', when: 'just now' },
+    };
+    const dismissed: string[] = [];
+    mount(
+      <ul>
+        <DraftRow
+          row={row}
+          elsewhere={false}
+          insertable={true}
+          armed={false}
+          busy={false}
+          onInsert={() => undefined}
+          onArm={() => undefined}
+          onEdit={async () => true}
+          onDismiss={() => dismissed.push('r1')}
+        />
+        <DraftRow
+          row={{ ...row, d: 'r2' }}
+          elsewhere={false}
+          insertable={true}
+          armed={false}
+          busy={false}
+          onInsert={() => undefined}
+          onArm={() => undefined}
+        />
+      </ul>
+    );
+    for (const d of ['r1', 'r2']) buttonIn(rowOf(d), 'Show all').click();
+    await until(() => rowOf('r2').textContent?.includes('Set for right-click') === true);
+    buttonIn(rowOf('r1'), 'Dismiss').click();
+    expect(dismissed).toEqual(['r1']);
+    buttonIn(rowOf('r1'), 'Edit').click();
+    await until(() => rowOf('r1').querySelector('textarea') !== null);
+    expect(() => buttonIn(rowOf('r2'), 'Edit')).toThrow();
+    expect(() => buttonIn(rowOf('r2'), 'Dismiss')).toThrow();
+  });
+
+  it('offers a draft for another site only once expanded, as "Insert here anyway"', async () => {
+    const { a, deps, inserts } = await setup({ state: 'not_found' });
+    mount(<InsertPanel store={a.store} deps={deps} />);
+    await until(() => root.querySelector('[data-draft="d2"]') !== null);
+    expect(rowOf('d2').querySelectorAll('button')).toHaveLength(1);
+    // The row's text is the mouse's expand target.
+    rowOf('d2').querySelector<HTMLElement>('p.text-sm')?.click();
+    await until(() => [...rowOf('d2').querySelectorAll('button')].length > 1);
+    expect(() => buttonIn(rowOf('d2'), 'Insert')).toThrow();
+    const anyway = buttonIn(rowOf('d2'), 'Insert here anyway');
+    expect(anyway.className).not.toContain('bg-accent');
+    anyway.click();
+    await until(() => inserts.length === 1);
+    expect(inserts).toEqual([[7, 'd2']]);
+  });
+
+  it('shows the tab in the chip and counts waiting accounts beside Agents in the menu', async () => {
+    const { a, deps } = await setup({ state: 'not_found' });
+    const cache = await readDraftCache(a.store.session);
+    await writeDraftCache(a.store.session, {
+      ...(cache as NonNullable<typeof cache>),
+      destinations: [
+        {
+          id: 'p1',
+          site: 'x',
+          account: 'other',
+          label: 'X / other',
+          status: 'pending',
+          override: null,
+        },
+      ],
+    });
+    mount(<App deps={a.deps} insertion={deps} />);
+    await until(() => root.textContent?.includes('x.com · lokkju') === true);
+    await until(() => root.textContent?.includes('wants to draft for') === true);
+    expect(menuButton().getAttribute('aria-label')).toBe('Menu, 1 waiting');
+    expect(root.querySelector('[role="menu"]')).toBeNull();
+    menuButton().click();
+    await until(() => root.querySelector('[role="menu"]') !== null);
+    expect(menuItem('Agents').textContent).toBe('Agents1 waiting');
+    expect(
+      [...root.querySelectorAll('[role="menuitem"]')].map((b) => b.firstChild?.textContent)
+    ).toEqual(['Agents', 'Accounts', 'Archive', 'Pair a device', 'Settings', 'Lock']);
+    menuItem('Agents').click();
+    await until(() => buttons('Approve an agent').length === 1);
+    expect(root.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('keeps the npub off the home screen until Settings shows it', async () => {
     const { a, deps } = await setup({ state: 'not_found' });
     mount(<App deps={a.deps} insertion={deps} />);
     await until(() => root.textContent?.includes('For this page') === true);
     expect(root.textContent).not.toContain('npub1');
     expect(root.textContent).not.toContain(a.npub);
+    expect(buttons('Approve an agent')).toHaveLength(0);
+    menuButton().click();
+    await until(() => root.querySelector('[role="menu"]') !== null);
+    menuItem('Settings').click();
+    await until(() => buttons('Show Queue ID').length === 1);
     buttons('Show Queue ID')[0]?.click();
     await until(() => root.textContent?.includes(a.npub) === true);
   });

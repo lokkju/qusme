@@ -1366,7 +1366,7 @@ describe('grant editing screens', () => {
         view={{ agents: [], pending: [{ ...X_ALT, status: 'pending' }], confirmed: [X_LOKKJU] }}
       />
     );
-    expect(html).toContain('Merge into an existing destination');
+    expect(html).toContain('Merge into an existing account');
   });
 
   it('lists the agents a destination can be shared with, as text', () => {

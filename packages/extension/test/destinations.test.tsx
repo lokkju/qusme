@@ -372,7 +372,7 @@ describe('destinations screen', () => {
     },
   ]);
 
-  it('renders labels, accounts and site names as text', () => {
+  it('renders labels, accounts and sites as text', () => {
     const html = renderToString(
       <DestinationList
         destinations={[
@@ -403,9 +403,8 @@ describe('destinations screen', () => {
     );
     expect(html).not.toMatch(/<(img|i|b|script)[ >]/);
     expect(html).toContain('&lt;img src=x onerror=alert(1)>');
-    expect(html).toContain('&lt;b>Evil&lt;/b>');
-    expect(html).toContain('&lt;i>acct&lt;/i>');
-    expect(html).toContain('custom&lt;script> (custom)');
+    expect(html).toContain('evil · &lt;i>acct&lt;/i> · override');
+    expect(html).toContain('custom&lt;script> · me · custom site');
     expect(html).toContain('confirm or reject it under Agents');
     expect(html).toContain('Remove and dismiss its drafts');
     // Confirmed first.
@@ -501,7 +500,7 @@ describe('destinations screen', () => {
     );
     expect(html).not.toMatch(/<(img|u)[ >]/);
     expect(html).toContain(
-      'Add &lt;img src=x onerror=alert(1)> on &lt;u>X&lt;/u> as a destination'
+      'Add &lt;img src=x onerror=alert(1)> on &lt;u>X&lt;/u> to your accounts'
     );
   });
 

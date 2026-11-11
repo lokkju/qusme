@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'preact/hooks';
 import { definitionSource } from '../insertion/definitions.ts';
 import { type KeyStatus, type PendingImport, WrongPassphrase } from '../keyStore.ts';
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
+import { readDraftCache } from '../sync/state.ts';
 import { AgentsScreen, ApproveAgentScreen } from './agents.tsx';
 import { ArchiveScreen } from './archive.tsx';
 import { Button, ErrorText, Field, inputClass, Screen } from './components.tsx';
@@ -11,6 +12,7 @@ import { CreateScreen } from './create.tsx';
 import { DestinationsScreen } from './destinations.tsx';
 import { FirstRunChecklist } from './firstRun.tsx';
 import { type InsertionUiDeps, InsertPanel } from './insert.tsx';
+import { type MenuTarget, OverflowMenu, Toolbar } from './menu.tsx';
 import { PairScreen, PairSourceScreen } from './pair.tsx';
 import { RecoverScreen } from './recover.tsx';
 import { RecoveryLookupCard } from './recoveryLookup.tsx';
@@ -27,7 +29,8 @@ export type Route =
   | 'destinations'
   | 'add-destination'
   | 'archive'
-  | 'relay-swap';
+  | 'relay-swap'
+  | 'settings';
 
 /** A message for the user from anything a flow threw. */
 export function messageOf(error: unknown): string {
@@ -48,10 +51,16 @@ export function App(props: {
   const [route, setRoute] = useState<Route>(props.approveCode ? 'approve-agent' : 'home');
   // The storage relay the swap screen replaces (spec 9.1) and the queue's relays when it opened.
   const [swap, setSwap] = useState<{ dead: string; current: string[] } | undefined>();
+  // The toolbar's chip (the home list reports it after detection) and the menu's Agents count.
+  const [chip, setChip] = useState<string | undefined>();
+  const [waiting, setWaiting] = useState(0);
 
   const refresh = useCallback(async () => {
-    setStatus(await deps.store.status());
+    const next = await deps.store.status();
+    setStatus(next);
     setPending(await deps.store.pendingImport());
+    const cache = next.state === 'unlocked' ? await readDraftCache(deps.store.session) : undefined;
+    setWaiting((cache?.destinations ?? []).filter((d) => d.status === 'pending').length);
   }, [deps]);
 
   useEffect(() => {
@@ -89,12 +98,23 @@ export function App(props: {
         deps={deps}
         source={props.insertion?.definitions ?? definitionSource()}
         onBack={home}
+        onApprove={() => setRoute('approve-agent')}
       />
     );
   } else if (route === 'relay-swap' && status.state === 'unlocked' && swap !== undefined) {
     body = <RelaySwapScreen deps={deps} dead={swap.dead} current={swap.current} onBack={home} />;
   } else if (route === 'archive' && status.state === 'unlocked') {
     body = <ArchiveScreen deps={deps} onBack={home} />;
+  } else if (route === 'settings' && status.state === 'unlocked') {
+    body = (
+      <SettingsScreen
+        deps={deps}
+        status={status}
+        insertion={props.insertion}
+        onBack={home}
+        onChange={refresh}
+      />
+    );
   } else if (
     (route === 'destinations' || route === 'add-destination') &&
     status.state === 'unlocked'
@@ -116,10 +136,10 @@ export function App(props: {
     body = (
       <Unlocked
         deps={deps}
-        status={status}
         onRoute={setRoute}
-        onChange={refresh}
         insertion={props.insertion}
+        onContext={setChip}
+        onPendingCount={setWaiting}
         onReplaceRelay={async (dead) => {
           const record = await deps.store.record();
           setSwap({ dead, current: record?.storageRelays ?? [] });
@@ -129,28 +149,39 @@ export function App(props: {
     );
   }
 
+  const unlocked = status?.state === 'unlocked';
+  const showHome = unlocked && route === 'home';
   return (
-    <div class="min-w-[22rem] max-w-md bg-paper px-4 pt-3 pb-4 text-ink">
-      <div class="mb-3 flex items-center gap-2 border-line border-b pb-3" aria-hidden="true">
-        <span class="q-mark">q</span>
-        <span class="font-medium font-serif text-[1.375rem] leading-none">qus.me</span>
-      </div>
-      {body}
-      {props.openInTab &&
-        route !== 'home' &&
-        route !== 'approve-agent' &&
-        route !== 'agents' &&
-        route !== 'archive' &&
-        route !== 'relay-swap' &&
-        route !== 'destinations' &&
-        route !== 'add-destination' && (
-          <p class="mt-4 text-muted text-xs">
-            <button type="button" class="link" onClick={props.openInTab}>
-              Open in a tab
-            </button>{' '}
-            so this stays open while you use your other device.
-          </p>
+    <div class="flex max-h-[600px] min-w-[22rem] max-w-md flex-col bg-paper text-ink">
+      <Toolbar chip={showHome ? chip : undefined}>
+        {unlocked && (
+          <OverflowMenu
+            pending={waiting}
+            onSelect={(target: MenuTarget) => setRoute(target)}
+            onLock={async () => {
+              await deps.store.lock();
+              setChip(undefined);
+              home();
+            }}
+          />
         )}
+      </Toolbar>
+      {/* The home list ends with its own padding or the tip, which sticks to the bottom edge. */}
+      <div class={`min-h-0 flex-1 overflow-y-auto px-4 pt-3 ${showHome ? '' : 'pb-4'}`}>
+        {body}
+        {props.openInTab &&
+          (route === 'create' ||
+            route === 'pair' ||
+            route === 'recover' ||
+            route === 'pair-source') && (
+            <p class="mt-4 text-muted text-xs">
+              <button type="button" class="link" onClick={props.openInTab}>
+                Open in a tab
+              </button>{' '}
+              so this stays open while you use your other device.
+            </p>
+          )}
+      </div>
     </div>
   );
 }
@@ -216,19 +247,15 @@ function Unlock(props: { deps: SetupDeps; onUnlocked: () => void }) {
 
 function Unlocked(props: {
   deps: SetupDeps;
-  status: Extract<KeyStatus, { state: 'unlocked' }>;
   onRoute: (route: Route) => void;
-  onChange: () => void;
   insertion?: InsertionUiDeps | undefined;
   onReplaceRelay?: (url: string) => void;
+  onContext?: (chip: string | undefined) => void;
+  onPendingCount?: (count: number) => void;
 }) {
-  const { deps, status } = props;
-  const toggle = async (on: boolean) => {
-    await deps.store.setStayUnlocked(on);
-    props.onChange();
-  };
+  const { deps } = props;
   return (
-    <Screen title="qus.me" hideTitle>
+    <section class="flex flex-col" aria-labelledby="screen-title">
       <FirstRunChecklist
         deps={deps}
         onAddDestination={() => props.onRoute('add-destination')}
@@ -242,67 +269,78 @@ function Unlocked(props: {
         onPair={() => props.onRoute('pair')}
         onAgents={() => props.onRoute('agents')}
         {...(props.onReplaceRelay !== undefined && { onReplaceRelay: props.onReplaceRelay })}
+        {...(props.onContext !== undefined && { onContext: props.onContext })}
+        {...(props.onPendingCount !== undefined && { onPendingCount: props.onPendingCount })}
       />
-      <div class="mt-4 flex flex-col gap-2">
-        <Button onClick={() => props.onRoute('approve-agent')}>Approve an agent</Button>
-        <Button variant="plain" onClick={() => props.onRoute('archive')}>
-          Archived drafts
-        </Button>
-        <Button variant="plain" onClick={() => props.onRoute('destinations')}>
-          Destinations
-        </Button>
-        <Button variant="plain" onClick={() => props.onRoute('agents')}>
-          Agents and pending destinations
-        </Button>
-        <Button variant="plain" onClick={() => props.onRoute('pair-source')}>
-          Pair a new device
-        </Button>
-        <Button
-          variant="plain"
-          onClick={async () => {
-            await deps.store.lock();
-            props.onChange();
-          }}
-        >
-          Lock
-        </Button>
-      </div>
-      <details class="mt-4 card p-3">
-        <summary class="font-medium text-sm">Settings and about</summary>
-        <div class="mt-3 flex items-start gap-2">
-          <input
-            id="stay-unlocked"
-            type="checkbox"
-            class="mt-1"
-            checked={status.stayUnlocked}
-            aria-describedby="stay-unlocked-warning"
-            onChange={(e) => void toggle(e.currentTarget.checked)}
-          />
-          <div>
-            <label for="stay-unlocked" class="font-medium text-sm">
-              Stay unlocked on this device
-            </label>
-            <p id="stay-unlocked-warning" class="text-muted text-xs">
-              Keeps the queue key unencrypted on this computer so a browser restart doesn't ask for
-              the passphrase. Anyone with access to this browser profile can then read and change
-              the queue.
-            </p>
-          </div>
+    </section>
+  );
+}
+
+/** Settings and about: staying unlocked, the picker shortcut and the queue's ID (critique H2). */
+function SettingsScreen(props: {
+  deps: SetupDeps;
+  status: Extract<KeyStatus, { state: 'unlocked' }>;
+  insertion?: InsertionUiDeps | undefined;
+  onBack: () => void;
+  onChange: () => void;
+}) {
+  const { deps, status } = props;
+  const [shortcut, setShortcut] = useState<string | undefined>();
+  useEffect(() => {
+    void props.insertion
+      ?.pickerShortcut?.()
+      .then(setShortcut)
+      .catch(() => undefined);
+  }, [props.insertion]);
+  const toggle = async (on: boolean) => {
+    await deps.store.setStayUnlocked(on);
+    props.onChange();
+  };
+  return (
+    <Screen title="Settings" onBack={props.onBack}>
+      <div class="mt-4 flex items-start gap-2">
+        <input
+          id="stay-unlocked"
+          type="checkbox"
+          class="mt-1"
+          checked={status.stayUnlocked}
+          aria-describedby="stay-unlocked-warning"
+          onChange={(e) => void toggle(e.currentTarget.checked)}
+        />
+        <div>
+          <label for="stay-unlocked" class="font-medium text-sm">
+            Stay unlocked on this device
+          </label>
+          <p id="stay-unlocked-warning" class="text-muted text-xs">
+            Keeps the queue key unencrypted on this computer so a browser restart doesn't ask for
+            the passphrase. Anyone with access to this browser profile can then read and change the
+            queue.
+          </p>
         </div>
-        <QueueAbout pubkey={status.pubkey} />
-      </details>
+      </div>
+      {shortcut !== undefined && (
+        <div class="mt-4">
+          <p class="font-medium text-sm">Picker shortcut</p>
+          <p class="mt-1 text-muted text-xs">
+            {shortcut === ''
+              ? "None. Give qus.me a keyboard shortcut in your browser's extension shortcuts to pick drafts from any text field."
+              : `Press ${shortcut} in a post box to pick a draft there. Change it in your browser's extension shortcuts.`}
+          </p>
+        </div>
+      )}
+      <QueueAbout pubkey={status.pubkey} />
     </Screen>
   );
 }
 
 /**
  * The queue's ID, for recovery and support; the recovery sheet has it too (spec 6.1). Rendered
- * only when the Settings and about area is opened, so the home screen carries no npub.
+ * only on Settings, behind a button, so the home screen carries no npub.
  */
 function QueueAbout(props: { pubkey: string }) {
   const [shown, setShown] = useState(false);
   return (
-    <div class="mt-3">
+    <div class="mt-4">
       <p class="font-medium text-sm">About this queue</p>
       {shown ? (
         <p class="mt-1 text-xs">

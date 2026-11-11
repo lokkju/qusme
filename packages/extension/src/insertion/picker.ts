@@ -13,8 +13,10 @@
  */
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 import { displayAccount, type SiteAccount } from '@qusme/nostr';
+import { rowData } from '../drafts/row.ts';
 import type { KeyStore } from '../keyStore.ts';
 import { type CachedDraft, readDraftCache } from '../sync/state.ts';
+import { dismissPickerTip } from '../tips.ts';
 import { definitionForDraft, type SiteDefinitionSource } from './definitions.ts';
 import { accountLocators, draftsForPage, type PageDraft } from './matching.ts';
 import {
@@ -48,6 +50,8 @@ export interface PickerDeps {
   insertion: Pick<InsertionService, 'insert'>;
   /** A fresh token per picker; defaults to 16 random bytes in hex. */
   token?: () => string;
+  /** Unix seconds, for the rows' relative times; defaults to the clock. */
+  now?: () => number;
 }
 
 export type PickResponse = InsertResponse | { state: 'expired' } | { state: 'not_found' };
@@ -86,6 +90,8 @@ export class PickerService {
       } satisfies PickerSession,
     });
     await this.deps.page.open(tab.id, view);
+    // The popup's Alt+Q tip has done its job once the picker opened with drafts to pick.
+    if (view.state === 'ready') await dismissPickerTip(this.deps.store.local);
     return view.state;
   }
 
@@ -124,14 +130,16 @@ export class PickerService {
 
     const siteName = (draft: CachedDraft): string =>
       definitionForDraft(definitions, draft, destinations).definition?.name ?? draft.site;
-    const item = ({ draft }: PageDraft, showAccount: boolean): PickerItem => {
-      const parts = [siteName(draft)];
-      if (showAccount) parts[0] = `${parts[0]} as ${displayAccount(draft.account)}`;
-      parts.push(draft.field);
-      if (draft.source !== undefined)
-        parts.push(`from ${draft.source.label ?? draft.source.submitter.slice(0, 8)}`);
-      return { d: draft.d, text: pickerText(draft.content), meta: parts.join(' · ') };
-    };
+    // The same row the popup shows (drafts/row.ts), with the text cut for the page.
+    const now = this.deps.now?.() ?? Math.floor(Date.now() / 1000);
+    const item = ({ draft }: PageDraft, showDestination: boolean): PickerItem =>
+      rowData(draft, {
+        source: definitions,
+        destinations,
+        now,
+        showDestination,
+        text: pickerText(draft.content),
+      });
     const context = Object.entries(detected)
       .map(([site, account]) => {
         const name = page.matching.find((e) => e.draft.site === site);

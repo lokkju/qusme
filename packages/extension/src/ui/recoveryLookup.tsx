@@ -23,7 +23,7 @@ export function RecoveryLookupCard(props: { deps: SetupDeps }) {
 
   if (done) {
     return (
-      <p class="mt-3 rounded border border-ink/20 p-2 text-sm" role="status">
+      <p class="mt-3 card p-3 text-sm" role="status">
         Done: your recovery code alone now finds this queue.
       </p>
     );
@@ -44,7 +44,7 @@ export function RecoveryLookupCard(props: { deps: SetupDeps }) {
   };
 
   return (
-    <form class="mt-3 rounded border border-ink/20 p-2" onSubmit={submit}>
+    <form class="mt-3 card p-3" onSubmit={submit}>
       <p class="font-medium text-sm">Let the recovery code work on its own</p>
       <p class="mt-1 text-sm">
         This queue was made before the recovery code could find it by itself; today, recovering also

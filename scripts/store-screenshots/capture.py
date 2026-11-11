@@ -156,7 +156,7 @@ def demo_drafts(now: int) -> list[dict]:
         {
             "d": "draft-hiring",
             "updatedAt": now - 1800,
-            "site": "linkedin.com",
+            "site": "linkedin",
             "account": "Lantern Works",
             "field": "text",
             "status": "active",
@@ -168,8 +168,8 @@ def demo_drafts(now: int) -> list[dict]:
         {
             "d": "draft-maintenance",
             "updatedAt": now - 7200,
-            "site": "mastodon.social",
-            "account": "lanternworks",
+            "site": "mastodon",
+            "account": "lanternworks@mastodon.social",
             "field": "text",
             "status": "active",
             "destination": "dest-mastodon",
@@ -179,17 +179,44 @@ def demo_drafts(now: int) -> list[dict]:
     ]
 
 
-def picker_view(drafts: list[dict]) -> dict:
-    """What PickerService.view builds for TAB_URL with this cache (src/insertion/picker.ts)."""
-    names = {"x": "X"}
+# What src/drafts/row.ts writes for the demo destinations: host · account, and each site's limit.
+DESTINATION_LABELS = {
+    "x": "x.com · lanternworks",
+    "linkedin": "linkedin.com · Lantern Works",
+    "mastodon": "mastodon.social · lanternworks",
+}
+LIMITS = {"x": 280, "linkedin": 3000, "mastodon": 500}
 
-    def item(draft: dict, show_account: bool) -> dict:
-        site = names.get(draft["site"], draft["site"])
-        parts = [f"{site} as {draft['account']}" if show_account else site, draft["field"]]
-        if "source" in draft:
-            parts.append(f"from {draft['source']['label']}")
+
+def relative_time(seconds: int) -> str:
+    """src/drafts/rowFormat.ts relativeTime, for the ages the demo drafts have."""
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60} min ago"
+    if seconds < 86400:
+        return f"{seconds // 3600} h ago"
+    return "yesterday" if seconds < 2 * 86400 else f"{seconds // 86400} days ago"
+
+
+def picker_view(drafts: list[dict], now: int) -> dict:
+    """What PickerService.view builds for TAB_URL with this cache (src/insertion/picker.ts)."""
+
+    def item(draft: dict, show_destination: bool) -> dict:
+        meta = {
+            "who": draft["source"]["label"] if "source" in draft else "You",
+            "when": relative_time(now - draft["updatedAt"]),
+            # Every demo draft is plain text, which every counter counts as code points.
+            "count": {
+                "length": len(draft["content"]),
+                "max": LIMITS[draft["site"]],
+                "over": len(draft["content"]) > LIMITS[draft["site"]],
+            },
+        }
+        if show_destination:
+            meta["destination"] = DESTINATION_LABELS[draft["site"]]
         text = " ".join(draft["content"].split())
-        return {"d": draft["d"], "text": text, "meta": " · ".join(parts)}
+        return {"d": draft["d"], "text": text, "meta": meta}
 
     active = sorted(drafts, key=lambda d: -d["updatedAt"])
     return {
@@ -519,7 +546,9 @@ def main() -> None:
         # bundled page script goes in directly and opens the picker with the view the background
         # would build for this cache.
         compose.add_script_tag(path=str(EXTENSION / "qusme-page.js"))
-        compose.evaluate("view => globalThis.__qusmeInsertion.openPicker(view)", picker_view(drafts))
+        compose.evaluate(
+            "view => globalThis.__qusmeInsertion.openPicker(view)", picker_view(drafts, now)
+        )
         compose.wait_for_timeout(300)
         picker_img = tmp / "picker.png"
         compose.screenshot(path=str(picker_img))
@@ -529,8 +558,9 @@ def main() -> None:
 
         seed_storage(ctx, local, session)
         home_page = popup(ctx, ext_id)
-        home_page.get_by_text("Press Alt+Q").wait_for()
+        home_page.get_by_text("to pick a draft without opening this").wait_for()
         home_page.locator("[data-draft]").first.wait_for()
+        home_page.get_by_text("x.com · lanternworks").wait_for()
         home = shoot_popup(home_page, tmp / "home.png")
 
         approve_page = popup(ctx, ext_id, "?approve=QK7D-M4XR")

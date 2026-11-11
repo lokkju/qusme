@@ -9,12 +9,12 @@
 export const LIGHT_TOKENS =
   '--bg: #fbfbf9; --surface: #ffffff; --band: #f2f1ec; --fg: #1c1c1a; --muted: #55554f; ' +
   '--line: #e2e1db; --edge: #c9c8c1; --accent: #1f5f4a; --accent-hover: #123a2d; ' +
-  '--tint: #eaf2ee; --on-accent: #ffffff; --shadow: rgba(28, 28, 26, .22);';
+  '--tint: #eaf2ee; --on-accent: #ffffff; --danger: #a8321f; --shadow: rgba(28, 28, 26, .22);';
 
 export const DARK_TOKENS =
   '--bg: #131513; --surface: #1b1e1b; --band: #181b18; --fg: #ecebe6; --muted: #aeada5; ' +
   '--line: #2f332f; --edge: #4a4f4a; --accent: #8fd1b4; --accent-hover: #b5e3cd; ' +
-  '--tint: #1f3a2f; --on-accent: #0d1a14; --shadow: rgba(0, 0, 0, .55);';
+  '--tint: #1f3a2f; --on-accent: #0d1a14; --danger: #f0a294; --shadow: rgba(0, 0, 0, .55);';
 
 export const SANS =
   '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';

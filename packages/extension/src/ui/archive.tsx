@@ -129,7 +129,7 @@ export function ArchiveScreen(props: { deps: SetupDeps; onBack: () => void }) {
   };
 
   return (
-    <Screen title="Archived drafts" onBack={props.onBack}>
+    <Screen title="Archive" onBack={props.onBack}>
       <p class="mt-2 text-muted text-xs">
         Drafts you inserted or dismissed. Restore puts one back in your drafts.
       </p>

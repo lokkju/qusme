@@ -268,22 +268,20 @@ describe('draft list controls', () => {
     onRetry: noop,
   };
 
-  it('offers Edit and Dismiss on each row only when drafts can be changed', () => {
-    const plain = renderToString(<InsertView {...base} status={undefined} />);
-    expect(plain).not.toContain('>Edit<');
-    expect(plain).not.toContain('>Dismiss<');
+  it('keeps Edit and Dismiss off collapsed rows (draftPanel.test.tsx expands one)', () => {
     const html = renderToString(
       <InsertView {...base} status={undefined} onEdit={async () => true} onDismiss={noop} />
     );
-    expect(html).toContain('>Edit<');
-    expect(html).toContain('>Dismiss<');
+    expect(html).not.toContain('>Edit<');
+    expect(html).not.toContain('>Dismiss<');
+    expect(html).toContain('>Insert<');
   });
 
   it('puts Undo in the status line after a dismissal', () => {
     const html = renderToString(
-      <InsertView {...base} status="Dismissed. It is in Archived drafts." onUndo={noop} />
+      <InsertView {...base} status="Dismissed. It is in the Archive." onUndo={noop} />
     );
-    expect(html).toMatch(/Dismissed\. It is in Archived drafts\.[\s\S]*Undo/);
+    expect(html).toMatch(/Dismissed\. It is in the Archive\.[\s\S]*Undo/);
   });
 
   it('offers pairing on the rotation notice and the agents screen on a flood', () => {

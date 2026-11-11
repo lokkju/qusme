@@ -38,6 +38,7 @@ import {
   loadAgents,
   loadShareableDestinations,
 } from '../agents/view.ts';
+import { destinationLabel } from '../drafts/row.ts';
 import type { SiteDefinitionSource } from '../insertion/definitions.ts';
 import { type SetupDeps, SetupError } from '../setup/deps.ts';
 import { messageOf } from './app.tsx';
@@ -638,6 +639,8 @@ export function AgentItem(props: {
  */
 export function PendingItem(props: {
   destination: Destination;
+  /** For the one destination format (drafts/row.ts); without it, the label alone. */
+  source?: SiteDefinitionSource | undefined;
   /** Confirmed destinations it can merge into; none hides Merge. */
   confirmed?: Destination[];
   busy: boolean;
@@ -652,9 +655,10 @@ export function PendingItem(props: {
   const selectId = `merge-${destination.id}`;
   return (
     <li class="card p-3">
-      <p class="text-sm">{destination.label}</p>
-      <p class="text-muted text-xs">
-        Site {destination.site}, account {destination.account}
+      <p class="text-sm">
+        {props.source === undefined
+          ? destination.label
+          : destinationLabel(props.source, destination.site, destination.account, destination)}
       </p>
       <div class="mt-2 flex gap-2">
         <Button size="sm" disabled={props.busy} onClick={() => props.onConfirm(destination)}>
@@ -678,7 +682,7 @@ export function PendingItem(props: {
             disabled={props.busy}
             onClick={() => setMerging(confirmed[0]?.id)}
           >
-            Merge into an existing destination…
+            Merge into an existing account…
           </button>
         ) : (
           <div class="mt-2 card-band p-3">
@@ -727,6 +731,7 @@ export function AgentsList(props: {
   onReject: (d: Destination) => void;
   onMerge?: (d: Destination, into: Destination) => void;
   onEdit?: (agent: AgentRow) => void;
+  source?: SiteDefinitionSource | undefined;
 }) {
   const { view } = props;
   return (
@@ -734,13 +739,14 @@ export function AgentsList(props: {
       {view.pending.length > 0 && (
         <section class="mt-3" aria-labelledby="pending-title">
           <h2 id="pending-title" class="font-semibold text-sm">
-            Destinations waiting for you
+            Accounts waiting for your OK
           </h2>
           <ul class="mt-1 flex flex-col gap-2">
             {view.pending.map((d) => (
               <PendingItem
                 key={d.id}
                 destination={d}
+                source={props.source}
                 confirmed={view.confirmed}
                 busy={props.busy}
                 onConfirm={props.onConfirm}
@@ -934,6 +940,8 @@ export function AgentsScreen(props: {
   deps: SetupDeps;
   source?: SiteDefinitionSource | undefined;
   onBack: () => void;
+  /** Opens the approval screen; approving an agent lives here, not on the home screen (H1). */
+  onApprove?: () => void;
 }) {
   const { deps, source } = props;
   const [view, setView] = useState<AgentsView | undefined>();
@@ -1051,10 +1059,16 @@ export function AgentsScreen(props: {
 
   return (
     <Screen title="Agents" onBack={props.onBack}>
+      {props.onApprove !== undefined && (
+        <Button class="mt-3 self-start" onClick={props.onApprove}>
+          Approve an agent
+        </Button>
+      )}
       {view === undefined && error === undefined && <p class="mt-2 text-sm">Loading…</p>}
       {view !== undefined && (
         <AgentsList
           view={view}
+          source={source}
           busy={busy}
           onRevoke={revoke}
           onRetry={retry}

@@ -96,11 +96,11 @@ describe('insert panel shortcut', { timeout: 30_000 }, () => {
 
     const offer = () =>
       [...root.querySelectorAll('button')].find(
-        (b) => b.textContent === 'Add lokkju on X as a destination'
+        (b) => b.textContent === 'Add lokkju on X to your accounts'
       );
     await until(() => offer() !== undefined);
     offer()?.click();
-    await until(() => root.textContent?.includes('Added X / lokkju.') === true);
+    await until(() => root.textContent?.includes('Added x.com · lokkju.') === true);
     const list = (await q.onRelays())[0]?.content.destinations ?? [];
     expect(list.map((d) => [d.site, d.account, d.label, d.status])).toEqual([
       ['x', 'alt', 'X / alt', 'confirmed'],
@@ -126,6 +126,7 @@ describe('insert panel shortcut', { timeout: 30_000 }, () => {
     const page = fakePage('https://x.com/home');
     const root = document.createElement('div');
     document.body.append(root);
+    const chips: (string | undefined)[] = [];
     render(
       <InsertPanel
         store={q.store}
@@ -136,11 +137,12 @@ describe('insert panel shortcut', { timeout: 30_000 }, () => {
           writeClipboard: async () => true,
         }}
         setup={q.deps}
+        onContext={(chip) => chips.push(chip)}
       />,
       root
     );
-    await until(() => root.textContent?.includes('Signed in to x as alt.') === true);
-    expect(root.textContent).not.toContain('as a destination');
+    await until(() => chips.includes('x.com · alt'));
+    expect(root.textContent).not.toContain('to your accounts');
     render(null, root);
     q.close();
   });
@@ -164,8 +166,8 @@ describe('destinations screen', { timeout: 30_000 }, () => {
       />,
       root
     );
-    await until(() => root.textContent?.includes('X / alt') === true);
-    button(root, 'Add a destination')?.click();
+    await until(() => root.textContent?.includes('x.com · alt') === true);
+    button(root, 'Add an account')?.click();
     await until(() => button(root, 'Detect from this tab') !== undefined);
     // The form opens on the first site by name; detection reads the chosen one.
     const site = root.querySelector<HTMLSelectElement>('#destination-site') as HTMLSelectElement;
@@ -179,10 +181,10 @@ describe('destinations screen', { timeout: 30_000 }, () => {
       'X / lokkju'
     );
     button(root, 'Add')?.click();
-    await until(() => root.textContent?.includes('Added X / lokkju.') === true);
+    await until(() => root.textContent?.includes('Added x.com · lokkju.') === true);
     const list = (await q.onRelays())[0]?.content.destinations ?? [];
     expect(list.map((d) => d.label)).toEqual(['X / alt', 'X / lokkju']);
-    expect(root.textContent).toContain('X / lokkju');
+    expect(root.textContent).toContain('x.com · lokkju');
     render(null, root);
     q.close();
   });
