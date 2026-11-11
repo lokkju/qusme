@@ -155,6 +155,7 @@ const ids = (html: string) => new Set([...html.matchAll(/\sid="([^"]+)"/g)].map(
 const EXTERNAL = new Set([
   'https://github.com/lokkju/qusme',
   'https://github.com/lokkju/qusme/releases?q=extension-v',
+  'https://chromewebstore.google.com/detail/qusme/mggkjolhneabgkhokenopabgkcakfhpo',
   'mailto:info@qus.me',
 ]);
 
@@ -205,7 +206,9 @@ describe('site pages', () => {
     expect(html).not.toMatch(/javascript:/i);
     // Every <script> is an external same-origin file.
     for (const tag of html.match(/<script[^>]*>/g) ?? []) expect(tag).toMatch(/\ssrc="\/[^"]+"/);
-    expect(html).not.toMatch(/https?:\/\/(?!app\.qus\.me|github\.com\/lokkju\/qusme)/);
+    expect(html).not.toMatch(
+      /https?:\/\/(?!app\.qus\.me|github\.com\/lokkju\/qusme|chromewebstore\.google\.com\/detail\/qusme\/)/
+    );
   });
 
   it.each(PAGES)('%s: a language, a title, a viewport and one h1', (page) => {
