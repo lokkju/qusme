@@ -2,7 +2,8 @@
  * ARIA roles and accessible names for locators (spec 10.1, 10.2), computed in the page. A
  * simplified accessible name computation: `aria-labelledby`, `aria-label`, associated labels,
  * name from content for the roles that take it, then `title` and `placeholder`. It covers how
- * composers and account buttons are labelled, not the whole of accname 1.2.
+ * composers and account buttons are labelled, not the whole of accname 1.2. Locators search the
+ * light DOM first and, only when it has no match, open shadow roots within fixed limits.
  */
 import type { Locator } from '@qusme/nostr';
 
@@ -52,6 +53,7 @@ export function roleOf(element: Element): string | undefined {
     if (type === 'checkbox' || type === 'radio') return type;
   }
   if (/^h[1-6]$/.test(tag)) return 'heading';
+  if (tag === 'nav') return 'navigation';
   return undefined;
 }
 
@@ -77,12 +79,14 @@ function labelsOf(element: Element): string {
 
 /** The element's accessible name, whitespace collapsed. */
 export function accessibleName(element: Element): string {
-  const doc = element.ownerDocument;
+  // IDs are scoped to the tree the element is in: its shadow root, or the document.
+  const root = element.getRootNode() as Document | ShadowRoot;
+  const scope = typeof root.getElementById === 'function' ? root : element.ownerDocument;
   const labelledBy = element.getAttribute('aria-labelledby');
   if (labelledBy) {
     const text = labelledBy
       .split(/\s+/)
-      .map((id) => doc.getElementById(id))
+      .map((id) => scope.getElementById(id))
       .filter((e): e is HTMLElement => e !== null)
       .map((e) => collapse(contentText(e)))
       .join(' ');
@@ -121,10 +125,20 @@ export function namesFor(locator: Locator, lang: string): string[] {
   return locator.name[key] ?? locator.name.en ?? [];
 }
 
-/** True when nothing hides the element: no `hidden`, `aria-hidden`, `inert`, or display none. */
+/** The parent element, or the shadow host when `element` is at the top of a shadow root. */
+function parentOrHost(element: Element): Element | null {
+  if (element.parentElement !== null) return element.parentElement;
+  const parent = element.parentNode;
+  return parent !== null && parent.nodeType === 11 ? ((parent as ShadowRoot).host ?? null) : null;
+}
+
+/**
+ * True when nothing hides the element: no `hidden`, `aria-hidden`, `inert`, or display none,
+ * on it or an ancestor, shadow hosts included.
+ */
 export function isShown(element: Element): boolean {
   const view = element.ownerDocument.defaultView;
-  for (let e: Element | null = element; e !== null; e = e.parentElement) {
+  for (let e: Element | null = element; e !== null; e = parentOrHost(e)) {
     if (e.hasAttribute('hidden') || e.hasAttribute('inert')) return false;
     if (e.getAttribute('aria-hidden') === 'true') return false;
     const style = view?.getComputedStyle(e);
@@ -142,23 +156,96 @@ const IMPLICIT_SELECTORS: Record<string, string> = {
   button: 'button, input[type=button], input[type=submit], input[type=reset], input[type=image]',
   link: 'a[href]',
   heading: 'h1, h2, h3, h4, h5, h6',
+  navigation: 'nav',
 };
 
+/** At most this many `[data-placeholder]` descendants are read per candidate element. */
+const MAX_PLACEHOLDER_DESCENDANTS = 16;
+
 /**
- * Shown elements whose role is the locator's and whose accessible name is one of the names for
- * the page's language, in document order. Names compare with whitespace collapsed.
+ * Placeholder texts of an element, whitespace collapsed: its own `placeholder`,
+ * `aria-placeholder` and `data-placeholder`, then the `data-placeholder` of descendants
+ * (TipTap and ProseMirror editors put the prompt on the empty paragraph inside the editor). Only
+ * the candidate's own subtree is read, so text elsewhere on the page never matches.
  */
-export function findByLocator(doc: Document, locator: Locator): Element[] {
-  const lang = doc.documentElement.getAttribute('lang') ?? '';
-  const names = new Set(namesFor(locator, lang).map(collapse));
+export function placeholdersOf(element: Element): string[] {
+  const texts: string[] = [];
+  for (const attribute of ['placeholder', 'aria-placeholder', 'data-placeholder']) {
+    const value = element.getAttribute(attribute);
+    if (value !== null && collapse(value) !== '') texts.push(collapse(value));
+  }
+  const inside = element.querySelectorAll('[data-placeholder]');
+  for (let i = 0; i < inside.length && i < MAX_PLACEHOLDER_DESCENDANTS; i++) {
+    const value = inside[i]?.getAttribute('data-placeholder');
+    if (value !== null && value !== undefined && collapse(value) !== '') {
+      texts.push(collapse(value));
+    }
+  }
+  return texts;
+}
+
+/** How deep shadow roots nest before the search stops descending. */
+export const MAX_SHADOW_DEPTH = 4;
+/** The most open shadow roots one search reads. */
+export const MAX_SHADOW_ROOTS = 64;
+/** The most elements one search walks looking for shadow hosts, across every tree. */
+export const MAX_SHADOW_SCAN = 20_000;
+
+/**
+ * Open shadow roots under `root`, breadth first: those of the document's elements, then roots
+ * nested in those, down to {@link MAX_SHADOW_DEPTH} levels. Stops at {@link MAX_SHADOW_ROOTS}
+ * roots or after walking {@link MAX_SHADOW_SCAN} elements, so a large page costs a bounded walk.
+ * Closed roots are not reachable and are not searched.
+ */
+export function openShadowRoots(root: Document): ShadowRoot[] {
+  const found: ShadowRoot[] = [];
+  let scanned = 0;
+  let level: (Document | ShadowRoot)[] = [root];
+  for (let depth = 1; depth <= MAX_SHADOW_DEPTH && level.length > 0; depth++) {
+    const next: ShadowRoot[] = [];
+    for (const tree of level) {
+      const walker = root.createTreeWalker(tree, 1);
+      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+        if (++scanned > MAX_SHADOW_SCAN) return found;
+        const shadow = (node as Element).shadowRoot;
+        if (shadow === null || shadow === undefined) continue;
+        found.push(shadow);
+        next.push(shadow);
+        if (found.length >= MAX_SHADOW_ROOTS) return found;
+      }
+    }
+    level = next;
+  }
+  return found;
+}
+
+/** Matches of a locator in one tree (the document or a shadow root), in tree order. */
+function findIn(tree: Document | ShadowRoot, locator: Locator, names: Set<string>): Element[] {
   const role = locator.role.toLowerCase();
   const implicit = IMPLICIT_SELECTORS[role];
   const selector = implicit === undefined ? '[role]' : `[role], ${implicit}`;
   const found: Element[] = [];
-  for (const element of doc.querySelectorAll(selector)) {
+  for (const element of tree.querySelectorAll(selector)) {
     if (roleOf(element) !== role) continue;
-    if (!names.has(accessibleName(element))) continue;
-    if (isShown(element)) found.push(element);
+    const matches =
+      locator.by === 'placeholder'
+        ? placeholdersOf(element).some((text) => names.has(text))
+        : names.has(accessibleName(element));
+    if (matches && isShown(element)) found.push(element);
   }
   return found;
+}
+
+/**
+ * Shown elements whose role is the locator's and whose accessible name (or, for `by:
+ * "placeholder"`, placeholder text) is one of the names for the page's language. Names compare
+ * with whitespace collapsed. The light DOM's matches come in document order; only when it has none
+ * are open shadow roots searched ({@link openShadowRoots}), and their matches returned.
+ */
+export function findByLocator(doc: Document, locator: Locator): Element[] {
+  const lang = doc.documentElement.getAttribute('lang') ?? '';
+  const names = new Set(namesFor(locator, lang).map(collapse));
+  const light = findIn(doc, locator, names);
+  if (light.length > 0) return light;
+  return openShadowRoots(doc).flatMap((root) => findIn(root, locator, names));
 }

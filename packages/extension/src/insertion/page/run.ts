@@ -75,9 +75,33 @@ const FAILURE_TEXT: Record<PageFailure, string> = {
 };
 
 /**
+ * The account from a match of `extract`: the first capture group, or the template with `{N}`
+ * replaced by group N and `{host}` by the page's host name. Undefined when a group it uses is
+ * empty or did not take part in the match.
+ */
+export function accountFromMatch(
+  match: RegExpExecArray,
+  template: string | undefined,
+  host: string
+): string | undefined {
+  if (template === undefined) return match[1] || undefined;
+  let missing = false;
+  const account = template.replace(/\{(host|[1-9])\}/g, (_, name: string) => {
+    if (name === 'host') {
+      if (host === '') missing = true;
+      return host;
+    }
+    const group = match[Number(name)];
+    if (!group) missing = true;
+    return group ?? '';
+  });
+  return missing ? undefined : account;
+}
+
+/**
  * Finds the account element by the definition's locator and applies `extract` to its text, then
- * its accessible name, `title` and `href`; the first capture group of the first match is the
- * account. Reads only.
+ * its accessible name, `title` and `href`; the first match makes the account, by the first
+ * capture group or `template`. Reads only.
  */
 export function detectAccount(doc: Document, account: SiteAccount): PageAccountResult {
   let pattern: RegExp;
@@ -86,6 +110,7 @@ export function detectAccount(doc: Document, account: SiteAccount): PageAccountR
   } catch {
     return {};
   }
+  const host = (doc.location?.hostname ?? '').toLowerCase();
   for (const element of findByLocator(doc, account.locator)) {
     const candidates = [
       collapse(element.textContent ?? ''),
@@ -94,7 +119,8 @@ export function detectAccount(doc: Document, account: SiteAccount): PageAccountR
       element.getAttribute('href') ?? '',
     ];
     for (const text of candidates) {
-      const found = pattern.exec(text)?.[1];
+      const match = pattern.exec(text);
+      const found = match === null ? undefined : accountFromMatch(match, account.template, host);
       if (found) return { account: found };
     }
   }
