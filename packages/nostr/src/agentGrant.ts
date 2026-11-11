@@ -37,6 +37,7 @@ const GRANT_KEYS = [
   'allow_new_destinations',
   'submission_expiration_days',
   'expires_at',
+  'storage',
 ];
 
 /** `submission_expiration_days` when a grant leaves it out (spec 7.4). */
@@ -45,6 +46,8 @@ export const DEFAULT_SUBMISSION_EXPIRATION_DAYS = 30;
 export const MAX_SUBMISSION_EXPIRATION_DAYS = 90;
 /** The most `min_pow` may be: NIP-13 difficulty counts the leading zero bits of a 256-bit id. */
 export const MAX_MIN_POW = 256;
+/** The most storage relays a grant's `storage` may name (spec 7.4). */
+export const MAX_GRANT_STORAGE_RELAYS = 8;
 
 export const QUOTA_PERIODS = ['day', 'week', 'month'] as const;
 export type QuotaPeriod = (typeof QUOTA_PERIODS)[number];
@@ -83,6 +86,12 @@ export interface AgentGrant {
   quota: GrantQuota;
   /** Unix seconds, or `null` for no expiry. */
   expires_at: number | null;
+  /**
+   * The queue's storage relays when the grant was signed (spec 7.4): 1 to
+   * {@link MAX_GRANT_STORAGE_RELAYS} distinct `wss://` URLs. Absent from grants made before it
+   * existed, which tell the reader nothing about where the queue lives now.
+   */
+  storage?: string[];
   extra?: JsonObject;
 }
 
@@ -105,6 +114,23 @@ export interface AgentGrantEvent {
   grant: AgentGrant;
   /** Tags other than `d` (queue side only). */
   extraTags?: string[][];
+}
+
+/** A grant's `storage`: distinct `wss://` URLs, duplicates dropped, at most 8. Throws {@link Invalid}. */
+function readGrantStorage(value: unknown, path: string): string[] {
+  const urls = readArray(value, path).map((url, i) => {
+    const text = readRelayUrl(url, joinPath(path, i));
+    if (!text.startsWith('wss://')) {
+      throw new Invalid('invalid_content', 'expected a wss:// URL', joinPath(path, i));
+    }
+    return text;
+  });
+  const distinct = [...new Set(urls)];
+  if (distinct.length === 0) throw new Invalid('invalid_content', 'must not be empty', path);
+  if (distinct.length > MAX_GRANT_STORAGE_RELAYS) {
+    throw new Invalid('invalid_content', `at most ${MAX_GRANT_STORAGE_RELAYS} relays`, path);
+  }
+  return distinct;
 }
 
 function readGrantDestination(value: unknown, path: string, keepExtra: boolean): GrantDestination {
@@ -176,6 +202,7 @@ export function readAgentGrant(value: unknown, options: { keepExtra?: boolean } 
         ? null
         : readInteger(record.expires_at, 'content.expires_at', { min: 0 }),
   };
+  if (record.storage !== undefined) grant.storage = readGrantStorage(record.storage, 'content.storage');
   if (keepExtra && quotaExtra !== undefined) grant.quota.extra = quotaExtra;
   if (keepExtra && extra !== undefined) grant.extra = extra;
   return grant;
@@ -217,6 +244,7 @@ function writeAgentGrant(grant: AgentGrant): JsonObject {
         ),
       ],
       ['expires_at', grant.expires_at],
+      ...(grant.storage === undefined ? [] : [['storage', [...new Set(grant.storage)]]]),
     ] as [string, JsonValue][],
     grant.extra,
     GRANT_KEYS

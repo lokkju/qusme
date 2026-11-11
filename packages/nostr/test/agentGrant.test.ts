@@ -122,6 +122,63 @@ describe('agent grant (spec 7.4)', () => {
     );
   });
 
+  it('leaves storage out unless given, and carries it for the agent and the queue', async () => {
+    const without = await buildAgentGrant(queue, agentPubkey, input);
+    const key = v2.utils.getConversationKey(agentKey, queuePubkey);
+    expect('storage' in JSON.parse(v2.decrypt(without.content, key))).toBe(false);
+    expect(expectOk(await parseAgentGrant(without, agent)).grant.storage).toBeUndefined();
+
+    const storage = ['wss://relay.ditto.pub', 'wss://relay.primal.net'];
+    const event = await buildAgentGrant(queue, agentPubkey, {
+      ...input,
+      storage: [...storage, 'wss://relay.ditto.pub'],
+    });
+    expect(JSON.parse(v2.decrypt(event.content, key)).storage).toEqual(storage);
+    for (const signer of [agent, queue]) {
+      const { grant } = expectOk(await parseAgentGrant(event, signer));
+      expect(grant.storage).toEqual(storage);
+      expect(grant.extra).toBeUndefined();
+    }
+  });
+
+  it('drops duplicate storage relays when parsing', async () => {
+    const { grant } = expectOk(
+      await parseAgentGrant(
+        grantWith({ ...input, storage: ['wss://a.example', 'wss://a.example', 'wss://b.example'] }),
+        agent
+      )
+    );
+    expect(grant.storage).toEqual(['wss://a.example', 'wss://b.example']);
+  });
+
+  it('refuses storage that is not 1 to 8 wss:// URLs', async () => {
+    const nine = Array.from({ length: 9 }, (_, i) => `wss://r${i}.example`);
+    const bad: unknown[] = [
+      [],
+      ['ws://relay.example'],
+      ['https://relay.example'],
+      ['wss://relay example'],
+      ['wss://user@relay.example'],
+      [''],
+      [42],
+      'wss://relay.example',
+      nine,
+    ];
+    for (const storage of bad) {
+      expectError(await parseAgentGrant(grantWith({ ...input, storage }), agent), 'invalid_content');
+    }
+    await expect(
+      buildAgentGrant(queue, agentPubkey, { ...input, storage: ['ws://relay.example'] })
+    ).rejects.toThrow(/invalid agent grant/);
+    await expect(buildAgentGrant(queue, agentPubkey, { ...input, storage: nine })).rejects.toThrow(
+      /invalid agent grant/
+    );
+    const eight = expectOk(
+      await parseAgentGrant(grantWith({ ...input, storage: nine.slice(0, 8) }), agent)
+    );
+    expect(eight.grant.storage).toHaveLength(8);
+  });
+
   it('rejects a grant whose content does not decrypt', async () => {
     const event = sign({
       kind: KIND_AGENT_GRANT,
