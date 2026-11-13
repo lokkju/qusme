@@ -265,6 +265,29 @@ describe('recover screen', { timeout: 30_000 }, () => {
     await until(() => root.textContent?.includes('Choose a passphrase') === true, 20_000);
   });
 
+  for (const withNpub of [true, false]) {
+    it(`offers another storage server when no default relay can be reached (${
+      withNpub ? 'Queue ID and code' : 'code alone'
+    })`, async () => {
+      const net = network();
+      const a = await createdDevice(net);
+      const b = device(net);
+      b.deps.defaultStorageRelays = ['wss://gone-a.example', 'wss://gone-b.example'];
+      mount(<RecoverScreen deps={b.deps} onDone={() => {}} onBack={() => {}} />);
+      type('#recover-sheet', withNpub ? `${a.npub}\n${a.words}` : a.words);
+      await settle();
+      button('Recover').click();
+      await until(() => root.querySelector('#recover-relay') !== null);
+      expect(root.textContent).toContain(
+        'Could not reach any of wss://gone-a.example, wss://gone-b.example.'
+      );
+      type('#recover-relay', STORAGE[0] as string);
+      await settle();
+      button('Recover').click();
+      await until(() => root.textContent?.includes('Choose a passphrase') === true, 20_000);
+    });
+  }
+
   it('recovers from the 12 words alone, with no Queue ID', async () => {
     const net = network();
     const a = await createdDevice(net);
