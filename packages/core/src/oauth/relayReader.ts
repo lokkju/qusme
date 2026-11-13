@@ -14,6 +14,7 @@ export interface RelayFilter {
   ids?: string[];
   '#d'?: string[];
   '#p'?: string[];
+  since?: number;
   limit?: number;
 }
 

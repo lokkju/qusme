@@ -1,0 +1,48 @@
+{
+  "name": "@qusme/mcp",
+  "version": "0.1.0",
+  "description": "qus.me's MCP server on your own computer: agents draft into your qus.me queue over stdio, approved from the qus.me extension.",
+  "license": "PolyForm-Shield-1.0.0",
+  "homepage": "https://qus.me",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lokkju/qusme.git",
+    "directory": "packages/mcp-local"
+  },
+  "bugs": "https://github.com/lokkju/qusme/issues",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "nostr",
+    "qus.me",
+    "drafts"
+  ],
+  "type": "module",
+  "bin": {
+    "qusme-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "build": "node build.ts",
+    "prepublishOnly": "node build.ts"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
+    "@noble/hashes": "2.0.1",
+    "@qusme/core": "workspace:*",
+    "@qusme/nostr": "workspace:*",
+    "esbuild": "0.28.2",
+    "nostr-tools": "2.25.2"
+  }
+}
