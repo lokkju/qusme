@@ -1,0 +1,20 @@
+{
+  "name": "@qusme/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@hono/node-server": "2.1.6",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@playwright/test": "1.64.1",
+    "@qusme/core": "workspace:*",
+    "@qusme/nostr": "workspace:*",
+    "@qusme/store-sql": "workspace:*",
+    "@types/ws": "8.18.2",
+    "ws": "8.21.0"
+  }
+}

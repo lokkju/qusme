@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - e2e
 
 # Dependencies whose install scripts may run: esbuild and workerd fetch their platform binaries.
 allowBuilds:
