@@ -18,6 +18,9 @@
  *   only, never decrypted content.
  * - `qusme.pendingRevocations`: agents revoked on this device that the service has not confirmed
  *   revoking yet (`src/agents/pendingRevocations.ts`): pubkeys, labels and the last error.
+ * - `qusme.handledAgentRequests`: local MCP server requests this device approved or denied
+ *   (`src/agents/localRequest.ts`, spec 7.7): rumor ids, codes and when each record lapses, so a
+ *   replayed request or reused code is refused. No key material.
  * - `qusme.firstRun`: the first-run checklist's dismissal and pairing state (`src/firstRun.ts`),
  *   no secrets.
  *
@@ -48,6 +51,7 @@ export const LOCAL_PLAIN_KEYS = 'qusme.plainKeys';
 export const LOCAL_PENDING_IMPORT = 'qusme.pendingImport';
 export const LOCAL_SYNC = 'qusme.sync';
 export const LOCAL_PENDING_REVOCATIONS = 'qusme.pendingRevocations';
+export const LOCAL_HANDLED_AGENT_REQUESTS = 'qusme.handledAgentRequests';
 export const SESSION_UNLOCKED = 'qusme.unlocked';
 export const SESSION_DRAFTS = 'qusme.drafts';
 /** The armed draft (spec 11.5), decrypted text included. */

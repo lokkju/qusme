@@ -26,6 +26,8 @@ export interface AgentRow {
   authorizedAt?: number;
   /** Whether the current submitters list names it, which is what authorizes it (7.3). */
   listed: boolean;
+  /** A local MCP server (spec 8.6), marked so in its label: no service binding to revoke. */
+  local?: boolean;
   /** The service's binding; absent when the service was not asked or no longer holds it. */
   binding?: Binding;
   grant?: AgentGrant;
@@ -95,6 +97,7 @@ export async function loadAgents(
     if (label !== undefined) {
       row.label = label.label;
       row.authorizedAt = label.authorized_at;
+      if (label.extra?.local === true) row.local = true;
     }
     const binding = bindings.find((b) => b.agentPubkey === agentPubkey);
     if (binding !== undefined) row.binding = binding;

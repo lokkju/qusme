@@ -16,6 +16,7 @@ import {
   MAX_SUBMISSION_EXPIRATION_DAYS,
   type QuotaPeriod,
   type Settings,
+  type Signer,
   type SubmitterLabel,
 } from '@qusme/nostr';
 import { getPublicKey } from 'nostr-tools/pure';
@@ -67,7 +68,7 @@ export interface ApprovalChoices {
  * (operator decision 2026-11-06; UX audit 4.8), new destinations off.
  */
 export function defaultChoices(
-  request: AuthorizationRequest,
+  request: Pick<AuthorizationRequest, 'clientName'>,
   destinations: readonly Destination[] = []
 ): ApprovalChoices {
   return {
@@ -155,6 +156,65 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export const APPROVAL_PERMISSION_MESSAGE =
   'qus.me needs permission to reach app.qus.me to approve an agent, and to finish revoking it later.';
 
+/** What {@link publishApproval} publishes for: an agent key and the name it gave itself. */
+export interface ApprovalSubject {
+  agentPubkey: string;
+  clientName: string;
+}
+
+/**
+ * Publishes an approval on every storage relay: the submitters list with the agent added, then
+ * the agent's grant (spec 11.8). Shared by hosted approvals, which then tell the service, and
+ * local ones (7.7), which answer the local server instead. `labelExtra` rides in the agent's
+ * private label (a local agent is marked `local: true`, so revoking it skips the service).
+ */
+export async function publishApproval(
+  subject: ApprovalSubject,
+  choices: ApprovalChoices,
+  deps: AgentDeps,
+  labelExtra?: SubmitterLabel['extra']
+): Promise<{ queue: Signer; relays: string[]; inboxRelays: string[] }> {
+  const label = choices.label.trim();
+  return withQueue(deps, async (session) => {
+    const snapshot = await readQueue(session);
+    const settings = snapshot.settings?.content;
+    const grant = grantFor(
+      choices,
+      snapshot.destinations?.content.destinations ?? [],
+      settings,
+      session.now
+    );
+    const list = snapshot.submitters;
+    const labels: Record<string, SubmitterLabel> = { ...(list?.labels ?? {}) };
+    labels[subject.agentPubkey] = {
+      label,
+      authorized_at: session.now,
+      ...(labelExtra !== undefined && { extra: labelExtra }),
+    };
+    const submittersEvent = await buildSubmittersList(session.queue, labels, {
+      createdAt: after(session.now, list?.createdAt),
+      ...(list?.extra && { extra: list.extra }),
+      ...(list?.extraTags && { extraTags: list.extraTags }),
+    });
+    const previousGrant = snapshot.grants.get(subject.agentPubkey);
+    // The queue's storage relays ride in the grant, so the service follows a later swap (7.4).
+    const grantEvent = await buildAgentGrant(
+      session.queue,
+      subject.agentPubkey,
+      { ...grant, storage: [...session.record.storageRelays] },
+      { createdAt: after(session.now, previousGrant?.createdAt) }
+    );
+    // The list first: it is what the service checks, and a grant without it authorizes nothing.
+    await publishOrThrow(session, submittersEvent, 'submitters list');
+    await publishOrThrow(session, grantEvent, 'agent grant');
+    return {
+      queue: session.queue,
+      relays: [...session.record.storageRelays],
+      inboxRelays: [...(settings?.inbox_relays ?? [])],
+    };
+  });
+}
+
 /**
  * Approves: asks for the service host permission, publishes the submitters list with the agent
  * added and the agent's grant to every storage relay, then posts the approval naming those
@@ -175,35 +235,7 @@ export async function approveAgent(
   if (!(await deps.requestServicePermission())) {
     throw new SetupError(APPROVAL_PERMISSION_MESSAGE);
   }
-  const prepared = await withQueue(deps, async (session) => {
-    const snapshot = await readQueue(session);
-    const grant = grantFor(
-      choices,
-      snapshot.destinations?.content.destinations ?? [],
-      snapshot.settings?.content,
-      session.now
-    );
-    const list = snapshot.submitters;
-    const labels: Record<string, SubmitterLabel> = { ...(list?.labels ?? {}) };
-    labels[request.agentPubkey] = { label, authorized_at: session.now };
-    const submittersEvent = await buildSubmittersList(session.queue, labels, {
-      createdAt: after(session.now, list?.createdAt),
-      ...(list?.extra && { extra: list.extra }),
-      ...(list?.extraTags && { extraTags: list.extraTags }),
-    });
-    const previousGrant = snapshot.grants.get(request.agentPubkey);
-    // The queue's storage relays ride in the grant, so the service follows a later swap (7.4).
-    const grantEvent = await buildAgentGrant(
-      session.queue,
-      request.agentPubkey,
-      { ...grant, storage: [...session.record.storageRelays] },
-      { createdAt: after(session.now, previousGrant?.createdAt) }
-    );
-    // The list first: it is what the service checks, and a grant without it authorizes nothing.
-    await publishOrThrow(session, submittersEvent, 'submitters list');
-    await publishOrThrow(session, grantEvent, 'agent grant');
-    return { queue: session.queue, relays: session.record.storageRelays };
-  });
+  const prepared = await publishApproval(request, choices, deps);
 
   const delays = deps.approvalRetryMs ?? APPROVAL_RETRY_MS;
   for (let attempt = 0; ; attempt++) {
