@@ -6,6 +6,7 @@ import {
   findRecoveryBackup,
   finishRecover,
   openRecoveryBackup,
+  RelaysUnreachable,
   readQueuePubkey,
 } from '../src/setup/recover.ts';
 import { parseRecoverySheet, recoverySheetText } from '../src/setup/recoverySheet.ts';
@@ -133,6 +134,27 @@ describe('recover flow (spec 6.1, 11.3)', { timeout: 30_000 }, () => {
       b.deps
     );
     expect(openRecoveryBackup(fetched, a.base32)).toEqual(a.secretKey);
+  });
+
+  it('names the relays when no default can be reached, then finds the queue on one the user adds', async () => {
+    const net = network();
+    const a = await createdDevice(net);
+    const b = device(net);
+    b.deps.defaultStorageRelays = ['wss://gone-a.example', 'wss://gone-b.example'];
+    const unreachable = findRecoveryBackup({ npub: a.npub }, b.deps);
+    await expect(unreachable).rejects.toThrow(
+      'Could not reach any of wss://gone-a.example, wss://gone-b.example. If the queue is on another storage server, enter it below.'
+    );
+    await expect(unreachable).rejects.toBeInstanceOf(RelaysUnreachable);
+    await expect(unreachable).rejects.toMatchObject({
+      relays: ['wss://gone-a.example', 'wss://gone-b.example'],
+    });
+    const fetched = await findRecoveryBackup(
+      { npub: a.npub, relays: [STORAGE[0] as string] },
+      b.deps
+    );
+    expect(fetched.relayUrl).toBe(STORAGE[0]);
+    expect(openRecoveryBackup(fetched, a.words)).toEqual(a.secretKey);
   });
 
   it('recovers from a pasted recovery sheet: its storage relays, npub and code', async () => {

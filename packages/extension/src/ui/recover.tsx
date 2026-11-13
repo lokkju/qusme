@@ -6,6 +6,7 @@ import {
   finishRecover,
   type OpenedBackup,
   type RecoverResult,
+  RelaysUnreachable,
   recoverWithCode,
 } from '../setup/recover.ts';
 import { type ParsedRecoveryInput, parseRecoverySheet } from '../setup/recoverySheet.ts';
@@ -73,7 +74,9 @@ export function RecoverScreen(props: {
     try {
       await fn();
     } catch (e) {
-      if (e instanceof BackupNotFound) setNeedRelay(true);
+      // Offered when the relays asked lack the backup, or none of them could be reached (a network
+      // that blocks the defaults): either way the queue may be on a server only the user knows.
+      if (e instanceof BackupNotFound || e instanceof RelaysUnreachable) setNeedRelay(true);
       setError(messageOf(e));
     } finally {
       setBusy(false);
