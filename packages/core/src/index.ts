@@ -70,6 +70,14 @@ export {
   POW_BYTES_PER_HASH,
 } from './mcp/server.ts';
 export {
+  checkGrant,
+  QUSME_INSTRUCTIONS,
+  registerQusmeTools,
+  ToolError,
+  type ToolReceipt,
+  type ToolSession,
+} from './mcp/tools.ts';
+export {
   type Nip98Env,
   type Nip98Options,
   nip98Auth,
