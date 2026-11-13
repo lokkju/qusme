@@ -10,7 +10,7 @@
     "rotate-agent-keys": "node src/rotateAgentKeys.ts"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.6",
     "@qusme/core": "workspace:*",
     "@qusme/store-sql": "workspace:*"
   },
