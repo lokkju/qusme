@@ -34,6 +34,7 @@ import {
   backupNeedsLookup,
   finishRecover,
   PREVIOUS_DEFAULT_STORAGE_RELAYS,
+  RelaysUnreachable,
   recoverWithCode,
   recoveryRelays,
 } from '../src/setup/recover.ts';
@@ -98,6 +99,23 @@ const lookupOnRelay = (net: FakeRelayNetwork, url: string, pubkey: string) =>
     .flatMap((p) => (p.ok ? [recoveryLookupOf(p.value)] : []));
 
 describe('recovery from the code alone (spec 6.1)', { timeout: 60_000 }, () => {
+  it('names the relays when no default storage relay can be reached, then recovers from one the user adds', async () => {
+    const net = network(); // none of the public relays exists, so every connection is refused
+    const q = await legacyQueue(publicRelays());
+    net.add('wss://mine.example');
+    await seed(net, 'wss://mine.example', [q.backup]);
+    const b = device(net);
+    const unreachable = recoverWithCode({ code: q.words }, b.deps);
+    await expect(unreachable).rejects.toBeInstanceOf(RelaysUnreachable);
+    await expect(unreachable).rejects.toThrow(
+      `Could not reach any of ${[...DEFAULT_STORAGE_RELAYS, NOSLOL].join(', ')}. If your recovery sheet lists other storage servers, enter one below.`
+    );
+    const opened = await recoverWithCode({ code: q.words, relays: ['wss://mine.example'] }, b.deps);
+    expect(opened.fetched.relayUrl).toBe('wss://mine.example');
+    expect(opened.fetched.queuePubkey).toBe(q.pubkey);
+    expect(opened.key).toEqual(q.secretKey);
+  });
+
   it('asks the current and earlier default storage relays, and the ones given first', () => {
     expect(recoveryRelays(undefined, {})).toEqual([
       ...DEFAULT_STORAGE_RELAYS,

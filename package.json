@@ -12,6 +12,7 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "pnpm -C packages/extension exec wxt build && pnpm -C e2e test",
     "build": "pnpm -r run build",
     "registry:update": "node packages/nostr/scripts/registry-update.ts"
   },

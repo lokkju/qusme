@@ -17,6 +17,7 @@ import {
   type NostrEvent,
   newestFirst,
   parseDraftWrap,
+  parseSettings,
   RelayError,
   utf8Length,
   validateFieldValue,
@@ -34,6 +35,7 @@ import { arm, disarm, readArmed } from '../insertion/armed.ts';
 import { definitionForDraft, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import { SetupError } from '../setup/deps.ts';
 import { type CachedDraft, readDraftCache, writeDraftCache } from '../sync/state.ts';
+import { pastRetention, retentionDays } from './retention.ts';
 
 /** The newest version of draft `d` across every storage relay; throws if any relay fails. */
 async function readDraft(session: QueueSession, d: string): Promise<DraftWrap> {
@@ -60,18 +62,21 @@ async function readDraft(session: QueueSession, d: string): Promise<DraftWrap> {
 
 /**
  * Republishes draft `d` with `change` applied to its field value, then updates this device's
- * session cache so the list, the badge and the context menu follow at once.
+ * session cache so the list, the badge and the context menu follow at once. `check` sees the
+ * newest wrap first and may refuse by throwing.
  */
 async function republish(
   d: string,
   deps: QueueDeps,
-  change: (value: FieldValue) => FieldValue
+  change: (value: FieldValue) => FieldValue,
+  check?: (wrap: DraftWrap, value: FieldValue, session: QueueSession) => Promise<void>
 ): Promise<CachedDraft | undefined> {
   const { pubkey, value, updatedAt } = await withQueue(deps, async (session) => {
     const wrap = await readDraft(session, d);
     if (wrap.draft.type !== 'field_value') {
       throw new SetupError('That draft is not a field value, so qus.me cannot change it.');
     }
+    await check?.(wrap, wrap.draft.value, session);
     const value = change(wrap.draft.value);
     const event = await buildDraftWrap(session.queue, {
       d,
@@ -179,10 +184,31 @@ export async function dismissDraft(d: string, deps: AgentDeps): Promise<CachedDr
   return updated;
 }
 
+/** The effective archive retention from the settings this device last synced (7.2). */
+async function sessionRetentionDays(session: QueueSession): Promise<number | null> {
+  const kept = session.record.settings;
+  if (kept === undefined) return null;
+  const parsed = await parseSettings(kept, session.queue);
+  return parsed.ok ? retentionDays(parsed.value.content) : null;
+}
+
 /**
  * Restores an archived draft (dismissed or inserted) to `active`, keeping its `inserted` tags
- * (7.1).
+ * (7.1). Refuses a draft past the archive's retention (7.2, 9.2): the next sync deletes it, and
+ * another device may already have.
  */
 export async function restoreDraft(d: string, deps: QueueDeps): Promise<CachedDraft | undefined> {
-  return republish(d, deps, (value) => withStatus(value, (s) => s !== 'active', 'active'));
+  return republish(
+    d,
+    deps,
+    (value) => withStatus(value, (s) => s !== 'active', 'active'),
+    async (wrap, value, session) => {
+      const days = await sessionRetentionDays(session);
+      if (pastRetention({ status: value.status, updatedAt: wrap.createdAt }, days, session.now)) {
+        throw new SetupError(
+          `That draft has been archived for more than ${days} days, so it is being deleted and can't be restored.`
+        );
+      }
+    }
+  );
 }

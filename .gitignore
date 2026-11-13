@@ -14,3 +14,7 @@ coverage/
 
 # wxt submit init writes store credentials here
 .env.submit
+
+# Playwright output (e2e/)
+test-results/
+playwright-report/
