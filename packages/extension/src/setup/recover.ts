@@ -107,6 +107,18 @@ export class BackupNotFound extends SetupError {
   }
 }
 
+/**
+ * None of the relays asked could be reached, so whether they hold a backup is unknown. {@link relays}
+ * were asked. A network that blocks the default relays ends here, and the user can name another.
+ */
+export class RelaysUnreachable extends SetupError {
+  readonly relays: readonly string[];
+  constructor(message: string, relays: readonly string[]) {
+    super(message);
+    this.relays = relays;
+  }
+}
+
 /** The relays named in a message, and the ones that could not be reached. */
 function relaysClause(asked: readonly string[], unreachable: readonly string[]): string {
   const reached = asked.filter((url) => !unreachable.includes(url));
@@ -114,17 +126,21 @@ function relaysClause(asked: readonly string[], unreachable: readonly string[]):
   return `${reached.join(', ')}${tail}`;
 }
 
-/** Opens `relays` with a throwaway AUTH key, never anything linked to the queue (spec 9.2). */
+/**
+ * Opens `relays` with a throwaway AUTH key, never anything linked to the queue (spec 9.2). Throws
+ * {@link RelaysUnreachable} when none answers; `hint` follows the relays in its message.
+ */
 async function openForLookup(
   relays: readonly string[],
-  deps: Pick<SetupDeps, 'socket' | 'relayTimeoutMs'>
+  deps: Pick<SetupDeps, 'socket' | 'relayTimeoutMs'>,
+  hint = ''
 ) {
   const throwaway = generateSecretKey();
   const signer = createLocalSigner(throwaway);
   throwaway.fill(0);
   const opened = await openRelays(relays, deps, (t) => signer.signEvent(t));
   if (opened.connections.length === 0) {
-    throw new SetupError(`Could not reach any of ${relays.join(', ')}.`);
+    throw new RelaysUnreachable(`Could not reach any of ${relays.join(', ')}.${hint}`, relays);
   }
   return { ...opened, unreachable: opened.failed.map((f) => f.url) };
 }
@@ -158,7 +174,11 @@ export async function findRecoveryBackup(
     );
   }
   const relays = input.only ? [...(input.relays ?? [])] : recoveryRelays(input.relays, deps);
-  const { connections, unreachable } = await openForLookup(relays, deps);
+  const { connections, unreachable } = await openForLookup(
+    relays,
+    deps,
+    input.only ? '' : ' If the queue is on another storage server, enter it below.'
+  );
   try {
     const answers = await Promise.allSettled(
       connections.map((connection) =>
@@ -265,7 +285,11 @@ async function findBackupsByCode(
   relays: readonly string[],
   deps: Pick<SetupDeps, 'socket' | 'relayTimeoutMs'>
 ): Promise<{ candidates: Candidate[]; unreachable: string[] }> {
-  const { connections, unreachable } = await openForLookup(relays, deps);
+  const { connections, unreachable } = await openForLookup(
+    relays,
+    deps,
+    ' If your recovery sheet lists other storage servers, enter one below.'
+  );
   try {
     const byPubkey = new Map<string, Candidate>();
     await Promise.all(

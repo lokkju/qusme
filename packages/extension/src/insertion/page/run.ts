@@ -23,6 +23,7 @@ import { PAGE_DONE_MESSAGE } from '../protocol.ts';
 import { accessibleName, collapse, findByLocator } from './accessible.ts';
 import { mountPicker, type PickerHandle } from './picker.ts';
 import { type Prompt, type PromptAction, showPrompt } from './prompt.ts';
+import { readField } from './read.ts';
 import { IMMEDIATE_STRATEGIES, placeCaretAtEnd } from './strategies.ts';
 import {
   type EditableTarget,
@@ -429,7 +430,15 @@ export function createPageApi(env: PageEnv): PageApi {
     return { anchored: target !== undefined };
   };
 
-  return { detectAccount: (account) => detectAccount(doc, account), insert, openPicker };
+  return {
+    detectAccount: (account) => detectAccount(doc, account),
+    insert,
+    openPicker,
+    readField: (request) => readField(doc, request),
+    // Saving a field (11.7): the extension's own short texts, never the field's.
+    showNotice: (text, kind) =>
+      briefly(text, kind === 'failure' ? FAILURE_NOTICE_MS : SUCCESS_NOTICE_MS),
+  };
 }
 
 /**

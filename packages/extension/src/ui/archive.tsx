@@ -2,10 +2,13 @@
  * The archive view (spec 7.1, 11.4): drafts that were inserted or dismissed, newest first, each
  * with Restore, which sets it back to `active` and keeps its `inserted` tags. It lists the
  * session's decrypted cache from the last sync, like the home screen, and asks for a sync on open.
+ * When the settings set a retention (7.2, 9.2), the view says so, and a draft past it (which the
+ * next sync deletes) shows that in place of Restore.
  * Draft text and agent labels are JSX text children, which Preact sets as text.
  */
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { restoreDraft } from '../drafts/manage.ts';
+import { pastRetention } from '../drafts/retention.ts';
 import type { SetupDeps } from '../setup/deps.ts';
 import { type CachedDraft, readDraftCache } from '../sync/state.ts';
 import { messageOf } from './app.tsx';
@@ -27,6 +30,7 @@ const dateOf = (unix: number): string =>
 function ArchivedRow(props: {
   draft: CachedDraft;
   busy: boolean;
+  expired: boolean;
   onRestore: (draft: CachedDraft) => void;
 }) {
   const { draft } = props;
@@ -58,14 +62,18 @@ function ArchivedRow(props: {
             {open ? 'Less' : 'Show all'}
           </button>
         )}
-        <Button
-          variant="plain"
-          size="sm"
-          disabled={props.busy}
-          onClick={() => props.onRestore(draft)}
-        >
-          Restore
-        </Button>
+        {props.expired ? (
+          <p class="text-muted text-xs">Past retention; deleted on the next sync.</p>
+        ) : (
+          <Button
+            variant="plain"
+            size="sm"
+            disabled={props.busy}
+            onClick={() => props.onRestore(draft)}
+          >
+            Restore
+          </Button>
+        )}
       </div>
     </li>
   );
@@ -76,14 +84,25 @@ export function ArchiveList(props: {
   drafts: CachedDraft[] | undefined;
   busy: boolean;
   onRestore: (draft: CachedDraft) => void;
+  /** The effective `archive_retention_days`; `null` or absent keeps every draft. */
+  retentionDays?: number | null;
+  /** Unix seconds; defaults to the clock. */
+  now?: number;
 }) {
+  const now = props.now ?? Math.floor(Date.now() / 1000);
   if (props.drafts === undefined) return <p class="mt-2 text-sm">Not synced yet.</p>;
   const archived = archivedDrafts(props.drafts);
   if (archived.length === 0) return <p class="mt-2 text-sm">No archived drafts.</p>;
   return (
     <ul class="mt-2 flex flex-col gap-2">
       {archived.map((draft) => (
-        <ArchivedRow key={draft.d} draft={draft} busy={props.busy} onRestore={props.onRestore} />
+        <ArchivedRow
+          key={draft.d}
+          draft={draft}
+          busy={props.busy}
+          expired={pastRetention(draft, props.retentionDays, now)}
+          onRestore={props.onRestore}
+        />
       ))}
     </ul>
   );
@@ -92,12 +111,15 @@ export function ArchiveList(props: {
 export function ArchiveScreen(props: { deps: SetupDeps; onBack: () => void }) {
   const { deps } = props;
   const [drafts, setDrafts] = useState<CachedDraft[] | undefined>();
+  const [days, setDays] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
 
   const load = useCallback(async () => {
-    setDrafts((await readDraftCache(deps.store.session))?.drafts);
+    const cache = await readDraftCache(deps.store.session);
+    setDrafts(cache?.drafts);
+    setDays(cache?.retentionDays ?? null);
   }, [deps]);
   useEffect(() => {
     let live = true;
@@ -132,8 +154,15 @@ export function ArchiveScreen(props: { deps: SetupDeps; onBack: () => void }) {
     <Screen title="Archive" onBack={props.onBack}>
       <p class="mt-2 text-muted text-xs">
         Drafts you inserted or dismissed. Restore puts one back in your drafts.
+        {days !== null &&
+          ` Each one is deleted ${days} ${days === 1 ? 'day' : 'days'} after it was archived.`}
       </p>
-      <ArchiveList drafts={drafts} busy={busy} onRestore={(d) => void restore(d)} />
+      <ArchiveList
+        drafts={drafts}
+        busy={busy}
+        retentionDays={days}
+        onRestore={(d) => void restore(d)}
+      />
       {notice !== undefined && (
         <p role="status" class="mt-3 text-sm">
           {notice}

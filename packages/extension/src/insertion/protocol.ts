@@ -106,7 +106,35 @@ export interface PageApi {
   insert(request: PageInsertRequest): Promise<PageOutcome>;
   /** Opens the keyboard picker at the focused (or last-focused) field, replacing any open one. */
   openPicker(view: PickerView): PickerOpened;
+  /** Reads the field the user wants saved as a draft (spec 11.7). Reads only. */
+  readField(request: PageReadRequest): PageReadResult;
+  /**
+   * Shows a short notice, such as "qus.me: saved.", and takes it down after a few seconds; a
+   * failure stays up longer.
+   */
+  showNotice(text: string, kind: NoticeKind): void;
 }
+
+export type NoticeKind = 'success' | 'failure';
+
+/** One field of the effective definition, as saving a field needs it: its name and locators. */
+export interface PageReadField {
+  name: string;
+  locators: Locator[];
+}
+
+/** Saving a field as a draft (spec 11.7): the destination's fields, to tell which one this is. */
+export interface PageReadRequest {
+  fields: PageReadField[];
+}
+
+export type PageReadResult =
+  /** The field's name in the definition and its text, read from the page. */
+  | { state: 'read'; field: string; value: string }
+  /** An editable field, but none of the definition's locators finds it. */
+  | { state: 'no_field' }
+  /** Nothing editable is focused and no locator finds a field. */
+  | { state: 'no_target' };
 
 /** The isolated-world global the page script installs {@link PageApi} on. */
 export const PAGE_API_GLOBAL = '__qusmeInsertion';

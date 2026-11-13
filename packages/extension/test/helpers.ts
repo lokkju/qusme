@@ -12,6 +12,7 @@ import {
   parseDestinations,
   publishToAll,
   RelayConnection,
+  type Settings,
   verifyHttpAuth,
 } from '@qusme/nostr';
 import { FakeRelayNetwork, type FakeRelayOptions } from '@qusme/nostr/testing';
@@ -152,9 +153,12 @@ export async function createdDevice(net: FakeRelayNetwork, service = new FakeSer
 /**
  * An unlocked queue on the fake storage relays with a destinations event that carries keys this
  * version does not know (spec 7, "Unknown fields"): one at the top of the content, one on the
- * destination, and an extra event tag. No service; for the destination flows.
+ * destination, and an extra event tag. No service; for the destination flows. `settings` adds to
+ * the settings event (an `archive_retention_days`, say).
  */
-export async function destinationsQueue(options: { destinations?: Destination[] } = {}) {
+export async function destinationsQueue(
+  options: { destinations?: Destination[]; settings?: Partial<Settings> } = {}
+) {
   const net = network();
   const secretKey = generateSecretKey();
   const inboxKey = generateSecretKey();
@@ -164,6 +168,7 @@ export async function destinationsQueue(options: { destinations?: Destination[] 
     inbox_key: bytesToHex(inboxKey),
     inbox_relays: INBOX,
     quota_counts: {},
+    ...options.settings,
   });
   const destinations = options.destinations ?? [
     {
