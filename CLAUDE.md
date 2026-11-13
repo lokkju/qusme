@@ -14,11 +14,12 @@ pnpm typecheck        # tsc in every package
 pnpm lint             # biome ci; `pnpm format` fixes formatting
 pnpm test             # vitest, every package as a project
 pnpm build            # wrangler dry-run bundle, extension (chrome + firefox), PWA
+pnpm test:e2e         # builds the Chrome extension, then the browser tests in e2e/ (Playwright)
 pnpm -C packages/store-sql generate          # new migration after a schema change
 pnpm -C packages/entry-worker build          # wrangler deploy --dry-run
 ```
 
-CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on GitHub-hosted runners (`ubuntu-24.04`, pinned rather than `ubuntu-latest`); its build includes `wrangler deploy --dry-run`, which keeps the Workers entrypoint from rotting. The repo is public, so never put a job on self-hosted runners.
+CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on GitHub-hosted runners (`ubuntu-24.04`, pinned rather than `ubuntu-latest`); its build includes `wrangler deploy --dry-run`, which keeps the Workers entrypoint from rotting. `.github/workflows/e2e.yml` runs the browser tests on pull requests that touch the extension, `nostr`, `core`, `store-sql` or `e2e/`. The first `pnpm test:e2e` on a machine needs `pnpm -C e2e exec playwright install chromium`. The repo is public, so never put a job on self-hosted runners.
 
 ## Layout
 
@@ -29,6 +30,7 @@ CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on
 - `packages/entry-node`: Node entrypoint, for local development and the SQLite tests. Nothing builds or publishes an image of it.
 - `packages/extension`: WXT. Its permissions are exactly `activeTab`, `scripting`, `contextMenus`, `storage`, `alarms` (spec 11.2, `src/permissions.ts`, tested). No host permissions, no `tabs`.
 - `packages/pwa`: Preact, Vite, Tailwind v4 with the CSS-first `@theme` in `src/index.css`.
+- `e2e/`: browser end-to-end tests. `harness/server.ts` runs the service on in-memory SQLite, FakeRelays behind real WebSocket servers and a neutral compose page; the tests load the production Chrome build (a copy whose manifest gains two host permissions in place of the user gestures automation can't make) in headless Chromium, which resolves `*.e2e.test`, `app.qus.me` and the default relays' hosts to the harness and nothing else. The compose page's site definition is a custom destination's override typed in the Accounts screen, so no build carries a test definition. Locate elements by role and accessible name, never by class.
 - `site/`: the landing site and privacy policy at qus.me, plain static HTML, one stylesheet, self-hosted fonts and one script file (`copy.js`), no build step. The Worker serves it as static assets on the qus.me host only, with a strict CSP (`SITE_HEADERS` in `packages/entry-worker/src/index.ts`), so no inline styles or scripts and nothing from other origins; `packages/entry-worker/test/site.test.ts` checks it.
 
 Workspace packages export TypeScript source directly (`"exports": "./src/index.ts"`); bundlers and Node 24's type stripping consume it, so relative imports carry the `.ts` extension and only erasable TypeScript syntax is allowed (no enums, no parameter properties).
