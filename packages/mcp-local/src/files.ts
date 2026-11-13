@@ -34,7 +34,7 @@ export function configDir(
   if (platform === 'darwin') return join(home, 'Library', 'Application Support', CONFIG_DIR_NAME);
   const xdg = env.XDG_CONFIG_HOME;
   // XDG: a relative XDG_CONFIG_HOME is invalid and must be ignored.
-  const base = xdg !== undefined && xdg.startsWith('/') ? xdg : join(home, '.config');
+  const base = xdg?.startsWith('/') ? xdg : join(home, '.config');
   return join(base, CONFIG_DIR_NAME);
 }
 
