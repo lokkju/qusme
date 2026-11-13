@@ -27,6 +27,7 @@ CI (`.github/workflows/ci.yml`) runs install, typecheck, lint, test and build on
 - `packages/store-sql`: Drizzle schema (`src/schema.ts`) and the generated migrations in `migrations/`. Never edit a migration that has been merged; generate a new one.
 - `packages/entry-worker`: Workers entrypoint and `wrangler.jsonc`.
 - `packages/entry-node`: Node entrypoint, for local development and the SQLite tests. Nothing builds or publishes an image of it.
+- `packages/mcp-local`: the local stdio MCP server, published to npm as `@qusme/mcp` (spec 8.6). It reuses the tools through `@qusme/core/mcp` (`packages/core/src/mcp/portable.ts`, which must never import the store, Hono or a runtime) and `@qusme/nostr`; `build.ts` bundles them into `dist/cli.js`, so the published package has no runtime dependencies. Node APIs are fine here. Nothing in CI publishes it.
 - `packages/extension`: WXT. Its permissions are exactly `activeTab`, `scripting`, `contextMenus`, `storage`, `alarms` (spec 11.2, `src/permissions.ts`, tested). No host permissions, no `tabs`.
 - `packages/pwa`: Preact, Vite, Tailwind v4 with the CSS-first `@theme` in `src/index.css`.
 - `site/`: the landing site and privacy policy at qus.me, plain static HTML, one stylesheet, self-hosted fonts and one script file (`copy.js`), no build step. The Worker serves it as static assets on the qus.me host only, with a strict CSP (`SITE_HEADERS` in `packages/entry-worker/src/index.ts`), so no inline styles or scripts and nothing from other origins; `packages/entry-worker/test/site.test.ts` checks it.
