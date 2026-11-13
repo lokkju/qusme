@@ -3,9 +3,9 @@
  *
  * `storage.local` `qusme.sync` ({@link SyncState}): when the inbox was last read in full, the
  * gift wrap ids this device has handled (so junk is not reopened while it stays inside the
- * lookback), how many syncs in a row hit the cap, whether each storage relay accepts writes, and
- * the counts from the last sync. Ids, urls, times and counts only: nothing decrypted is written to
- * `storage.local`.
+ * lookback), how many syncs in a row hit the cap, whether each storage relay accepts writes,
+ * progress on deleting archived drafts past retention (by `d`), and the counts from the last sync.
+ * Ids, urls, times and counts only: nothing decrypted is written to `storage.local`.
  *
  * `storage.session` `qusme.drafts` ({@link DraftCache}): the decrypted drafts from the last sync,
  * for the popup. Lock deletes it with the keys.
@@ -42,7 +42,25 @@ export interface SyncSummary {
   rotatedTo?: string;
   /** Storage relays that accept none of the queue's writes (9.1), for the swap offer. */
   deadRelays?: DeadRelay[];
+  /** Archived drafts past retention blanked on a storage relay this sync (7.2, 9.2). */
+  archiveDeleted?: number;
 }
+
+/**
+ * Progress on deleting one archived draft past retention, by its `d`: the `created_at` of the
+ * blanked wrap and deletion request, the storage relays that accepted either, and how many syncs
+ * tried. Kept so a relay that still serves the old version (one that missed the blanked wrap while
+ * another honored the deletion and dropped everything) gets the request again, a relay that
+ * already took it does not, and a relay that keeps refusing stops being asked.
+ */
+export interface ExpiredDraft {
+  deletedAt: number;
+  done: string[];
+  tries: number;
+}
+
+/** Syncs that try to delete one expired draft before giving up on the relays still refusing. */
+export const EXPIRED_MAX_TRIES = 3;
 
 export interface SyncState {
   version: 1;
@@ -53,6 +71,8 @@ export interface SyncState {
   cappedStreak: number;
   /** Per storage relay: whether it accepts the queue's writes (`src/relays/health.ts`). */
   relayHealth?: RelayHealthMap;
+  /** Archived drafts past retention being deleted, by `d` ({@link ExpiredDraft}). */
+  expired?: Record<string, ExpiredDraft>;
   last?: SyncSummary;
 }
 
@@ -76,6 +96,8 @@ export interface DraftCache {
   drafts: CachedDraft[];
   /** The destinations (7.2), overrides included, for matching drafts to the page (11.5). */
   destinations?: Destination[];
+  /** The effective `archive_retention_days` (7.2) when the cache was written; `null` keeps all. */
+  retentionDays?: number | null;
 }
 
 const emptyState = (): SyncState => ({ version: 1, handled: {}, cappedStreak: 0 });
