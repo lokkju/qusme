@@ -729,12 +729,16 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
     });
 
     it('mines the proof of work the grant asks for, and refuses more than it allows', async () => {
-      const { client } = await granted({ min_pow: DEFAULT_MAX_POW });
+      // Two bits under the cap, so the budget can't run out by nonce luck (#116): at the cap the
+      // 2^5 × 8 KiB budget gives a 1.6 KB wrap about 160 tries at 1/32 each, a miss in about 1 run
+      // of 170 by design; at 3 bits the same tries at 1/8 each miss with odds near e^-21.
+      const bits = DEFAULT_MAX_POW - 2;
+      const { client } = await granted({ min_pow: bits });
       const res = await call(client, 'create_draft', draft('worked'));
       expect(res.isError).toBeFalsy();
       const wrap = inbox.published[0]?.event;
-      expect(powOf(wrap?.id ?? '')).toBeGreaterThanOrEqual(DEFAULT_MAX_POW);
-      expect(wrap?.tags.find((t) => t[0] === 'nonce')?.[2]).toBe(String(DEFAULT_MAX_POW));
+      expect(powOf(wrap?.id ?? '')).toBeGreaterThanOrEqual(bits);
+      expect(wrap?.tags.find((t) => t[0] === 'nonce')?.[2]).toBe(String(bits));
 
       const greedy = await granted({ min_pow: 20 });
       const refused = await call(greedy.client, 'create_draft', draft('too much'));
@@ -752,7 +756,11 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
     });
 
     it('mines more when the deployment raises maxPow', async () => {
-      app = makeApp({ maxPow: 8 });
+      // 8 bits is over DEFAULT_MAX_POW, so only the raised cap lets it through. The cap sits above
+      // the grant so the budget can't run out by nonce luck (#116): at maxPow 8 the 2^8 × 8 KiB
+      // budget gave a 1.6 KB wrap about 1,300 tries at 1/256 each, a miss in about 1 run of 160;
+      // 2^12 × 8 KiB gives about 20,000 tries, a miss with odds near e^-80.
+      app = makeApp({ maxPow: 12 });
       const { client } = await granted({ min_pow: 8 });
       const res = await call(client, 'create_draft', draft('worked harder'));
       expect(res.isError).toBeFalsy();
@@ -760,20 +768,24 @@ export function mcpToolsSuite(driver: string, setup: () => { fresh(): Promise<Ha
     });
 
     it('refuses a wrap too large to mine within the budget, and gives back the reservation', async () => {
-      // A lenient value far over the field's length makes a wrap of about 18 KB: 2^5 hashes of it
-      // exceed the 2^5 × 8 KiB budget, so nothing is mined, published or counted.
-      const { client } = await granted({ min_pow: DEFAULT_MAX_POW });
-      const big = draft('y'.repeat(10_000), { lenient: true });
+      // A lenient value far over the field's length makes a wrap over 32 KiB: 2^3 hashes of it
+      // exceed the 2^5 × 8 KiB budget, so nothing is mined, published or counted. The grant sits
+      // two bits under the cap so the short draft after it can't run out by nonce luck (#116).
+      const bits = DEFAULT_MAX_POW - 2;
+      const { client } = await granted({ min_pow: bits });
+      const big = draft('y'.repeat(25_000), { lenient: true });
       const refused = await call(client, 'create_draft', big);
       expect(refused.isError).toBe(true);
       expect(refused.structuredContent).toMatchObject({
         error: 'pow_budget_exceeded',
-        min_pow: DEFAULT_MAX_POW,
+        min_pow: bits,
         max_pow: DEFAULT_MAX_POW,
         budget_bytes: 2 ** DEFAULT_MAX_POW * POW_BYTES_PER_HASH,
         hashes: 0,
       });
-      expect(Number(refused.structuredContent?.wrap_bytes)).toBeGreaterThan(10_000);
+      expect(Number(refused.structuredContent?.wrap_bytes)).toBeGreaterThan(
+        2 ** (DEFAULT_MAX_POW - bits) * POW_BYTES_PER_HASH
+      );
       expect(refused.content?.[0]?.text).toContain('A shorter value needs less work');
       expect(inbox.published).toHaveLength(0);
       const res = await call(client, 'create_draft', draft('short'));
