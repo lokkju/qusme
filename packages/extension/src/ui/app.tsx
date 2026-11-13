@@ -17,6 +17,7 @@ import { PairScreen, PairSourceScreen } from './pair.tsx';
 import { RecoverScreen } from './recover.tsx';
 import { RecoveryLookupCard } from './recoveryLookup.tsx';
 import { RelaySwapScreen } from './relays.tsx';
+import { RetentionSetting } from './retention.tsx';
 
 export type Route =
   | 'home'
@@ -376,7 +377,10 @@ function Unlocked(props: {
   );
 }
 
-/** Settings and about: staying unlocked, the picker shortcut and the queue's ID (critique H2). */
+/**
+ * Settings and about: staying unlocked, the archive's retention (D30), the picker shortcut and the
+ * queue's ID (critique H2).
+ */
 function SettingsScreen(props: {
   deps: SetupDeps;
   status: Extract<KeyStatus, { state: 'unlocked' }>;
@@ -418,6 +422,7 @@ function SettingsScreen(props: {
           </p>
         </div>
       </div>
+      <RetentionSetting deps={deps} />
       {shortcut !== undefined && (
         <div class="mt-4">
           <p class="font-medium text-sm">Picker shortcut</p>

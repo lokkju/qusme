@@ -1,8 +1,9 @@
 /**
  * One queue's life in the real extension, in order: create it on the harness's relays, add a
  * destination for the local compose page, approve an agent by its code and get its MCP draft,
- * insert that draft into the page, and recover the queue on a fresh profile from the recovery
- * code. Each test builds on the one before, so they run serially in one profile.
+ * insert that draft into the page, change the archive's retention in Settings, and recover the
+ * queue on a fresh profile from the recovery code. Each test builds on the one before, so they run
+ * serially in one profile.
  */
 import { expect, type Page, test } from '@playwright/test';
 import { INBOX_RELAYS, STORAGE_RELAYS } from '../harness/constants.ts';
@@ -204,6 +205,36 @@ test('insert: the popup puts the draft into the local compose page', async () =>
   }
 });
 
+test('settings: the archive retention change is saved to the queue', async () => {
+  const popup = await profile.popup();
+  await openMenuItem(popup, 'Settings');
+  const retention = popup.getByRole('combobox', { name: 'Keep archived drafts' });
+  await expect(retention).toBeEnabled();
+  await expect(retention.locator('option:checked')).toHaveText('90 days (default)');
+  const save = popup.getByRole('button', { name: 'Save', exact: true });
+  await expect(save).toBeDisabled();
+  await retention.selectOption({ label: '180 days' });
+  await save.click();
+  await expect(popup.getByRole('status')).toHaveText(
+    'Saved. Archived drafts are deleted 180 days after they were archived.',
+    { timeout: 30_000 }
+  );
+  await popup.close();
+
+  // A new popup reads the saved value back, and the archive says it.
+  const again = await profile.popup();
+  await openMenuItem(again, 'Settings');
+  await expect(
+    again.getByRole('combobox', { name: 'Keep archived drafts' }).locator('option:checked')
+  ).toHaveText('180 days');
+  await again.getByRole('button', { name: 'Back' }).click();
+  await openMenuItem(again, 'Archive');
+  await expect(
+    again.getByText('Archived drafts are kept 180 days (change in Settings).', { exact: false })
+  ).toBeVisible({ timeout: 30_000 });
+  await again.close();
+});
+
 test('recovery from the recovery code alone, on a fresh profile', async () => {
   const fresh = await launchProfile();
   try {
@@ -235,6 +266,12 @@ test('recovery from the recovery code alone, on a fresh profile', async () => {
     await popup.getByRole('button', { name: 'Back' }).click();
     await openMenuItem(popup, 'Agents');
     await expect(popup.getByText('E2E Agent').first()).toBeVisible();
+    // So did the retention the first profile chose (D30).
+    await popup.getByRole('button', { name: 'Back' }).click();
+    await openMenuItem(popup, 'Settings');
+    await expect(
+      popup.getByRole('combobox', { name: 'Keep archived drafts' }).locator('option:checked')
+    ).toHaveText('180 days', { timeout: 30_000 });
   } finally {
     await fresh.close();
   }

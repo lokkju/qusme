@@ -61,7 +61,7 @@ import {
 } from '@qusme/nostr';
 import type { Filter } from 'nostr-tools/filter';
 import { finishPendingRevocations } from '../agents/pendingRevocations.ts';
-import { pastRetention, retentionDays } from '../drafts/retention.ts';
+import { graceUntil, pastRetention, retentionChosen, retentionDays } from '../drafts/retention.ts';
 import { effectiveDefinition, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import type { KeyStore } from '../keyStore.ts';
 import { SERVICE_ORIGIN } from '../permissions.ts';
@@ -430,13 +430,21 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
     }
 
     // 3a. Archived drafts past retention (7.2, 9.2): blanked and their deletion requested, best
-    // effort, and left out of the cache below whatever the relays answered.
+    // effort, and left out of the cache below whatever the relays answered. The default (90 days,
+    // D30) applies only when every storage relay answered, since a relay that did not may hold the
+    // settings that turned it off, and spares everything for a week from this device's first sync
+    // with it, so a queue that never chose a value loses nothing the user was not told about.
+    const allAnswered = storage.errors.length === 0 && read.errors.length === 0;
+    const graceFrom = syncState.retentionGraceFrom ?? now;
     const days = retentionDays(settings);
+    const grace = graceUntil(settings, graceFrom);
+    const deleteDays = retentionChosen(settings) || allAnswered ? days : null;
     const expired = await deleteExpired(storage.connections, queue, view.drafts, {
-      days,
+      days: deleteDays,
+      ...(grace !== undefined && { grace }),
       now,
       previous: syncState.expired ?? {},
-      allAnswered: storage.errors.length === 0 && read.errors.length === 0,
+      allAnswered,
       log: writes,
     });
     if (expired.deleted > 0) summary.archiveDeleted = expired.deleted;
@@ -485,6 +493,7 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
       cappedStreak: summary.cappedStreak,
       relayHealth,
       expired: expired.state,
+      retentionGraceFrom: graceFrom,
       last: summary,
     };
     // The window moves only when the whole inbox was read and nothing was left behind.
@@ -521,7 +530,9 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
           outcome.destinations.filter((d) => outcome.newDestinations.includes(d))
         ),
         retentionDays: days,
+        retentionChosen: retentionChosen(settings),
       };
+      if (grace !== undefined) cache.retentionGraceUntil = grace;
       await writeDraftCache(store.session, cache);
     }
     return { state: 'synced', summary };
@@ -654,6 +665,8 @@ async function deleteExpired(
   drafts: readonly DraftWrap[],
   input: {
     days: number | null;
+    /** Unix seconds before which nothing is past retention (the default's grace, D30). */
+    grace?: number;
     now: number;
     previous: Record<string, ExpiredDraft>;
     allAnswered: boolean;
@@ -666,7 +679,7 @@ async function deleteExpired(
   for (const wrap of drafts) {
     if (wrap.draft.type !== 'field_value') continue;
     const draft = { status: wrap.draft.value.status, updatedAt: wrap.createdAt };
-    if (!pastRetention(draft, input.days, input.now)) continue;
+    if (!pastRetention(draft, input.days, input.now, input.grace)) continue;
     ds.add(wrap.d);
     const previous = input.previous[wrap.d];
     // A version newer than the one deleted (an older build restored it, say) starts over.

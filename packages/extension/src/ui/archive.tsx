@@ -2,13 +2,14 @@
  * The archive view (spec 7.1, 11.4): drafts that were inserted or dismissed, newest first, each
  * with Restore, which sets it back to `active` and keeps its `inserted` tags. It lists the
  * session's decrypted cache from the last sync, like the home screen, and asks for a sync on open.
- * When the settings set a retention (7.2, 9.2), the view says so, and a draft past it (which the
- * next sync deletes) shows that in place of Restore.
+ * The view says how long archived drafts are kept (7.2, 9.2; 90 days unless Settings changed it,
+ * D30), and a draft past it (which the next sync deletes) shows that in place of Restore. A draft
+ * the default spares for its first week (D30) keeps Restore and says when it goes.
  * Draft text and agent labels are JSX text children, which Preact sets as text.
  */
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { restoreDraft } from '../drafts/manage.ts';
-import { pastRetention } from '../drafts/retention.ts';
+import { inGrace, pastRetention } from '../drafts/retention.ts';
 import type { SetupDeps } from '../setup/deps.ts';
 import { type CachedDraft, readDraftCache } from '../sync/state.ts';
 import { messageOf } from './app.tsx';
@@ -31,6 +32,8 @@ function ArchivedRow(props: {
   draft: CachedDraft;
   busy: boolean;
   expired: boolean;
+  /** When the default's grace period ends, for a draft past retention it still spares. */
+  graceUntil?: number | undefined;
   onRestore: (draft: CachedDraft) => void;
 }) {
   const { draft } = props;
@@ -46,6 +49,11 @@ function ArchivedRow(props: {
       <p class="text-muted text-xs">
         {draft.status === 'archived:inserted' ? 'Inserted' : 'Dismissed'} {dateOf(draft.updatedAt)}
       </p>
+      {props.graceUntil !== undefined && (
+        <p class="text-muted text-xs">
+          Older than the retention; deleted after {dateOf(props.graceUntil)} unless restored.
+        </p>
+      )}
       {open ? (
         <p class="mt-1 whitespace-pre-wrap break-words text-sm">{draft.content}</p>
       ) : (
@@ -79,6 +87,14 @@ function ArchivedRow(props: {
   );
 }
 
+/** What the archive says about retention (D30), or nothing before the first sync. */
+export function retentionNote(cache: { retentionDays?: number | null } | undefined): string {
+  if (cache === undefined || cache.retentionDays === undefined) return '';
+  const days = cache.retentionDays;
+  if (days === null) return 'Archived drafts are never deleted (change in Settings).';
+  return `Archived drafts are kept ${days} ${days === 1 ? 'day' : 'days'} (change in Settings).`;
+}
+
 /** The list's markup, separate from its effects so it renders in tests. */
 export function ArchiveList(props: {
   drafts: CachedDraft[] | undefined;
@@ -86,6 +102,8 @@ export function ArchiveList(props: {
   onRestore: (draft: CachedDraft) => void;
   /** The effective `archive_retention_days`; `null` or absent keeps every draft. */
   retentionDays?: number | null;
+  /** When the default's grace period ends (D30); nothing is past retention before it. */
+  graceUntil?: number | undefined;
   /** Unix seconds; defaults to the clock. */
   now?: number;
 }) {
@@ -100,7 +118,12 @@ export function ArchiveList(props: {
           key={draft.d}
           draft={draft}
           busy={props.busy}
-          expired={pastRetention(draft, props.retentionDays, now)}
+          expired={pastRetention(draft, props.retentionDays, now, props.graceUntil)}
+          graceUntil={
+            inGrace(draft, props.retentionDays, now, props.graceUntil)
+              ? props.graceUntil
+              : undefined
+          }
           onRestore={props.onRestore}
         />
       ))}
@@ -112,6 +135,8 @@ export function ArchiveScreen(props: { deps: SetupDeps; onBack: () => void }) {
   const { deps } = props;
   const [drafts, setDrafts] = useState<CachedDraft[] | undefined>();
   const [days, setDays] = useState<number | null>(null);
+  const [grace, setGrace] = useState<number | undefined>();
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
@@ -120,6 +145,8 @@ export function ArchiveScreen(props: { deps: SetupDeps; onBack: () => void }) {
     const cache = await readDraftCache(deps.store.session);
     setDrafts(cache?.drafts);
     setDays(cache?.retentionDays ?? null);
+    setGrace(cache?.retentionGraceUntil);
+    setNote(retentionNote(cache));
   }, [deps]);
   useEffect(() => {
     let live = true;
@@ -154,13 +181,13 @@ export function ArchiveScreen(props: { deps: SetupDeps; onBack: () => void }) {
     <Screen title="Archive" onBack={props.onBack}>
       <p class="mt-2 text-muted text-xs">
         Drafts you inserted or dismissed. Restore puts one back in your drafts.
-        {days !== null &&
-          ` Each one is deleted ${days} ${days === 1 ? 'day' : 'days'} after it was archived.`}
+        {note !== '' && ` ${note}`}
       </p>
       <ArchiveList
         drafts={drafts}
         busy={busy}
         retentionDays={days}
+        graceUntil={grace}
         onRestore={(d) => void restore(d)}
       />
       {notice !== undefined && (

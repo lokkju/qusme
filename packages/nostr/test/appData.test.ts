@@ -147,7 +147,7 @@ describe('settings (NIP-78)', () => {
     expect(expectOk(await parseSettings(event, queue)).content).toEqual(settings);
   });
 
-  it('keeps null and absent retention apart and resolves the default per relay', async () => {
+  it('keeps null and absent retention apart and defaults absent to 90 days (D30)', async () => {
     const kept = expectOk(
       await parseSettings(
         await buildSettings(queue, { archive_retention_days: null, quota_counts: {} }),
@@ -155,12 +155,11 @@ describe('settings (NIP-78)', () => {
       )
     );
     expect(kept.content.archive_retention_days).toBeNull();
-    expect(archiveRetentionDays(kept.content, true)).toBeNull();
+    expect(archiveRetentionDays(kept.content)).toBeNull();
     const unset = expectOk(await parseSettings(appData(D_SETTINGS, {}), queue));
     expect(unset.content).toEqual({ quota_counts: {} });
-    expect(archiveRetentionDays(unset.content, true)).toBe(90);
-    expect(archiveRetentionDays(unset.content, false)).toBeNull();
-    expect(archiveRetentionDays(settings, false)).toBe(90);
+    expect(archiveRetentionDays(unset.content)).toBe(90);
+    expect(archiveRetentionDays({ archive_retention_days: 30, quota_counts: {} })).toBe(30);
   });
 
   it('round-trips the inbox key, its relays and retired keys in spec order (7.2)', async () => {

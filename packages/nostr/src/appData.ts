@@ -40,8 +40,8 @@ export const D_ROTATED = 'qus.me/rotated';
  */
 export const RECOVERY_LOOKUP_NAMESPACE = 'qus.me/recovery-lookup';
 
-/** `archive_retention_days` when unset on a queue on the hosted relay (spec 7.2, 9.2). */
-export const HOSTED_ARCHIVE_RETENTION_DAYS = 90;
+/** `archive_retention_days` when the settings leave it unset, on any relay (spec 7.2; D30). */
+export const DEFAULT_ARCHIVE_RETENTION_DAYS = 90;
 
 export const DESTINATION_STATUSES = ['confirmed', 'pending'] as const;
 export type DestinationStatus = (typeof DESTINATION_STATUSES)[number];
@@ -83,7 +83,7 @@ export interface RetiredInboxKey {
 /** The settings event's content (spec 7.2). */
 export interface Settings {
   /**
-   * Days to keep archived drafts; `null` keeps them. Absent means the default for the relay, see
+   * Days to keep archived drafts; `null` keeps them. Absent means the default, see
    * {@link archiveRetentionDays}.
    */
   archive_retention_days?: number | null;
@@ -292,12 +292,12 @@ export function writeSettings(content: Settings): JsonObject {
 }
 
 /**
- * The effective `archive_retention_days`: the setting if present, otherwise 90 on the hosted
- * relay and `null` (keep) elsewhere (spec 7.2).
+ * The effective `archive_retention_days`: the setting if present (`null` keeps archived drafts),
+ * otherwise {@link DEFAULT_ARCHIVE_RETENTION_DAYS} on any relay (spec 7.2; D30).
  */
-export function archiveRetentionDays(settings: Settings, onHostedRelay: boolean): number | null {
+export function archiveRetentionDays(settings: Settings): number | null {
   if (settings.archive_retention_days !== undefined) return settings.archive_retention_days;
-  return onHostedRelay ? HOSTED_ARCHIVE_RETENTION_DAYS : null;
+  return DEFAULT_ARCHIVE_RETENTION_DAYS;
 }
 
 function appDataTags(d: string, extraTags: string[][] | undefined): string[][] {
