@@ -4,8 +4,9 @@
  * (as the queue key where a relay asks for AUTH); read kind 1059 from the inbox relays,
  * authenticated as the inbox key and every retired inbox key still draining (6.4), since the last
  * sync minus the lookback; ingest (`ingestSubmissions` in `@qusme/nostr`); publish the new
- * pending destinations, the draft wraps and the merged settings to every storage relay; then ask
- * the inbox relays to delete the handled gift wraps, best effort.
+ * pending destinations, the draft wraps and the merged settings to every storage relay; blank and
+ * request deletion of archived drafts past the settings' retention (7.2, 9.2); then ask the inbox
+ * relays to delete the handled gift wraps, best effort.
  *
  * Nothing runs while the queue is locked: {@link syncOnce} reads the unlocked keys first and
  * returns without opening a connection when there are none.
@@ -15,6 +16,7 @@ import {
   type AgentGrant,
   type AppData,
   buildDestinations,
+  buildDraftDeletion,
   buildDraftWrap,
   buildGiftWrapDeletion,
   buildSettings,
@@ -59,6 +61,7 @@ import {
 } from '@qusme/nostr';
 import type { Filter } from 'nostr-tools/filter';
 import { finishPendingRevocations } from '../agents/pendingRevocations.ts';
+import { pastRetention, retentionDays } from '../drafts/retention.ts';
 import { effectiveDefinition, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import type { KeyStore } from '../keyStore.ts';
 import { SERVICE_ORIGIN } from '../permissions.ts';
@@ -67,6 +70,8 @@ import { sameRelays } from '../setup/deps.ts';
 import {
   type CachedDraft,
   type DraftCache,
+  EXPIRED_MAX_TRIES,
+  type ExpiredDraft,
   pruneHandled,
   readSyncState,
   type SyncSummary,
@@ -424,6 +429,18 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
       if (event !== undefined) await store.update({ settings: event });
     }
 
+    // 3a. Archived drafts past retention (7.2, 9.2): blanked and their deletion requested, best
+    // effort, and left out of the cache below whatever the relays answered.
+    const days = retentionDays(settings);
+    const expired = await deleteExpired(storage.connections, queue, view.drafts, {
+      days,
+      now,
+      previous: syncState.expired ?? {},
+      allAnswered: storage.errors.length === 0 && read.errors.length === 0,
+      log: writes,
+    });
+    if (expired.deleted > 0) summary.archiveDeleted = expired.deleted;
+
     // 3b. Whether each storage relay keeps writes (spec 9.1). A relay that answered the REQ but
     // got nothing written this sync, and none for a while, gets the current 10013 again: it
     // changes nothing on a relay that has it, and a relay that answers no EVENT shows it here.
@@ -467,6 +484,7 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
       handled: nextHandled,
       cappedStreak: summary.cappedStreak,
       relayHealth,
+      expired: expired.state,
       last: summary,
     };
     // The window moves only when the whole inbox was read and nothing was left behind.
@@ -478,7 +496,9 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
     // 6. The decrypted cache for the popup, in storage.session only, and only while unlocked.
     if ((await store.status()).state === 'unlocked') {
       const labels = view.submitters?.labels ?? {};
-      const drafts = view.drafts.map((d) => cached(d.d, d.createdAt, d, labels));
+      const drafts = view.drafts
+        .filter((d) => !expired.ds.has(d.d))
+        .map((d) => cached(d.d, d.createdAt, d, labels));
       for (const p of published) {
         const draft = outcome.drafts.find((d) => d.wrapId === p.ref.wrapId);
         if (draft !== undefined) {
@@ -500,6 +520,7 @@ async function syncQueue(deps: SyncDeps): Promise<SyncResult> {
           view.destinations?.value.content.destinations ?? [],
           outcome.destinations.filter((d) => outcome.newDestinations.includes(d))
         ),
+        retentionDays: days,
       };
       await writeDraftCache(store.session, cache);
     }
@@ -615,6 +636,61 @@ async function publishSettings(
     input.errors.push(`${refusal.url} refused: ${refusal.reason}`);
   }
   return report.accepted.length > 0 ? event : undefined;
+}
+
+/**
+ * Blanks each archived draft past retention and requests its deletion (spec 7.1, 9.2) on the
+ * storage relays that have not taken either yet, and returns the progress to keep. A relay that
+ * honors NIP-09 drops every version; one that ignores it keeps the blanked wrap, which replaces
+ * the archived one, so the next sync no longer sees the draft. The record matters when the two
+ * disagree: a relay that missed this sync and still serves the old version is asked again, the
+ * relays that already took the request are not, and one that keeps refusing is left after
+ * {@link EXPIRED_MAX_TRIES} syncs. An entry is dropped once every storage relay answered the read
+ * and none of them serves that draft any more.
+ */
+async function deleteExpired(
+  connections: readonly RelayConnection[],
+  queue: Signer,
+  drafts: readonly DraftWrap[],
+  input: {
+    days: number | null;
+    now: number;
+    previous: Record<string, ExpiredDraft>;
+    allAnswered: boolean;
+    log: WriteLog;
+  }
+): Promise<{ state: Record<string, ExpiredDraft>; ds: Set<string>; deleted: number }> {
+  const state: Record<string, ExpiredDraft> = input.allAnswered ? {} : { ...input.previous };
+  const ds = new Set<string>();
+  let deleted = 0;
+  for (const wrap of drafts) {
+    if (wrap.draft.type !== 'field_value') continue;
+    const draft = { status: wrap.draft.value.status, updatedAt: wrap.createdAt };
+    if (!pastRetention(draft, input.days, input.now)) continue;
+    ds.add(wrap.d);
+    const previous = input.previous[wrap.d];
+    // A version newer than the one deleted (an older build restored it, say) starts over.
+    const entry: ExpiredDraft =
+      previous !== undefined && wrap.createdAt < previous.deletedAt
+        ? { ...previous, done: [...previous.done] }
+        : { deletedAt: after(input.now, wrap.createdAt), done: [], tries: 0 };
+    const targets = connections.filter((c) => !entry.done.includes(c.url));
+    if (targets.length > 0 && entry.tries < EXPIRED_MAX_TRIES) {
+      const { blanked, deletion } = await buildDraftDeletion(queue, {
+        d: wrap.d,
+        createdAt: entry.deletedAt,
+      });
+      const first = await publishLogged(targets, blanked, input.log);
+      // Not logged: a relay refusing kind 5 says nothing about whether it keeps the queue's writes.
+      const second = await publishToAll(targets, deletion);
+      const accepted = new Set([...first.accepted, ...second.accepted]);
+      if (accepted.size > 0) deleted += 1;
+      entry.done.push(...accepted);
+      entry.tries += 1;
+    }
+    state[wrap.d] = entry;
+  }
+  return { state, ds, deleted };
 }
 
 /**
