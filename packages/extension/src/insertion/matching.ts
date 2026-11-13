@@ -142,3 +142,23 @@ export function documentUrlPatterns(
   }
   return [...patterns].sort();
 }
+
+/**
+ * `documentUrlPatterns` for "Save to qus.me" (11.7): the confirmed destinations' patterns, as for
+ * inserting, and every registry site's own, so the item also appears on a supported site the user
+ * has no destination for yet and saving there can say so. Patterns a menu would refuse are left
+ * out.
+ */
+export function savePatterns(
+  destinations: readonly Destination[],
+  source: SiteDefinitionSource
+): string[] {
+  const patterns = new Set(documentUrlPatterns(destinations, source));
+  for (const json of source.sites()) {
+    if (typeof json.id !== 'string') continue;
+    for (const pattern of effectiveDefinition(source, json.id, null)?.match ?? []) {
+      if (MENU_PATTERN.test(pattern)) patterns.add(pattern);
+    }
+  }
+  return [...patterns].sort();
+}
