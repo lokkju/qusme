@@ -27,6 +27,8 @@ export interface RevokeResult {
   service: 'revoked' | 'not_bound' | 'pending';
   /** Why the service could not be told, written for the user. */
   serviceError?: string;
+  /** A local MCP server's agent (labelled `local`), which the service never held. */
+  local?: boolean;
 }
 
 /** The address of an agent's grant, `31235:<queue pubkey>:<agent pubkey>`. */
@@ -69,15 +71,21 @@ export async function revokeAgent(
       }
       out.listUpdated = true;
     }
+    // A local MCP server (spec 8.6) has no binding at the service: the list is the whole revocation.
+    if (list?.labels[agentPubkey]?.extra?.local === true) {
+      out.service = 'not_bound';
+      out.local = true;
+    }
     // Before anything else can fail: the popup may close at any moment from here on.
     const label = list?.labels[agentPubkey]?.label;
-    await addPendingRevocation(deps.store, {
-      queuePubkey: session.pubkey,
-      agentPubkey,
-      since: session.now,
-      ...(label !== undefined && { label }),
-      ...(options.serviceAllowed === false && { lastError: NO_SERVICE_PERMISSION }),
-    });
+    if (!out.local)
+      await addPendingRevocation(deps.store, {
+        queuePubkey: session.pubkey,
+        agentPubkey,
+        since: session.now,
+        ...(label !== undefined && { label }),
+        ...(options.serviceAllowed === false && { lastError: NO_SERVICE_PERMISSION }),
+      });
     const grant = snapshot.grants.get(agentPubkey);
     if (grant !== undefined) {
       // Best effort: the list already revoked the agent, and an ordinary relay may keep the grant.
@@ -90,6 +98,7 @@ export async function revokeAgent(
     }
     return out;
   });
+  if (result.local) return result;
   if (options.serviceAllowed === false) {
     result.serviceError = NO_SERVICE_PERMISSION;
     return result;

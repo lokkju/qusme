@@ -30,6 +30,15 @@ import {
   shareCandidates,
   shareDestination,
 } from '../agents/grants.ts';
+import {
+  approveLocalAgent,
+  denyLocalAgent,
+  findLocalRequest,
+  isLocalRequest,
+  type LocalAgentRequest,
+  LocalRequestRefused,
+  localServerCommand,
+} from '../agents/localRequest.ts';
 import { finishRevocation } from '../agents/pendingRevocations.ts';
 import { NO_SERVICE_PERMISSION, type RevokeResult, revokeAgent } from '../agents/revoke.ts';
 import { type AuthorizationRequest, fetchAuthorization } from '../agents/service.ts';
@@ -46,6 +55,7 @@ import { messageOf } from './app.tsx';
 import {
   BottomBar,
   Button,
+  CopyButton,
   ErrorText,
   Field,
   groupLabel,
@@ -90,12 +100,15 @@ function dateOf(expiresAt: number | null): string {
  * puts in `children` (the label), is under Details (critique A4).
  */
 export function RequestSummary(props: {
-  request: AuthorizationRequest;
+  request: AuthorizationRequest | LocalAgentRequest;
   /** The code came off the sign-in page in this tab rather than being typed (critique A1). */
   fromTab?: boolean;
   children?: ComponentChildren;
 }) {
   const { request } = props;
+  if (isLocalRequest(request)) {
+    return <LocalRequestSummary request={request}>{props.children}</LocalRequestSummary>;
+  }
   return (
     <div class="mt-3 card-band p-3">
       <p class="text-muted text-xs">
@@ -126,6 +139,35 @@ export function RequestSummary(props: {
           <dd class="font-mono">{request.scopes.join(' ')}</dd>
           <dt class="text-muted">Agent key</dt>
           <dd class="font-mono">{shortNpub(request.agentPubkey)}</dd>
+        </dl>
+      </details>
+    </div>
+  );
+}
+
+/**
+ * A local MCP server's request (spec 8.6): no client document and no host to show, so the agent
+ * key is what the user compares, large, with the one the server printed or answered with.
+ */
+function LocalRequestSummary(props: { request: LocalAgentRequest; children?: ComponentChildren }) {
+  const { request } = props;
+  return (
+    <div class="mt-3 card-band p-3" data-local-request>
+      <p class="text-muted text-xs">Code {request.code} · calls itself</p>
+      <p class="font-semibold text-lg break-words">{request.clientName}</p>
+      <p class="mt-1 text-muted text-xs">a qus.me MCP server on your computer, with agent key</p>
+      <p class="font-mono font-bold text-lg break-all" data-agent-key>
+        {shortNpub(request.agentPubkey)}
+      </p>
+      <p class="mt-1 text-xs">
+        Only approve if you just started qus.me's MCP server and it shows this code and key.
+      </p>
+      <details class="mt-2 text-xs">
+        <summary class="cursor-pointer text-muted">Details</summary>
+        {props.children}
+        <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+          <dt class="text-muted">Agent key</dt>
+          <dd class="break-all font-mono">{npubEncode(request.agentPubkey)}</dd>
         </dl>
       </details>
     </div>
@@ -167,7 +209,7 @@ export function NothingSharedWarning(props: { name: string }) {
 
 /** The review step: who is asking, the grant form, the warning and the pinned buttons. */
 export function ApprovalReview(props: {
-  request: AuthorizationRequest;
+  request: AuthorizationRequest | LocalAgentRequest;
   destinations: Destination[];
   choices: ApprovalChoices;
   busy: string | undefined;
@@ -209,7 +251,13 @@ export function ApprovalReview(props: {
 }
 
 /** After an approval: the steps that finished, and what to ask the agent next (critique A5). */
-export function ApprovalDone(props: { name: string; shared: string[]; onDone: () => void }) {
+export function ApprovalDone(props: {
+  name: string;
+  shared: string[];
+  /** A local MCP server: told through the inbox relay, with no service to confirm (8.6). */
+  local?: boolean;
+  onDone: () => void;
+}) {
   const tick = (
     <span
       aria-hidden="true"
@@ -230,7 +278,11 @@ export function ApprovalDone(props: { name: string; shared: string[]; onDone: ()
           </li>
           <li class="flex items-center gap-2">
             {tick}
-            <span>qus.me confirmed the approval</span>
+            <span>
+              {props.local
+                ? 'Told the MCP server on your computer'
+                : 'qus.me confirmed the approval'}
+            </span>
           </li>
           <li class="flex items-center gap-2">
             {/* The extension can't see the client's tab; its authorize page redirects on its own. */}
@@ -240,7 +292,11 @@ export function ApprovalDone(props: { name: string; shared: string[]; onDone: ()
             >
               →
             </span>
-            <span>{props.name} finishes signing in on its own: go back to its page</span>
+            <span>
+              {props.local
+                ? `${props.name} picks it up on its next call`
+                : `${props.name} finishes signing in on its own: go back to its page`}
+            </span>
           </li>
         </ol>
       </div>
@@ -469,17 +525,56 @@ export function GrantForm(props: {
   );
 }
 
+type PendingRequest = AuthorizationRequest | LocalAgentRequest;
+
 type ApprovePhase =
   | { phase: 'code' }
-  | { phase: 'review'; request: AuthorizationRequest; destinations: Destination[] }
-  | { phase: 'done'; approved: true; name: string; shared: string[] }
-  | { phase: 'done'; approved: false };
+  | { phase: 'review'; request: PendingRequest; destinations: Destination[] }
+  | { phase: 'done'; approved: true; name: string; shared: string[]; local: boolean }
+  | { phase: 'done'; approved: false; local: boolean };
 
 /**
- * Enter the code from the client's authorize page, review the request, approve or deny. With a
- * code read off the sign-in tab (`fromTab`) and the service permission already granted, the code
- * step looks it up on its own, so the popup opens on the review (critique A1); without the
- * permission it waits for Look up, since a permission request needs the user's click.
+ * How to start qus.me's MCP server on this computer for this queue (spec 8.6), on the code step:
+ * the command carries the Queue ID with the inbox relay, so the server needs nothing else.
+ */
+function LocalServerHint(props: { deps: SetupDeps }) {
+  const [command, setCommand] = useState<string>();
+  useEffect(() => {
+    let live = true;
+    localServerCommand(props.deps.store)
+      .then((c) => {
+        if (live) setCommand(c);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (command === undefined) return null;
+  return (
+    <details class="mt-4 text-xs" data-local-hint>
+      <summary class="cursor-pointer text-muted">
+        Running qus.me's MCP server on your computer?
+      </summary>
+      <p class="mt-1">
+        Start it with this command (or put it in your MCP client's settings). It shows a code to
+        enter here.
+      </p>
+      <p class="mt-1 break-all font-mono">{command}</p>
+      <CopyButton text={command} size="xs" />
+    </details>
+  );
+}
+
+/**
+ * Enter the code from the client's authorize page, or from qus.me's MCP server on this computer,
+ * review the request, approve or deny. Both codes look alike, so a typed code is looked for first
+ * among the queue's inbox events (a local server's request, spec 7.7), which needs no permission;
+ * when no local request has it, the code goes to app.qus.me, at once when the service permission
+ * is already granted and otherwise after the user's click on "Look up at app.qus.me", since a
+ * permission request needs a click of its own. With a code read off the sign-in tab (`fromTab`) the
+ * code is a hosted one: the screen asks the service directly, on open when the permission is
+ * granted (critique A1).
  */
 export function ApproveAgentScreen(props: {
   deps: SetupDeps;
@@ -495,15 +590,18 @@ export function ApproveAgentScreen(props: {
   const [choices, setChoices] = useState<ApprovalChoices | undefined>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState<string>();
+  /** A code no local request had, waiting for the user's click to ask app.qus.me. */
+  const [serviceCode, setServiceCode] = useState<string>();
+
+  const review = (request: PendingRequest, destinations: Destination[]) => {
+    setChoices(defaultChoices(request, destinations));
+    setPhase({ phase: 'review', request, destinations });
+  };
 
   /** `gesture`: called from the user's click, so the permission may be requested. */
-  const lookUp = async (text: string, gesture: boolean) => {
+  const lookUpService = async (code: string, gesture: boolean) => {
     setError(undefined);
-    const code = parseApprovalCode(text, deps.serviceOrigin);
-    if (code === undefined) {
-      setError('Enter the 8-character code from the page, like ABCD-1234, or paste its link.');
-      return;
-    }
+    setServiceCode(undefined);
     setBusy('Looking up…');
     try {
       // First thing awaited in the gesture: Firefox grants the permission only inside it.
@@ -521,13 +619,52 @@ export function ApproveAgentScreen(props: {
         fetchAuthorization(createLocalSigner(unlocked.queueKey), code, deps),
         loadShareableDestinations(deps),
       ]);
-      setChoices(defaultChoices(request, destinations));
-      setPhase({ phase: 'review', request, destinations });
+      review(request, destinations);
     } catch (e) {
       setError(messageOf(e));
     } finally {
       setBusy(undefined);
     }
+  };
+
+  const lookUp = async (text: string) => {
+    setError(undefined);
+    setServiceCode(undefined);
+    const code = parseApprovalCode(text, deps.serviceOrigin);
+    if (code === undefined) {
+      setError('Enter the 8-character code from the page, like ABCD-1234, or paste its link.');
+      return;
+    }
+    // A pasted approve link is the service's own page: no local server makes one.
+    const isLink = /^[a-z][a-z0-9+.-]*:/i.test(text.trim());
+    if (!isLink) {
+      setBusy('Looking up…');
+      try {
+        const [request, destinations] = await Promise.all([
+          findLocalRequest(code, deps),
+          loadShareableDestinations(deps),
+        ]);
+        review(request, destinations);
+        setBusy(undefined);
+        return;
+      } catch (e) {
+        if (e instanceof LocalRequestRefused) {
+          setError(e.message);
+          setBusy(undefined);
+          return;
+        }
+        // No local request with that code (or the inbox relay is out of reach): app.qus.me's.
+      }
+      setBusy(undefined);
+      if (!((await deps.hasServicePermission?.()) ?? false)) {
+        setServiceCode(code);
+        setError(
+          'No MCP server on your computer sent that code. If it came from an AI app’s sign-in page, look it up at app.qus.me.'
+        );
+        return;
+      }
+    }
+    await lookUpService(code, isLink);
   };
 
   // Once, on open: a code read off the sign-in tab goes straight to the review when it can.
@@ -537,7 +674,8 @@ export function ApproveAgentScreen(props: {
     let live = true;
     void (async () => {
       if (!((await deps.hasServicePermission?.()) ?? false) || !live) return;
-      await lookUp(code, false);
+      const parsed = parseApprovalCode(code, deps.serviceOrigin);
+      if (parsed !== undefined) await lookUpService(parsed, false);
     })();
     return () => {
       live = false;
@@ -547,14 +685,23 @@ export function ApproveAgentScreen(props: {
   if (phase.phase === 'code') {
     const submit = (event: Event) => {
       event.preventDefault();
-      void lookUp(input, true);
+      if (props.fromTab) {
+        const code = parseApprovalCode(input, deps.serviceOrigin);
+        if (code === undefined) {
+          setError('Enter the 8-character code from the page, like ABCD-1234, or paste its link.');
+          return;
+        }
+        void lookUpService(code, true);
+        return;
+      }
+      void lookUp(input);
     };
     return (
       <Screen title="Approve an agent" onBack={props.onBack}>
         <p class="mt-2 text-sm">
           {props.fromTab
             ? 'This is the code on the sign-in page in this tab.'
-            : "Enter the code your AI app's sign-in page shows, or paste the link from its QR code."}
+            : "Enter the code your AI app's sign-in page or qus.me's MCP server shows, or paste the link from its QR code."}
         </p>
         <form onSubmit={submit}>
           <Field id="approval-code" label="Code or link">
@@ -565,25 +712,48 @@ export function ApproveAgentScreen(props: {
               spellcheck={false}
               placeholder="ABCD-1234"
               value={input}
-              onInput={(e) => setInput(e.currentTarget.value)}
+              onInput={(e) => {
+                setInput(e.currentTarget.value);
+                setServiceCode(undefined);
+              }}
             />
           </Field>
           <ErrorText message={error} />
-          <Button type="submit" class="mt-3" disabled={busy !== undefined || input.trim() === ''}>
-            {busy ?? 'Look up'}
-          </Button>
+          {serviceCode !== undefined ? (
+            <Button
+              class="mt-3"
+              disabled={busy !== undefined}
+              onClick={() => void lookUpService(serviceCode, true)}
+            >
+              {busy ?? 'Look up at app.qus.me'}
+            </Button>
+          ) : (
+            <Button type="submit" class="mt-3" disabled={busy !== undefined || input.trim() === ''}>
+              {busy ?? 'Look up'}
+            </Button>
+          )}
         </form>
+        {!props.fromTab && <LocalServerHint deps={deps} />}
       </Screen>
     );
   }
 
   if (phase.phase === 'done') {
     if (phase.approved)
-      return <ApprovalDone name={phase.name} shared={phase.shared} onDone={props.onDone} />;
+      return (
+        <ApprovalDone
+          name={phase.name}
+          shared={phase.shared}
+          local={phase.local}
+          onDone={props.onDone}
+        />
+      );
     return (
       <Screen title="Request denied">
         <p class="mt-2 text-sm" role="status">
-          qus.me discarded the key it made for this request. The agent is not connected.
+          {phase.local
+            ? 'The MCP server on your computer was told no. It is not connected.'
+            : 'qus.me discarded the key it made for this request. The agent is not connected.'}
         </p>
         <Button class="mt-4" onClick={props.onDone}>
           Done
@@ -593,12 +763,14 @@ export function ApproveAgentScreen(props: {
   }
 
   const { request, destinations } = phase;
+  const local = isLocalRequest(request);
   const approve = async () => {
     if (choices === undefined) return;
     setError(undefined);
     setBusy('Publishing…');
     try {
-      await approveAgent(request, choices, deps);
+      if (isLocalRequest(request)) await approveLocalAgent(request, choices, deps);
+      else await approveAgent(request, choices, deps);
       const shared = choices.destinations.flatMap((c) => {
         const d = destinations.find((x) => x.id === c.id);
         if (d === undefined) return [];
@@ -609,6 +781,7 @@ export function ApproveAgentScreen(props: {
         approved: true,
         name: choices.label.trim() || request.clientName,
         shared,
+        local,
       });
     } catch (e) {
       setError(messageOf(e));
@@ -620,8 +793,9 @@ export function ApproveAgentScreen(props: {
     setError(undefined);
     setBusy('Denying…');
     try {
-      await denyAgent(request, deps);
-      setPhase({ phase: 'done', approved: false });
+      if (isLocalRequest(request)) await denyLocalAgent(request, deps);
+      else await denyAgent(request, deps);
+      setPhase({ phase: 'done', approved: false, local });
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -713,6 +887,9 @@ export function AgentItem(props: {
     <li class="border-line border-b px-4 py-2.5">
       <p class="text-sm">
         <span class="font-medium">{agentName(agent)}</span>
+        {agent.local === true && agent.binding === undefined && (
+          <span class="text-muted text-xs"> · on your computer</span>
+        )}
         {agent.binding !== undefined && (
           <span class="text-muted text-xs">
             {' · '}
@@ -1179,8 +1356,9 @@ export function AgentsScreen(props: {
 
   const revoke = (agent: AgentRow) =>
     run(async () => {
-      // Asked first, inside the click: Firefox grants the permission only during the gesture.
-      const allowed = await deps.requestServicePermission();
+      // Asked first, inside the click: Firefox grants the permission only during the gesture. A
+      // local MCP server has nothing at the service, so it needs none.
+      const allowed = agent.local === true ? true : await deps.requestServicePermission();
       const result = await revokeAgent(agent.agentPubkey, deps, { serviceAllowed: allowed });
       return revokeMessage(agentName(agent), result);
     });

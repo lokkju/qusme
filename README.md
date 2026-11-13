@@ -15,6 +15,7 @@ A pnpm workspace, laid out as in section 8.5 of the spec:
 | `packages/store-sql` | Drizzle schema for the service's own state and its SQL migrations, with drivers for D1 (`@qusme/store-sql/d1`) and a SQLite file (`@qusme/store-sql/sqlite`) |
 | `packages/entry-worker` | The Cloudflare Workers entrypoint and `wrangler.jsonc` |
 | `packages/entry-node` | The Node entrypoint (`@hono/node-server`, better-sqlite3), for local development |
+| `packages/mcp-local` | The local MCP server, published to npm as `@qusme/mcp` (`npx @qusme/mcp`): the same tools over stdio, approved through the queue's inbox relay, with no runtime dependencies |
 | `packages/extension` | The browser extension (WXT, Chrome and Firefox MV3) |
 | `packages/pwa` | The mobile PWA (Preact, Vite, Tailwind v4) |
 
