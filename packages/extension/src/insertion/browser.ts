@@ -12,18 +12,22 @@ import { readDraftCache } from '../sync/state.ts';
 import type { InsertionUiDeps } from '../ui/insert.tsx';
 import { readArmed } from './armed.ts';
 import type { SiteDefinitionSource } from './definitions.ts';
-import { MENU_CHOOSE, MENU_INSERT, menuItem } from './menu.ts';
+import { MENU_CHOOSE, MENU_INSERT, MENU_SAVE, menuItem, saveMenuItem } from './menu.ts';
 import { INSERT_MESSAGE, RETRY_RECORD_MESSAGE } from './messages.ts';
 import { type PickerPage, PickerService, readPickMessage, readUndoMessage } from './picker.ts';
 import {
+  type NoticeKind,
   PAGE_API_GLOBAL,
   PAGE_SCRIPT_FILE,
   type PageAccountResult,
   type PageInsertRequest,
   type PageOutcome,
+  type PageReadRequest,
+  type PageReadResult,
   PICKER_POPUP_MESSAGE,
   type PickerView,
 } from './protocol.ts';
+import { type SavePage, SaveService, saveFromMenu } from './save.ts';
 import { InsertionService, type InsertResponse, type PageRunner, readPageDone } from './service.ts';
 
 type Target = { tabId: number; frameId?: number };
@@ -104,6 +108,36 @@ export const scriptingPicker: PickerPage = {
   },
 };
 
+/** Reads the field and shows the notice for "Save to qus.me" (spec 11.7), in the clicked frame. */
+export const scriptingSavePage: SavePage = {
+  detectAccounts,
+  async readField(target, request) {
+    await injectPageScript(target);
+    const [result] = await browser.scripting.executeScript({
+      target: scriptTarget(target),
+      func: (req: PageReadRequest, name: string) =>
+        (
+          globalThis as unknown as Record<string, { readField(r: PageReadRequest): PageReadResult }>
+        )[name]?.readField(req),
+      args: [request, PAGE_API_GLOBAL],
+    });
+    const read = result?.result as PageReadResult | undefined;
+    if (read === undefined || read === null) throw new Error('the page script did not answer');
+    return read;
+  },
+  async notice(target, text, kind) {
+    await injectPageScript(target);
+    await browser.scripting.executeScript({
+      target: scriptTarget(target),
+      func: (t: string, k: NoticeKind, name: string) =>
+        (globalThis as unknown as Record<string, { showNotice(t: string, k: NoticeKind): void }>)[
+          name
+        ]?.showNotice(t, k),
+      args: [text, kind, PAGE_API_GLOBAL],
+    });
+  },
+};
+
 /**
  * Sets up the context menu, its click handler, the picker shortcut and the insertion messages in
  * the background.
@@ -113,6 +147,7 @@ export function installInsertion(
   definitions: SiteDefinitionSource
 ): InsertionService {
   const service = new InsertionService({ store, definitions, page: scriptingPageRunner });
+  const saver = new SaveService({ store, definitions, page: scriptingSavePage });
   const accessKeys = import.meta.env.FIREFOX === true;
 
   // The badge follows the drafts, the insertion bookkeeping, pending revocations and the lock:
@@ -133,14 +168,12 @@ export function installInsertion(
           readArmed(store.session),
           readDraftCache(store.session),
         ]);
-        const item = menuItem({
-          armed,
-          destinations: cache?.destinations ?? [],
-          definitions,
-          accessKeys,
-        });
+        const destinations = cache?.destinations ?? [];
+        const item = menuItem({ armed, destinations, definitions, accessKeys });
+        const save = saveMenuItem({ destinations, definitions });
         await browser.contextMenus.removeAll();
         if (item !== undefined) browser.contextMenus.create(item);
+        if (save !== undefined) browser.contextMenus.create(save);
       })
       .catch(() => undefined);
   };
@@ -158,6 +191,11 @@ export function installInsertion(
     if (info.menuItemId === MENU_CHOOSE) {
       // Synchronously, inside the click: Firefox refuses openPopup anywhere else.
       void browser.action.openPopup().catch(() => undefined);
+      return;
+    }
+    if (info.menuItemId === MENU_SAVE) {
+      // activeTab, granted by this click, makes the tab's URL readable until it navigates.
+      void saveFromMenu(saver, info, tab)?.catch(() => undefined);
       return;
     }
     if (info.menuItemId !== MENU_INSERT || tab?.id === undefined) return;
