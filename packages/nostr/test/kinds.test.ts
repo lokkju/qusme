@@ -28,6 +28,9 @@ describe('kind constants', () => {
     expect(kinds.KIND_FIELD_VALUE).toBeLessThan(10000);
     expect(kinds.KIND_SUBMITTERS).toBeGreaterThanOrEqual(10000);
     expect(kinds.KIND_SUBMITTERS).toBeLessThan(20000);
+    // ephemeral: 20000 <= n < 30000; the request is only ever a gift-wrapped rumor (spec 7.7)
+    expect(kinds.KIND_AGENT_REQUEST).toBeGreaterThanOrEqual(20000);
+    expect(kinds.KIND_AGENT_REQUEST).toBeLessThan(30000);
     for (const kind of [kinds.KIND_AGENT_GRANT, kinds.KIND_SITE_DEF]) {
       expect(kind).toBeGreaterThanOrEqual(30000);
       expect(kind).toBeLessThan(40000);

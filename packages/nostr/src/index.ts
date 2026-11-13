@@ -29,6 +29,27 @@ export {
   readAgentGrant,
 } from './agentGrant.ts';
 export {
+  AGENT_REQUEST_ANSWER_TTL_SECONDS,
+  AGENT_REQUEST_MISS_MESSAGES,
+  AGENT_REQUEST_TTL_SECONDS,
+  type AgentRequest,
+  type AgentRequestAnswer,
+  type AgentRequestInput,
+  type AgentRequestLookup,
+  type AgentRequestMiss,
+  type AgentRequestStatus,
+  buildAgentRequest,
+  buildAgentRequestAnswer,
+  cleanClientName,
+  displayApprovalCode,
+  findAgentRequest,
+  MAX_AGENT_REQUEST_TTL_SECONDS,
+  MAX_AGENT_REQUESTS_OPENED,
+  MAX_CLIENT_NAME_LENGTH,
+  openAgentRequest,
+  openAgentRequestAnswer,
+} from './agentRequest.ts';
+export {
   type AppData,
   type AppDataOptions,
   archiveRetentionDays,

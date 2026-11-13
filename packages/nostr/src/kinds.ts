@@ -44,6 +44,12 @@ export const KIND_SUBMITTERS = 11235;
 export const KIND_AGENT_GRANT = 31235;
 /** Site and Field Definitions NIP: a site definition (addressable range, spec 7.6). */
 export const KIND_SITE_DEF = 31236;
+/**
+ * Draft Inbox NIP: a local agent's approval request and the queue's answer (spec 7.7), only ever
+ * the rumor inside a NIP-59 gift wrap. Ephemeral range, with the family's 1235 suffix: a request
+ * means something only until its expiry, and relays never see the kind, only the wrap's 1059.
+ */
+export const KIND_AGENT_REQUEST = 21235;
 
 /** Numbers {@link KIND_FIELD_VALUE} has had before, oldest first. Parsers still accept them. */
 export const KIND_FIELD_VALUE_FORMER: readonly number[] = [];
