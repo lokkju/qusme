@@ -1,8 +1,8 @@
 # qus.me
 
-qus.me is a queue of values waiting to be placed into fields on web pages. People and agents submit drafts, each naming a destination (a site and an account) and a field; a browser extension lets you pick a draft and insert it into the matching field on the live page, and you still click Post yourself. Drafts are stored end-to-end encrypted on a private Nostr relay, and the qus.me service handles MCP for agents, agent keys and device pairing without ever holding the key that reads the queue.
+qus.me is a queue of drafts for your browser. You and AI agents (Claude and any other MCP client, through the server at `https://app.qus.me/mcp`) add drafts, each naming a destination (a site and an account). On X, Bluesky, Mastodon or LinkedIn you press Alt+Q in the post box, pick a draft, edit it and click Post yourself; qus.me never posts. The queue is encrypted end to end and stored on public Nostr relays, so only your devices can read it. An agent you approve can add drafts for the accounts you allow, up to the limit you set, and can't read the queue; the service at app.qus.me handles MCP, OAuth, agent keys and device pairing without ever holding the key that opens the queue. Recovery is a 12-word code.
 
-The specification is [docs/spec.md](docs/spec.md).
+The landing page is [qus.me](https://qus.me) (`site/`), the extension is on the [Chrome Web Store](https://chromewebstore.google.com/detail/qusme/mggkjolhneabgkhokenopabgkcakfhpo) and in review at Firefox Add-ons, and the specification is [docs/spec.md](docs/spec.md).
 
 ## Layout
 

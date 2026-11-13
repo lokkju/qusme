@@ -511,7 +511,9 @@ export function ApproveAgentScreen(props: {
         ? await deps.requestServicePermission()
         : ((await deps.hasServicePermission?.()) ?? false);
       if (!allowed) {
-        throw new SetupError('qus.me needs permission to reach app.qus.me to look up the code.');
+        throw new SetupError(
+          'Allow qus.me to reach app.qus.me when the browser asks; that is where it looks up the code.'
+        );
       }
       const unlocked = await deps.store.unlocked();
       if (unlocked === undefined) throw new SetupError('Unlock the queue first.');
@@ -552,7 +554,7 @@ export function ApproveAgentScreen(props: {
         <p class="mt-2 text-sm">
           {props.fromTab
             ? 'This is the code on the sign-in page in this tab.'
-            : "Enter the code the MCP client's authorization page shows, or paste the link from its QR code."}
+            : "Enter the code your AI app's sign-in page shows, or paste the link from its QR code."}
         </p>
         <form onSubmit={submit}>
           <Field id="approval-code" label="Code or link">
@@ -581,7 +583,7 @@ export function ApproveAgentScreen(props: {
     return (
       <Screen title="Request denied">
         <p class="mt-2 text-sm" role="status">
-          The service destroyed the key it made for this request.
+          qus.me discarded the key it made for this request. The agent is not connected.
         </p>
         <Button class="mt-4" onClick={props.onDone}>
           Done
@@ -647,7 +649,9 @@ export function ApproveAgentScreen(props: {
 /** What the agents screen says after a revocation. */
 export function revokeMessage(name: string, result: RevokeResult): string {
   const refused =
-    result.refusals.length > 0 ? ` Some storage relays refused: ${result.refusals.join('; ')}` : '';
+    result.refusals.length > 0
+      ? ` Some storage servers refused: ${result.refusals.join('; ')}`
+      : '';
   if (result.service === 'pending') {
     return (
       `Revoked on your devices; finishing with qus.me… Until qus.me is told, ${name} may still ` +
@@ -733,8 +737,8 @@ export function AgentItem(props: {
       )}
       {!agent.listed && (
         <p class="text-danger text-xs">
-          Not on the submitters list, so its drafts are already refused. The service still holds its
-          key.
+          Your devices already refuse its drafts, but qus.me still holds its key. Revoke it to
+          finish.
         </p>
       )}
       {confirming ? (
@@ -928,7 +932,9 @@ export function AgentsList(props: {
           Connected agents
         </h2>
         {view.agents.length === 0 ? (
-          <p class="text-sm">No agents are connected.</p>
+          <p class="text-sm">
+            No agents connected yet. Connect one in your AI app, then approve its code here.
+          </p>
         ) : (
           <ul class="-mx-4 border-line border-t">
             {view.agents.map((a) => (
@@ -945,8 +951,8 @@ export function AgentsList(props: {
         )}
         {view.bindingsError !== undefined && (
           <p class="mt-2 text-muted text-xs">
-            The service's list is missing ({view.bindingsError}), so client names and hosts may be
-            missing too.
+            Couldn't get the agent list from qus.me ({view.bindingsError}), so some names and hosts
+            may be missing.
           </p>
         )}
       </section>

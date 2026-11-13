@@ -92,7 +92,7 @@ export function insertMessage(response: InsertResponse, shortcut = 'Ctrl+V'): st
         case 'injection':
           return response.message ?? 'qus.me could not run in this page.';
         default:
-          return 'The insertion stopped.';
+          return "The draft didn't go in. Try Insert again.";
       }
   }
 }
@@ -682,7 +682,7 @@ export function InsertPanel(props: {
         if (response.state === 'inserted' && response.recorded) setUndoable(entry.draft.d);
       }
     } catch (error) {
-      setStatus('The insertion failed.');
+      setStatus("The draft didn't go in.");
       setStatusDetails([(error as Error)?.message ?? String(error)]);
     } finally {
       setBusy(false);

@@ -405,7 +405,7 @@ describe('destinations screen', () => {
     expect(html).toContain('&lt;img src=x onerror=alert(1)>');
     expect(html).toContain('evil · &lt;i>acct&lt;/i> · override');
     expect(html).toContain('custom&lt;script> · me · custom site');
-    expect(html).toContain('confirm or reject it under Agents');
+    expect(html).toContain('allow or reject it under Agents');
     expect(html).toContain('Remove and dismiss its drafts');
     // Confirmed first.
     expect(html.indexOf('Mine')).toBeLessThan(html.indexOf('&lt;img'));
@@ -506,7 +506,9 @@ describe('destinations screen', () => {
 
   it('says why detection found nothing', () => {
     expect(detectionMessage({ state: 'detected', account: 'a' }, 'X')).toBeUndefined();
-    expect(detectionMessage({ state: 'other_site' }, 'X')).toBe("This tab isn't on X.");
+    expect(detectionMessage({ state: 'other_site' }, 'X')).toBe(
+      "This tab isn't on X; open it there, or type the account."
+    );
     expect(detectionMessage({ state: 'undetected' }, 'X')).toMatch(/Couldn't tell/);
     expect(detectionMessage({ state: 'no_locator' }, 'X')).toMatch(/type it/);
     expect(detectionMessage({ state: 'no_tab' }, 'X')).toMatch(/can't read this tab/);

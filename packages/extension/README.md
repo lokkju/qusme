@@ -1,6 +1,6 @@
 # @qusme/extension
 
-The qus.me browser extension: WXT, Preact and Tailwind v4, Manifest V3 for Chrome and Firefox. Run it with `pnpm -C packages/extension dev` (Chrome) or `dev:firefox`.
+The qus.me browser extension: it holds your queue's key, shows the queue in its popup, approves and revokes agents, and puts the draft you pick into the post box when you press Alt+Q, click Insert or use the right-click menu. Its permissions are `activeTab`, `scripting`, `contextMenus`, `storage` and `alarms`, with no host permissions: it reaches a page only on one of those actions, and the only server it ever contacts is app.qus.me, through an optional host permission asked for when you pair a device or approve an agent. WXT, Preact and Tailwind v4, Manifest V3 for Chrome and Firefox. Run it with `pnpm -C packages/extension dev` (Chrome) or `dev:firefox`.
 
 ## Building from source
 

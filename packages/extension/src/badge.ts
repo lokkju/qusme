@@ -40,11 +40,13 @@ export function badgeFor(input: BadgeInput): Badge {
   if (!input.unlocked) return { text: '', color: BADGE_COLOR, title: 'qus.me (locked)' };
   const reasons: string[] = [];
   if (input.pendingDestinations > 0)
-    reasons.push(plural(input.pendingDestinations, 'new destination', 'new destinations'));
+    reasons.push(`${plural(input.pendingDestinations, 'account', 'accounts')} waiting for your OK`);
   if (input.pendingRevocations > 0)
     reasons.push(`${plural(input.pendingRevocations, 'revocation', 'revocations')} unfinished`);
   if (input.unrecordedInsertions > 0)
-    reasons.push(`${plural(input.unrecordedInsertions, 'insertion', 'insertions')} not recorded`);
+    reasons.push(
+      `${plural(input.unrecordedInsertions, 'inserted draft', 'inserted drafts')} not marked done`
+    );
   const needsYou = reasons.length > 0;
   const count = input.activeDrafts;
   const text = count > 99 ? '99+' : count > 0 ? String(count) : needsYou ? '!' : '';

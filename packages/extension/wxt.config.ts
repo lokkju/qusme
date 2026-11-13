@@ -17,7 +17,8 @@ export default defineConfig({
   },
   manifest: ({ browser }) => ({
     name: 'qus.me',
-    description: 'Insert queued drafts into fields on the page you are on.',
+    description:
+      'Drafts from you and from Claude, in a queue only you can read. Press Alt+Q in a post box, pick one and click Post yourself.',
     permissions: [...PERMISSIONS],
     // Requested only when a typed pairing code is used (spec 11.2, 8.3).
     optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],

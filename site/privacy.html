@@ -22,7 +22,7 @@
 
 <main id="main" class="prose">
 <h1>Privacy policy</h1>
-<p class="updated">Last updated: <time datetime="2026-11-09">9 November 2026</time></p>
+<p class="updated">Last updated: <time datetime="2026-11-11">11 November 2026</time></p>
 
 <p class="summary">Your drafts are encrypted on your devices before they go anywhere. The relays that store them can't read them, the agents you connect can add to your queue but can't read it, and we don't run analytics, track you or sell data.</p>
 
@@ -57,7 +57,7 @@
 <li><strong>Agent submissions.</strong> When an approved agent submits a draft, the service sees it in plaintext only while it validates it and encrypts it to your queue's inbox. It doesn't keep the plaintext.</li>
 <li><strong>Submission receipts.</strong> For each submission it keeps a receipt with no content: which agent, your queue's public key, the encrypted submission's ID, and the time. These let the agent list its submissions and let the service count them against the limit you set.</li>
 <li><strong>OAuth records.</strong> For each agent application that connects, the service keeps the public information the application publishes about itself (its name and its sign-in return addresses). Authorization codes and access and refresh tokens are stored only as hashes, never as the tokens themselves.</li>
-<li><strong>Agent keys.</strong> The service makes one key per agent you approve, so it can deliver that agent's drafts. Each key is stored encrypted, with a secret held apart from the database. It records which of your queue's public key and storage relays each agent is linked to, and reads the permissions you gave that agent (its destinations and limit) from your relays.</li>
+<li><strong>Agent keys.</strong> The service makes one key per agent you approve, so it can deliver that agent's drafts. Each key is stored encrypted, with a secret held apart from the database. For each agent it records the queue public key and the storage relays the agent is linked to, and it reads the permissions you gave that agent (its destinations and limit) from your relays.</li>
 <li><strong>Pairing codes.</strong> If you pair a new device using a typed code, the service holds the pairing link for at most two minutes and deletes it the first time it's fetched.</li>
 <li><strong>IP addresses.</strong> The service doesn't store IP addresses. For rate limits it passes your address to Cloudflare's rate limiting counters, which count requests per address over a one-minute window. While an agent's sign-in request is waiting for your approval, it keeps a keyed hash (an HMAC) of the requesting address, never the address itself, to cap how many open requests one address can make.</li>
 </ul>

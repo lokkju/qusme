@@ -78,8 +78,8 @@ export function PairScreen(props: {
     return (
       <Screen title="Pair with your other device" onBack={props.onBack}>
         <p class="mt-2 text-sm">
-          On a device that has the queue, choose “Pair a new device”. Copy the pairing link it
-          shows, or ask it for a typed code.
+          On a device that has the queue, open the menu and choose “Pair a device”. Paste the
+          pairing link it shows here, or ask it for a typed code.
         </p>
         <form onSubmit={submit}>
           <Field
@@ -265,7 +265,7 @@ function PairUnlock(props: {
         />
         <LossWarning />
         {relayPrompt !== undefined && (
-          <Field id="pair-relay" label="A storage relay of the queue" hint={relayPrompt}>
+          <Field id="pair-relay" label="A storage server of the queue" hint={relayPrompt}>
             <input
               id="pair-relay"
               class={`${inputClass} font-mono`}
