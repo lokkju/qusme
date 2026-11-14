@@ -4,7 +4,8 @@
  * `storage.local` `qusme.sync` ({@link SyncState}): when the inbox was last read in full, the
  * gift wrap ids this device has handled (so junk is not reopened while it stays inside the
  * lookback), how many syncs in a row hit the cap, whether each storage relay accepts writes,
- * progress on deleting archived drafts past retention (by `d`), and the counts from the last sync.
+ * progress on deleting archived drafts past retention (by `d`), when the default retention's grace
+ * period started, and the counts from the last sync.
  * Ids, urls, times and counts only: nothing decrypted is written to `storage.local`.
  *
  * `storage.session` `qusme.drafts` ({@link DraftCache}): the decrypted drafts from the last sync,
@@ -73,6 +74,11 @@ export interface SyncState {
   relayHealth?: RelayHealthMap;
   /** Archived drafts past retention being deleted, by `d` ({@link ExpiredDraft}). */
   expired?: Record<string, ExpiredDraft>;
+  /**
+   * The first sync on a version with the 90-day default (D30): a queue that never chose a
+   * retention deletes nothing until a week after it (`src/drafts/retention.ts`).
+   */
+  retentionGraceFrom?: number;
   last?: SyncSummary;
 }
 
@@ -98,6 +104,10 @@ export interface DraftCache {
   destinations?: Destination[];
   /** The effective `archive_retention_days` (7.2) when the cache was written; `null` keeps all. */
   retentionDays?: number | null;
+  /** Whether the settings chose the retention; false when it is the 90-day default (D30). */
+  retentionChosen?: boolean;
+  /** When the default's grace period ends (D30); nothing is deleted before it. */
+  retentionGraceUntil?: number;
 }
 
 const emptyState = (): SyncState => ({ version: 1, handled: {}, cappedStreak: 0 });

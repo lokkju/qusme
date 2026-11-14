@@ -243,6 +243,18 @@ export async function destinationsQueue(
     return out;
   };
 
+  /** Another device on the same queue: its own storage, the record as set up, the same relays. */
+  const secondDevice = async () => {
+    const local2 = new MemoryStorageArea();
+    const session2 = new MemoryStorageArea();
+    await local2.set({ [LOCAL_QUEUE]: record });
+    await session2.set({
+      [SESSION_UNLOCKED]: { queue: bytesToHex(secretKey), inbox: bytesToHex(inboxKey) },
+    });
+    const store2 = new KeyStore({ local: local2, session: session2 });
+    return { store: store2, session: session2, deps: { ...deps, store: store2 } };
+  };
+
   return {
     net,
     queue,
@@ -252,6 +264,7 @@ export async function destinationsQueue(
     deps,
     publish,
     onRelays,
+    secondDevice,
     syncRequests: () => syncRequests,
     close: () => closeAll(connections),
   };

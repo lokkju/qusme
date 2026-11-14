@@ -34,8 +34,8 @@ import {
 import { arm, disarm, readArmed } from '../insertion/armed.ts';
 import { definitionForDraft, type SiteDefinitionSource } from '../insertion/definitions.ts';
 import { SetupError } from '../setup/deps.ts';
-import { type CachedDraft, readDraftCache, writeDraftCache } from '../sync/state.ts';
-import { pastRetention, retentionDays } from './retention.ts';
+import { type CachedDraft, readDraftCache, readSyncState, writeDraftCache } from '../sync/state.ts';
+import { graceUntil, pastRetention, retentionDays } from './retention.ts';
 
 /** The newest version of draft `d` across every storage relay; throws if any relay fails. */
 async function readDraft(session: QueueSession, d: string): Promise<DraftWrap> {
@@ -184,12 +184,24 @@ export async function dismissDraft(d: string, deps: AgentDeps): Promise<CachedDr
   return updated;
 }
 
-/** The effective archive retention from the settings this device last synced (7.2). */
-async function sessionRetentionDays(session: QueueSession): Promise<number | null> {
+/**
+ * The effective archive retention from the settings this device last synced (7.2), and when the
+ * default's grace period ends (D30).
+ */
+async function sessionRetention(
+  session: QueueSession,
+  deps: QueueDeps
+): Promise<{ days: number | null; grace?: number }> {
   const kept = session.record.settings;
-  if (kept === undefined) return null;
+  if (kept === undefined) return { days: null };
   const parsed = await parseSettings(kept, session.queue);
-  return parsed.ok ? retentionDays(parsed.value.content) : null;
+  if (!parsed.ok) return { days: null };
+  const settings = parsed.value.content;
+  // A device that has not synced on this version yet starts the grace period at its first sync,
+  // which is still to come, so nothing is past the default for it now.
+  const graceFrom = (await readSyncState(deps.store.local)).retentionGraceFrom ?? session.now;
+  const grace = graceUntil(settings, graceFrom);
+  return { days: retentionDays(settings), ...(grace !== undefined && { grace }) };
 }
 
 /**
@@ -203,8 +215,9 @@ export async function restoreDraft(d: string, deps: QueueDeps): Promise<CachedDr
     deps,
     (value) => withStatus(value, (s) => s !== 'active', 'active'),
     async (wrap, value, session) => {
-      const days = await sessionRetentionDays(session);
-      if (pastRetention({ status: value.status, updatedAt: wrap.createdAt }, days, session.now)) {
+      const { days, grace } = await sessionRetention(session, deps);
+      const draft = { status: value.status, updatedAt: wrap.createdAt };
+      if (pastRetention(draft, days, session.now, grace)) {
         throw new SetupError(
           `That draft has been archived for more than ${days} days, so it is being deleted and can't be restored.`
         );
