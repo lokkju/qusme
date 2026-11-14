@@ -1,6 +1,10 @@
-# Store listing images
+# Store listing
 
-The images for the Chrome Web Store and Firefox Add-ons (AMO) listings. Every screenshot shows the
+`LISTING.md` is the listing text for the Chrome Web Store and Firefox Add-ons (AMO): summary,
+description, Chrome's privacy practices answers and the AMO notes. The release workflow uploads
+builds only, so a change to it goes into both store dashboards by hand.
+
+The images are in the table below. Every screenshot shows the
 real extension UI, from the build in `packages/extension/.output/chrome-mv3`, set on a 1280x800
 canvas with a caption in the landing site's type and colors. All files are PNG with no alpha.
 
