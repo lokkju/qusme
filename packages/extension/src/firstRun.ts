@@ -1,5 +1,5 @@
 /**
- * The first-run checklist on the unlocked home screen: connect Claude, add a destination, pair a
+ * The first-run checklist on the unlocked home screen: connect an agent, add a destination, pair a
  * second device. Each item ticks itself off from the queue's state: a confirmed destination
  * exists (7.2); an agent is listed in the submitters list (7.3) or bound at the service (8.2);
  * this device paired with another (8.3), or the user skipped that item. The checklist shows until

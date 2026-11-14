@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>qus.me: drafts wait in line, you post them</title>
-<meta name="description" content="Claude and other AI agents write drafts into a queue only your devices can read. On X, Bluesky, Mastodon or LinkedIn, press Alt+Q in the post box, pick a draft, edit it and click Post yourself. qus.me never posts.">
+<meta name="description" content="Your AI agent writes drafts into a queue only your devices can read. On X, Bluesky, Mastodon or LinkedIn, press Alt+Q in the post box, pick a draft, edit it and click Post yourself. qus.me never posts.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/newsreader-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -19,7 +19,7 @@
 <a class="brand" href="/">qus.me</a>
 <nav class="nav" aria-label="Main">
 <a href="#how">How it works</a>
-<a href="#connect">Connect Claude</a>
+<a href="#connect">Connect your agent</a>
 <a href="#privacy">Privacy</a>
 <a href="#faq">FAQ</a>
 <a class="button button-primary" href="#install">Install</a>
@@ -30,7 +30,7 @@
 <section class="wrap hero" aria-labelledby="hero-title">
 <p class="eyebrow">A queue of drafts for your browser</p>
 <h1 class="display" id="hero-title">Drafts wait in line. You post them.</h1>
-<p class="lede">Tell Claude what to write and the drafts land in your queue, encrypted so that only your devices can read them. On X, Bluesky, Mastodon or LinkedIn, press Alt+Q in the post box, pick a draft, fix what you want and click Post. Nothing goes out until you click it; qus.me never posts.</p>
+<p class="lede">Tell your agent what to write and the drafts land in your queue, encrypted so that only your devices can read them. On X, Bluesky, Mastodon or LinkedIn, press Alt+Q in the post box, pick a draft, fix what you want and click Post. Nothing goes out until you click it; qus.me never posts.</p>
 <div class="actions">
 <a class="button button-primary" href="https://chromewebstore.google.com/detail/qusme/mggkjolhneabgkhokenopabgkcakfhpo">Add to Chrome</a>
 <a class="button button-secondary" href="#install">Firefox</a>
@@ -91,7 +91,7 @@
 <ol class="steps">
 <li><span class="step-number" aria-hidden="true">1</span><h3>Install the extension</h3><p class="muted">Add qus.me to Chrome or Firefox. It asks for no access to any site: it touches a page only when you press Alt+Q, click Insert or use the right-click menu on that page.</p></li>
 <li><span class="step-number" aria-hidden="true">2</span><h3>Create your queue</h3><p class="muted">Pick a passphrase. The extension makes your queue's key on this device, locks it with that passphrase and shows you a 12-word recovery code once, with a recovery sheet you can save. Write the code down: it, or a device you've already set up, is the only way onto a new device.</p></li>
-<li><span class="step-number" aria-hidden="true">3</span><h3>Connect Claude</h3><p class="muted">Add https://app.qus.me/mcp to Claude. Claude shows a short code; type it into the extension, then choose which accounts Claude may draft for and how many drafts it may add per day, week or month. Other MCP agents connect the same way, each with its own approval.</p></li>
+<li><span class="step-number" aria-hidden="true">3</span><h3>Connect your agent</h3><p class="muted">Add https://app.qus.me/mcp to your AI app (Claude or another MCP client). Your agent shows a short code; type it into the extension, then choose which accounts it may draft for and how many drafts it may add per day, week or month. Each agent you connect gets its own approval.</p></li>
 <li><span class="step-number" aria-hidden="true">4</span><h3>Insert and post</h3><p class="muted">On X, Bluesky, Mastodon or LinkedIn, click into the post box and press Alt+Q. Pick a draft, read it, change what you like and click Post. The site gets a post you typed; the picker only fills the box.</p></li>
 </ol>
 </section>
@@ -111,7 +111,7 @@
 <section class="wrap section" id="install" aria-labelledby="install-title">
 <div class="stack">
 <h2 class="title" id="install-title">Get qus.me</h2>
-<p class="muted">The extension holds your key and shows your queue. Install it first, then connect Claude.</p>
+<p class="muted">The extension holds your key and shows your queue. Install it first, then connect your agent.</p>
 <div class="grid grid-2">
 <div class="card">
 <h3>Chrome</h3>
@@ -140,8 +140,8 @@
 <div class="wrap section">
 <div class="grid grid-2">
 <div class="stack">
-<h2 class="title" id="connect-title">Connect Claude</h2>
-<p class="muted">qus.me is a remote MCP server. In the Claude apps, add the URL below as a custom connector; in Claude Code, use one of the snippets. The first time Claude connects, it shows a short code: enter it in the extension and choose the accounts Claude may draft for and how many drafts it may add. Any other MCP client connects the same way and gets its own approval.</p>
+<h2 class="title" id="connect-title">Connect your agent</h2>
+<p class="muted">qus.me is a remote MCP server. Add the URL below to your AI app: in the Claude apps, as a custom connector; in Claude Code, with one of the snippets; in any other MCP client, the way it adds remote servers. The first time your agent connects, it shows a short code: enter it in the extension and choose the accounts it may draft for and how many drafts it may add. Each agent you connect gets its own approval.</p>
 <label class="field-label" for="mcp-url">MCP server URL</label>
 <div class="copy-field">
 <input id="mcp-url" type="text" readonly value="https://app.qus.me/mcp">
