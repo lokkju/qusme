@@ -64,6 +64,11 @@ export interface OAuthLifetimes {
   accessToken: number;
   /** Each refresh token's lifetime; rotation issues a new one with a fresh lifetime. */
   refreshToken: number;
+  /**
+   * How long after a rotation the refresh token it replaced is still honored once its successor
+   * is live, so a client retrying a refresh whose answer it lost is not taken for a thief.
+   */
+  refreshReuseGrace: number;
   /** How long a cached Client ID Metadata Document is used before it is fetched again. */
   clientMetadataCache: number;
 }
@@ -73,6 +78,7 @@ export const DEFAULT_LIFETIMES: OAuthLifetimes = {
   authorizationCode: 60,
   accessToken: 60 * 60,
   refreshToken: 30 * 24 * 60 * 60,
+  refreshReuseGrace: 60,
   clientMetadataCache: 60 * 60,
 };
 
@@ -307,6 +313,27 @@ export function createOAuth(options: OAuthOptions) {
       refresh_token: refreshToken,
       scope: grant.scopes,
     };
+  }
+
+  /**
+   * True when a revoked refresh token is the one a rotation replaced moments ago: revoked no more
+   * than `refreshReuseGrace` seconds before `t`, and its successor (the refresh token that
+   * rotation issued, created in the same second it was revoked) is still live. A token revoked at
+   * `/revoke` or by a replay outside the grace has no live successor, so it never qualifies.
+   */
+  async function isRetriedRotation(
+    token: { kind: string; clientId: string; agentKeyId: string; revokedAt: number | null },
+    t: number
+  ) {
+    const revokedAt = token.revokedAt;
+    if (revokedAt === null || t - revokedAt > lifetimes.refreshReuseGrace) return false;
+    const live = await store.oauthTokens.listByAgentKey(token.agentKeyId, t);
+    return live.some(
+      (other) =>
+        other.kind === 'refresh' &&
+        other.createdAt === revokedAt &&
+        timingSafeEqual(other.clientId, token.clientId)
+    );
   }
 
   /** True when the agent key is live and bound to a queue by an unrevoked binding. */
@@ -595,12 +622,18 @@ export function createOAuth(options: OAuthOptions) {
         return tokenError(c, invalid);
       }
       // Revoked in one statement, so only one of two concurrent refreshes wins.
-      const current = await store.oauthTokens.revoke(hash, t);
+      let current = await store.oauthTokens.revoke(hash, t);
       if (!current) {
-        // A rotated-out refresh token presented again: someone holds a copy. OAuth 2.1 4.3.1
-        // says to revoke the grant, which here is every token of the agent key.
-        await store.oauthTokens.revokeByAgentKey(found.agentKeyId, t);
-        return tokenError(c, invalid);
+        if (await isRetriedRotation(found, t)) {
+          // The client lost the answer to its refresh, or sent two at once, and is asking again
+          // with the token it still holds. Its successor stays valid alongside the new pair.
+          current = found;
+        } else {
+          // A rotated-out refresh token presented again: someone holds a copy. OAuth 2.1 4.3.1
+          // says to revoke the grant, which here is every token of the agent key.
+          await store.oauthTokens.revokeByAgentKey(found.agentKeyId, t);
+          return tokenError(c, invalid);
+        }
       }
       if (current.expiresAt <= t) return tokenError(c, invalid);
       if (params.scope !== undefined) {

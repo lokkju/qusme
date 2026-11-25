@@ -630,6 +630,7 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
         client_id: CLIENT_ID,
       });
       const next = (await first.json()) as { access_token: string; refresh_token: string };
+      clock += 61;
       const replay = await token({
         grant_type: 'refresh_token',
         refresh_token: t.refresh_token,
@@ -643,6 +644,55 @@ export function oauthFlowSuite(driver: string, setup: () => { fresh(): Promise<H
         client_id: CLIENT_ID,
       });
       expect(later.status).toBe(400);
+    });
+
+    it('honors a refresh retried within the grace, keeping the successor valid', async () => {
+      const t = await tokens();
+      const refresh = (rt: string) =>
+        token({ grant_type: 'refresh_token', refresh_token: rt, client_id: CLIENT_ID });
+      const first = await refresh(t.refresh_token);
+      const lost = (await first.json()) as { access_token: string; refresh_token: string };
+      // The client never saw `lost` and retries with the token it holds, 8 s later.
+      clock += 8;
+      const retry = await refresh(t.refresh_token);
+      expect(retry.status).toBe(200);
+      const kept = (await retry.json()) as { access_token: string; refresh_token: string };
+      expect(kept.refresh_token).not.toBe(lost.refresh_token);
+      expect((await mcp(kept.access_token)).status).toBe(200);
+      expect((await mcp(lost.access_token)).status).toBe(200);
+      expect((await refresh(kept.refresh_token)).status).toBe(200);
+      expect((await refresh(lost.refresh_token)).status).toBe(200);
+    });
+
+    it('refuses a refresh token two rotations old, even within the grace', async () => {
+      const t = await tokens();
+      const refresh = (rt: string) =>
+        token({ grant_type: 'refresh_token', refresh_token: rt, client_id: CLIENT_ID });
+      const second = (await (await refresh(t.refresh_token)).json()) as { refresh_token: string };
+      clock += 1;
+      const third = (await (await refresh(second.refresh_token)).json()) as {
+        access_token: string;
+        refresh_token: string;
+      };
+      clock += 1;
+      expect((await refresh(t.refresh_token)).status).toBe(400);
+      expect((await mcp(third.access_token)).status).toBe(401);
+      expect((await refresh(third.refresh_token)).status).toBe(400);
+    });
+
+    it('refuses a refresh token revoked at /revoke, even within the grace', async () => {
+      const t = await tokens();
+      const refresh = (rt: string) =>
+        token({ grant_type: 'refresh_token', refresh_token: rt, client_id: CLIENT_ID });
+      const next = (await (await refresh(t.refresh_token)).json()) as { refresh_token: string };
+      clock += 1;
+      const revoked = await app.request('/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: next.refresh_token, client_id: CLIENT_ID }).toString(),
+      });
+      expect(revoked.status).toBe(200);
+      expect((await refresh(t.refresh_token)).status).toBe(400);
     });
 
     it('refuses an access token at the token endpoint and a refresh token at /mcp', async () => {
